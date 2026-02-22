@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Preloaded, usePreloadedQuery } from "convex/react";
@@ -17,12 +18,21 @@ import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import { RatingBreakdown } from "@/components/rating/RatingBreakdown";
 import { CompositeScore } from "@/components/rating/CompositeScore";
 import { NoFlagsBadge } from "@/components/rating/NoFlagsBadge";
 import { EpisodeFlags } from "@/components/rating/EpisodeFlags";
 import { StreamingLinks } from "@/components/title/StreamingLinks";
 import { RatingLoading } from "@/components/title/RatingLoading";
+import { CorrectionForm } from "@/components/corrections/CorrectionForm";
+import { CorrectionsList } from "@/components/corrections/CorrectionsList";
 import {
   calculateCompositeScore,
   isNoFlags,
@@ -36,6 +46,7 @@ interface TitleDetailProps {
 export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const title = usePreloadedQuery(preloadedTitle);
   const { isSignedIn } = useUser();
+  const [correctionOpen, setCorrectionOpen] = useState(false);
 
   if (!title) {
     return (
@@ -236,11 +247,13 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {/* Actions */}
           <div className="flex flex-wrap gap-3">
             {isSignedIn && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/corrections?titleId=${title._id}`}>
-                  <MessageSquarePlus className="mr-1.5 size-3.5" />
-                  Submit Correction
-                </Link>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCorrectionOpen(true)}
+              >
+                <MessageSquarePlus className="mr-1.5 size-3.5" />
+                Submit Correction
               </Button>
             )}
             {isSignedIn && (
@@ -261,8 +274,33 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               </p>
             )}
           </div>
+
+          {/* Community corrections */}
+          <CorrectionsList titleId={title._id} />
         </div>
       </div>
+
+      {/* Correction sheet */}
+      {ratings && (
+        <Sheet open={correctionOpen} onOpenChange={setCorrectionOpen}>
+          <SheetContent className="overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Submit Correction</SheetTitle>
+              <SheetDescription>
+                Suggest a rating change for &ldquo;{title.title}&rdquo;
+              </SheetDescription>
+            </SheetHeader>
+            <div className="px-4 pb-8">
+              <CorrectionForm
+                titleId={title._id}
+                titleName={title.title}
+                ratings={ratings}
+                onSuccess={() => setCorrectionOpen(false)}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
     </div>
   );
 }
