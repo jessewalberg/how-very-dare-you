@@ -9,6 +9,7 @@
  */
 
 import type * as search from "../search.js";
+import type * as titles from "../titles.js";
 
 import type {
   ApiFromModules,
@@ -18,6 +19,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   search: typeof search;
+  titles: typeof titles;
 }>;
 
 /**
