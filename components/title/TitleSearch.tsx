@@ -90,6 +90,12 @@ export function TitleSearch({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && query.trim()) {
+              setOpen(false);
+              router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+            }
+          }}
           placeholder={placeholder}
           className={cn(
             "flex-1 bg-transparent text-sm outline-none",
