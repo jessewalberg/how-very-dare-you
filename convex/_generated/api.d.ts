@@ -8,13 +8,17 @@
  * @module
  */
 
+import type * as search from "../search.js";
+
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
 
-declare const fullApi: ApiFromModules<{}>;
+declare const fullApi: ApiFromModules<{
+  search: typeof search;
+}>;
 
 /**
  * A utility for referencing Convex functions in your app's public API.
