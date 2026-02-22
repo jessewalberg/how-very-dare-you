@@ -9,6 +9,7 @@
  */
 
 import type * as corrections from "../corrections.js";
+import type * as crons from "../crons.js";
 import type * as ratings from "../ratings.js";
 import type * as search from "../search.js";
 import type * as stripe from "../stripe.js";
@@ -23,6 +24,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   corrections: typeof corrections;
+  crons: typeof crons;
   ratings: typeof ratings;
   search: typeof search;
   stripe: typeof stripe;
