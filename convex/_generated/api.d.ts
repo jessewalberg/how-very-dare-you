@@ -10,6 +10,7 @@
 
 import type * as ratings from "../ratings.js";
 import type * as search from "../search.js";
+import type * as stripe from "../stripe.js";
 import type * as titles from "../titles.js";
 import type * as users from "../users.js";
 
@@ -22,6 +23,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   ratings: typeof ratings;
   search: typeof search;
+  stripe: typeof stripe;
   titles: typeof titles;
   users: typeof users;
 }>;

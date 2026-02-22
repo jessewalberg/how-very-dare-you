@@ -1,0 +1,213 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { useMutation } from "convex/react";
+import { RotateCcw, Lock, Crown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { api } from "@/convex/_generated/api";
+import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
+import { CATEGORIES, DEFAULT_WEIGHTS, type CategoryKey } from "@/lib/constants";
+import { calculateCompositeScore, type CategoryRatings } from "@/lib/scoring";
+import { CompositeScore } from "@/components/rating/CompositeScore";
+
+// Sample title for live preview
+const SAMPLE_RATINGS: CategoryRatings = {
+  lgbtq: 2,
+  climate: 1,
+  racialIdentity: 3,
+  genderRoles: 2,
+  antiAuthority: 1,
+  religious: 0,
+  political: 2,
+  sexuality: 1,
+};
+
+type Weights = Record<CategoryKey, number>;
+
+interface WeightSlidersProps {
+  isPaid: boolean;
+  currentWeights?: Weights;
+}
+
+export function WeightSliders({ isPaid, currentWeights }: WeightSlidersProps) {
+  const [weights, setWeights] = useState<Weights>(
+    currentWeights ?? { ...DEFAULT_WEIGHTS }
+  );
+  const [saving, setSaving] = useState(false);
+  const updateWeights = useMutation(api.users.updateCategoryWeights);
+
+  // Sync from props when they change
+  useEffect(() => {
+    if (currentWeights) {
+      setWeights(currentWeights);
+    }
+  }, [currentWeights]);
+
+  // Debounced save
+  useEffect(() => {
+    if (!isPaid || !currentWeights) return;
+
+    // Don't save if weights haven't changed from server value
+    const changed = Object.keys(weights).some(
+      (k) => weights[k as CategoryKey] !== currentWeights[k as CategoryKey]
+    );
+    if (!changed) return;
+
+    const timer = setTimeout(async () => {
+      setSaving(true);
+      try {
+        await updateWeights({ weights });
+      } catch {
+        // Silently handle - user will see stale weights
+      } finally {
+        setSaving(false);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [weights, isPaid, currentWeights, updateWeights]);
+
+  const handleChange = useCallback((key: CategoryKey, value: number[]) => {
+    setWeights((prev) => ({ ...prev, [key]: value[0] }));
+  }, []);
+
+  const resetToDefaults = useCallback(() => {
+    setWeights({ ...DEFAULT_WEIGHTS });
+  }, []);
+
+  const previewScore = calculateCompositeScore(SAMPLE_RATINGS, weights);
+  const defaultScore = calculateCompositeScore(SAMPLE_RATINGS, DEFAULT_WEIGHTS);
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-bold tracking-tight">
+            Category Weights
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Set how much each category affects your composite score. Set to 0 to
+            ignore a category entirely.
+          </p>
+        </div>
+        {saving && (
+          <span className="text-xs text-muted-foreground animate-pulse">
+            Saving...
+          </span>
+        )}
+      </div>
+
+      {/* Locked overlay for free users */}
+      {!isPaid && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <Lock className="size-5 shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800">
+              Premium Feature
+            </p>
+            <p className="text-xs text-amber-700/80">
+              Upgrade to customize how categories affect your score.
+            </p>
+          </div>
+          <Button size="sm" className="shrink-0 gap-1.5" asChild>
+            <a href="/settings#subscription">
+              <Crown className="size-3.5" />
+              Upgrade
+            </a>
+          </Button>
+        </div>
+      )}
+
+      {/* Sliders */}
+      <div
+        className={cn(
+          "space-y-5",
+          !isPaid && "opacity-50 pointer-events-none select-none"
+        )}
+      >
+        {CATEGORIES.map((category) => {
+          const Icon = category.icon;
+          const val = weights[category.key];
+          return (
+            <div key={category.key} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon
+                    className="size-4 text-muted-foreground"
+                    strokeWidth={1.8}
+                  />
+                  <span className="text-sm font-medium">{category.label}</span>
+                </div>
+                <span
+                  className={cn(
+                    "text-sm font-bold tabular-nums w-8 text-right",
+                    val === 0
+                      ? "text-muted-foreground/50"
+                      : "text-foreground"
+                  )}
+                >
+                  {val}
+                </span>
+              </div>
+              <Slider
+                value={[val]}
+                onValueChange={(v) => handleChange(category.key, v)}
+                min={0}
+                max={10}
+                step={1}
+                disabled={!isPaid}
+              />
+            </div>
+          );
+        })}
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={resetToDefaults}
+          disabled={!isPaid}
+        >
+          <RotateCcw className="size-3.5" />
+          Reset to Defaults
+        </Button>
+      </div>
+
+      {/* Live preview */}
+      <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Live Preview
+        </p>
+        <div className="flex items-center gap-6">
+          <div className="text-center">
+            <p className="text-[10px] text-muted-foreground mb-1">
+              Your Score
+            </p>
+            <CompositeScore score={previewScore} compact />
+          </div>
+          <div className="text-center">
+            <p className="text-[10px] text-muted-foreground mb-1">Default</p>
+            <CompositeScore score={defaultScore} compact />
+          </div>
+          <div className="flex-1 text-xs text-muted-foreground">
+            Sample title: &ldquo;Elemental&rdquo; — your weights{" "}
+            {previewScore < defaultScore
+              ? "lower"
+              : previewScore > defaultScore
+                ? "raise"
+                : "don't change"}{" "}
+            the score
+            {previewScore !== defaultScore && (
+              <span className="font-medium">
+                {" "}
+                by {Math.abs(previewScore - defaultScore).toFixed(1)} points
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
