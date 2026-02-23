@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Preloaded, usePreloadedQuery } from "convex/react";
+import { Preloaded, usePreloadedQuery, useQuery, useMutation } from "convex/react";
 import { useUser } from "@clerk/nextjs";
 import {
   Clock,
@@ -47,6 +47,13 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const title = usePreloadedQuery(preloadedTitle);
   const { isSignedIn } = useUser();
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  const profile = useQuery(api.users.getMyProfile);
+  const addToWatchlist = useMutation(api.users.addToWatchlist);
+  const removeFromWatchlist = useMutation(api.users.removeFromWatchlist);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+
+  const isInWatchlist = profile?.watchlist?.includes(title?._id!) ?? false;
+  const isPaid = profile?.tier === "paid";
 
   if (!title) {
     return (
@@ -256,10 +263,34 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                 Submit Correction
               </Button>
             )}
-            {isSignedIn && (
-              <Button variant="outline" size="sm">
-                <Bookmark className="mr-1.5 size-3.5" />
-                Add to Watchlist
+            {isSignedIn && isPaid && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={watchlistLoading}
+                onClick={async () => {
+                  if (!title) return;
+                  setWatchlistLoading(true);
+                  try {
+                    if (isInWatchlist) {
+                      await removeFromWatchlist({ titleId: title._id });
+                    } else {
+                      await addToWatchlist({ titleId: title._id });
+                    }
+                  } catch {
+                    // silent
+                  } finally {
+                    setWatchlistLoading(false);
+                  }
+                }}
+              >
+                <Bookmark
+                  className={cn(
+                    "mr-1.5 size-3.5",
+                    isInWatchlist && "fill-current"
+                  )}
+                />
+                {isInWatchlist ? "In Watchlist" : "Add to Watchlist"}
               </Button>
             )}
             {!isSignedIn && (

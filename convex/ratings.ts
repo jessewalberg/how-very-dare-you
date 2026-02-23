@@ -802,7 +802,69 @@ export const runNightlyBatch = action({
   },
 });
 
-// ── On-demand request (public mutation, kept from original) ──
+// ── TMDB Search (for "not in DB" flow) ───────────────────
+
+export const searchTMDB = action({
+  args: { query: v.string() },
+  handler: async (ctx, args): Promise<
+    {
+      tmdbId: number;
+      title: string;
+      type: "movie" | "tv";
+      year: number;
+      posterPath: string | null;
+      overview: string;
+    }[]
+  > => {
+    const tmdbKey = process.env.TMDB_API_KEY!;
+    const { searchMovies, searchTV } = await import("../lib/tmdb");
+
+    const [movies, tv] = await Promise.all([
+      searchMovies(args.query, tmdbKey).catch(() => ({ results: [] })),
+      searchTV(args.query, tmdbKey).catch(() => ({ results: [] })),
+    ]);
+
+    const results: {
+      tmdbId: number;
+      title: string;
+      type: "movie" | "tv";
+      year: number;
+      posterPath: string | null;
+      overview: string;
+      popularity: number;
+    }[] = [];
+
+    for (const m of movies.results.slice(0, 10)) {
+      results.push({
+        tmdbId: m.id,
+        title: m.title,
+        type: "movie",
+        year: m.release_date ? parseInt(m.release_date.slice(0, 4), 10) : 0,
+        posterPath: m.poster_path,
+        overview: m.overview,
+        popularity: m.popularity,
+      });
+    }
+
+    for (const s of tv.results.slice(0, 10)) {
+      results.push({
+        tmdbId: s.id,
+        title: s.name,
+        type: "tv",
+        year: s.first_air_date ? parseInt(s.first_air_date.slice(0, 4), 10) : 0,
+        posterPath: s.poster_path,
+        overview: s.overview,
+        popularity: s.popularity,
+      });
+    }
+
+    // Sort by popularity descending, return top 12
+    results.sort((a, b) => b.popularity - a.popularity);
+    return results.slice(0, 12).map(({ popularity, ...rest }) => rest);
+  },
+});
+
+// ── On-demand request (public mutation) ──────────────────
 
 export const requestOnDemandRating = mutation({
   args: {
@@ -854,19 +916,24 @@ export const requestOnDemandRating = mutation({
       tmdbId: args.tmdbId,
       title: args.title,
       type: args.type,
-      year: 0, // Will be populated by the rating action
+      year: 0,
       status: "pending",
     });
 
     // Add to rating queue
-    await ctx.db.insert("ratingQueue", {
+    const queueItemId = await ctx.db.insert("ratingQueue", {
       tmdbId: args.tmdbId,
       title: args.title,
       type: args.type,
-      priority: 10, // User requests get high priority
+      priority: 10,
       source: "user_request",
       status: "queued",
       createdAt: Date.now(),
+    });
+
+    // Schedule the rating action to run immediately
+    await ctx.scheduler.runAfter(0, api.ratings.processQueueItem, {
+      queueItemId,
     });
 
     return titleId;
