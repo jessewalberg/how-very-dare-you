@@ -12,6 +12,7 @@ import type * as corrections from "../corrections.js";
 import type * as crons from "../crons.js";
 import type * as ratings from "../ratings.js";
 import type * as search from "../search.js";
+import type * as seed from "../seed.js";
 import type * as stripe from "../stripe.js";
 import type * as titles from "../titles.js";
 import type * as users from "../users.js";
@@ -27,6 +28,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   ratings: typeof ratings;
   search: typeof search;
+  seed: typeof seed;
   stripe: typeof stripe;
   titles: typeof titles;
   users: typeof users;
