@@ -28,9 +28,9 @@ export function RatingLoading({
   return (
     <div className="space-y-6">
       {/* Header: poster + metadata */}
-      <div className="flex gap-5">
+      <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
         {/* Poster */}
-        <div className="relative shrink-0 w-32 h-48 overflow-hidden rounded-xl bg-muted shadow-sm">
+        <div className="relative shrink-0 w-28 h-[168px] sm:w-32 sm:h-48 overflow-hidden rounded-xl bg-muted shadow-sm">
           {posterPath ? (
             <Image
               src={`https://image.tmdb.org/t/p/w342${posterPath}`}
@@ -47,8 +47,8 @@ export function RatingLoading({
         </div>
 
         {/* Metadata */}
-        <div className="flex flex-col justify-center gap-2">
-          <h1 className="text-xl font-bold leading-tight tracking-tight">
+        <div className="flex flex-col items-center text-center sm:items-start sm:text-left justify-center gap-2">
+          <h1 className="text-lg sm:text-xl font-bold leading-tight tracking-tight">
             {title}
             <span className="ml-1.5 text-lg font-normal text-muted-foreground">
               ({year})

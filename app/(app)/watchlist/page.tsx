@@ -1,0 +1,108 @@
+"use client";
+
+import { useQuery } from "convex/react";
+import { useUser } from "@clerk/nextjs";
+import Link from "next/link";
+import {
+  Bookmark,
+  Crown,
+  LogIn,
+  ArrowRight,
+} from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import { Button } from "@/components/ui/button";
+import { TitleGrid } from "@/components/browse/TitleGrid";
+import type { CategoryRatings } from "@/lib/scoring";
+
+export default function WatchlistPage() {
+  const { isSignedIn, isLoaded } = useUser();
+  const profile = useQuery(api.users.getMyProfile);
+  const watchlist = useQuery(api.users.getWatchlist);
+
+  // Not signed in
+  if (isLoaded && !isSignedIn) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">
+          <LogIn className="size-7 text-muted-foreground/50" />
+        </div>
+        <h1 className="mt-4 text-xl font-bold">Sign in to view your watchlist</h1>
+        <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
+          Save titles you want to watch and track their content ratings.
+        </p>
+        <Button className="mt-6" asChild>
+          <Link href="/sign-in">Sign In</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  // Free tier
+  if (profile && profile.tier === "free") {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">
+          <Crown className="size-7 text-muted-foreground/50" />
+        </div>
+        <h1 className="mt-4 text-xl font-bold">Watchlist is a Premium feature</h1>
+        <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
+          Upgrade to save titles and build your personal watchlist.
+        </p>
+        <Button className="mt-6 gap-1.5" asChild>
+          <Link href="/settings">
+            <Crown className="size-4" />
+            Upgrade to Premium
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const isLoading = watchlist === undefined;
+  const isEmpty = watchlist && watchlist.length === 0;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Watchlist</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {isLoading
+            ? "Loading..."
+            : isEmpty
+              ? "Your watchlist is empty"
+              : `${watchlist.length} title${watchlist.length !== 1 ? "s" : ""} saved`}
+        </p>
+      </div>
+
+      {/* Empty state */}
+      {isEmpty && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">
+            <Bookmark className="size-7 text-muted-foreground/50" />
+          </div>
+          <h2 className="mt-4 text-base font-semibold">No titles saved yet</h2>
+          <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
+            Browse titles and click the bookmark icon to add them here.
+          </p>
+          <Button variant="outline" className="mt-6" asChild>
+            <Link href="/browse">Browse Titles</Link>
+          </Button>
+        </div>
+      )}
+
+      {/* Watchlist grid */}
+      <TitleGrid
+        titles={
+          watchlist
+            ?.filter((t): t is NonNullable<typeof t> => t !== null)
+            .map((t) => ({
+              ...t,
+              ratings: t.ratings as CategoryRatings | undefined,
+            }))
+        }
+        isLoading={isLoading}
+      />
+    </div>
+  );
+}

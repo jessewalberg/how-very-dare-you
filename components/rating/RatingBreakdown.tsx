@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { CATEGORIES, type CategoryKey } from "@/lib/constants";
+import { CATEGORIES, SEVERITY_LEVELS, type CategoryKey } from "@/lib/constants";
 import {
   calculateCompositeScore,
   isNoFlags,
@@ -44,7 +44,7 @@ export function RatingBreakdown({
       </div>
 
       {/* Category rows */}
-      <div className="space-y-0.5">
+      <div className="space-y-0.5" role="list" aria-label="Content advisory categories">
         {CATEGORIES.map((category, index) => {
           const severity = ratings[category.key as CategoryKey] as
             | 0
@@ -54,21 +54,26 @@ export function RatingBreakdown({
             | 4;
           const isNone = severity === 0;
           const Icon = category.icon;
+          const severityLabel = SEVERITY_LEVELS[severity].label;
 
           return (
             <div
               key={category.key}
+              role="listitem"
+              aria-label={`${category.label}: rated ${severityLabel}`}
               className={cn(
                 "group flex items-center justify-between gap-3",
                 "rounded-lg px-3 py-2",
-                "transition-all duration-200",
+                "transition-colors duration-200",
+                "animate-fade-in-up",
                 isNone
-                  ? "opacity-45 hover:opacity-70"
+                  ? "hover:opacity-70"
                   : "hover:bg-muted/50"
               )}
               style={{
                 animationDelay: `${index * 50}ms`,
-              }}
+                "--fade-end-opacity": isNone ? "0.45" : "1",
+              } as React.CSSProperties}
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <Icon

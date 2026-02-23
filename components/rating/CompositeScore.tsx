@@ -59,7 +59,7 @@ export function CompositeScore({
   }
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex flex-col items-center gap-1" role="status" aria-label={`Composite score: ${displayScore} out of 4, rated ${label}`}>
       <div
         className={cn(
           "relative flex flex-col items-center justify-center",

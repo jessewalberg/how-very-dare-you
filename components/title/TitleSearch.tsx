@@ -121,7 +121,7 @@ export function TitleSearch({
         <div
           className={cn(
             "absolute z-50 w-full rounded-b-xl border border-t-0 bg-card shadow-lg",
-            "max-h-[360px] overflow-y-auto",
+            "max-h-[min(360px,60vh)] overflow-y-auto",
             "animate-in fade-in-0 slide-in-from-top-1 duration-150"
           )}
         >

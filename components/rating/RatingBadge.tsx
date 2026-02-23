@@ -15,6 +15,8 @@ export function RatingBadge({ severity, compact = false }: RatingBadgeProps) {
   return (
     <Badge
       variant="outline"
+      role="status"
+      aria-label={`Severity: ${config.label}`}
       className={cn(
         config.border,
         config.color,

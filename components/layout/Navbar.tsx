@@ -14,10 +14,12 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { TitleSearch } from "@/components/title/TitleSearch";
+import { ThemeToggle } from "./ThemeToggle";
 
 const NAV_LINKS = [
   { href: "/browse", label: "Browse" },
   { href: "/browse/no-flags", label: "No Flags" },
+  { href: "/watchlist", label: "Watchlist" },
 ] as const;
 
 export function Navbar() {
@@ -91,6 +93,9 @@ export function Navbar() {
             )}
             <span className="sr-only">Toggle search</span>
           </Button>
+
+          {/* Theme toggle */}
+          <ThemeToggle />
 
           {/* Auth */}
           {isLoaded && (

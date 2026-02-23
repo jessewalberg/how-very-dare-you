@@ -312,7 +312,7 @@ export function FilterSidebar({ isPaid = false }: FilterSidebarProps) {
               Filters
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-80 overflow-y-auto">
+          <SheetContent side="left" className="w-[min(20rem,100vw-2rem)] overflow-y-auto">
             <SheetHeader>
               <SheetTitle>Filters</SheetTitle>
               <SheetDescription className="sr-only">
