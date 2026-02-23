@@ -282,6 +282,20 @@ export const setStripeCustomerId = mutation({
   },
 });
 
+export const deleteUser = mutation({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) return;
+
+    await ctx.db.delete(user._id);
+  },
+});
+
 export const resetDailyRateLimits = mutation({
   args: {},
   handler: async (ctx) => {
