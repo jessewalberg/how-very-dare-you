@@ -8,9 +8,33 @@ const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
 });
 
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://woke-rater.com";
+
 export const metadata: Metadata = {
-  title: "Woke Rater",
-  description: "Content advisory ratings for parents",
+  title: {
+    default: "Woke Rater — Content Advisory Ratings for Parents",
+    template: "%s | Woke Rater",
+  },
+  description:
+    "AI-powered content advisory ratings for movies and TV shows. See cultural and ideological theme breakdowns so you can make informed decisions for your family.",
+  metadataBase: new URL(baseUrl),
+  openGraph: {
+    type: "website",
+    siteName: "Woke Rater",
+    title: "Woke Rater — Content Advisory Ratings for Parents",
+    description:
+      "AI-powered content advisory ratings for movies and TV shows. Cultural theme breakdowns for parents.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Woke Rater",
+    description:
+      "AI-powered content advisory ratings for movies and TV shows.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

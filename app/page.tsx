@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Shield,
@@ -14,9 +15,45 @@ import { Button } from "@/components/ui/button";
 import { LandingSampleCards } from "@/components/landing/LandingSampleCards";
 import { LandingSearch } from "@/components/landing/LandingSearch";
 
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
+
+const HOME_JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      name: "Woke Rater",
+      url: process.env.NEXT_PUBLIC_APP_URL ?? "https://woke-rater.com",
+      description:
+        "AI-powered content advisory ratings for movies and TV shows. Cultural and ideological theme breakdowns for parents.",
+      potentialAction: {
+        "@type": "SearchAction",
+        target: {
+          "@type": "EntryPoint",
+          urlTemplate: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://woke-rater.com"}/search?q={search_term_string}`,
+        },
+        "query-input": "required name=search_term_string",
+      },
+    },
+    {
+      "@type": "Organization",
+      name: "Woke Rater",
+      url: process.env.NEXT_PUBLIC_APP_URL ?? "https://woke-rater.com",
+      description:
+        "Parental content advisory platform providing AI-powered cultural and ideological theme ratings for movies and TV shows.",
+    },
+  ],
+};
+
 export default function HomePage() {
   return (
     <div className="flex min-h-screen flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_JSON_LD) }}
+      />
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-border/30">
         {/* Subtle grid background */}
