@@ -68,8 +68,8 @@ export async function chatCompletion(
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://woke-rater.com",
-          "X-Title": "Woke Rater",
+          "HTTP-Referer": "https://howverydareyou.com",
+          "X-Title": "How Very Dare You",
         },
         body: JSON.stringify({
           model,

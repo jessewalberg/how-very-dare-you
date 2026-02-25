@@ -15,7 +15,7 @@ export function Footer() {
           {/* Brand */}
           <div className="flex items-center gap-2 text-muted-foreground">
             <Shield className="size-4" strokeWidth={2} />
-            <span className="text-sm font-medium">Woke Rater</span>
+            <span className="text-sm font-medium">How Very Dare You</span>
           </div>
 
           {/* Links */}
@@ -39,7 +39,7 @@ export function Footer() {
             small commission at no extra cost to you.
           </p>
           <p className="text-[11px] text-muted-foreground/50">
-            &copy; {new Date().getFullYear()} Woke Rater. All rights reserved.
+            &copy; {new Date().getFullYear()} How Very Dare You. All rights reserved.
             Ratings are AI-generated and should be used as a guide, not a
             definitive assessment.
           </p>

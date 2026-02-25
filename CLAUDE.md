@@ -1,4 +1,4 @@
-# CLAUDE.md — Woke Rater
+# CLAUDE.md — How Very Dare You
 
 This file provides guidance to Claude Code when working with this project.
 

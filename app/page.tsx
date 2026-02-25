@@ -24,23 +24,23 @@ const HOME_JSON_LD = {
   "@graph": [
     {
       "@type": "WebSite",
-      name: "Woke Rater",
-      url: process.env.NEXT_PUBLIC_APP_URL ?? "https://woke-rater.com",
+      name: "How Very Dare You",
+      url: process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com",
       description:
         "AI-powered content advisory ratings for movies and TV shows. Cultural and ideological theme breakdowns for parents.",
       potentialAction: {
         "@type": "SearchAction",
         target: {
           "@type": "EntryPoint",
-          urlTemplate: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://woke-rater.com"}/search?q={search_term_string}`,
+          urlTemplate: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com"}/search?q={search_term_string}`,
         },
         "query-input": "required name=search_term_string",
       },
     },
     {
       "@type": "Organization",
-      name: "Woke Rater",
-      url: process.env.NEXT_PUBLIC_APP_URL ?? "https://woke-rater.com",
+      name: "How Very Dare You",
+      url: process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com",
       description:
         "Parental content advisory platform providing AI-powered cultural and ideological theme ratings for movies and TV shows.",
     },
@@ -395,7 +395,7 @@ export default function HomePage() {
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Shield className="size-4" strokeWidth={2} />
-              <span className="text-sm font-medium">Woke Rater</span>
+              <span className="text-sm font-medium">How Very Dare You</span>
             </div>
             <nav className="flex items-center gap-4">
               {["About", "Privacy", "Terms"].map((link) => (
@@ -415,7 +415,7 @@ export default function HomePage() {
               small commission at no extra cost to you.
             </p>
             <p className="text-[11px] text-muted-foreground/50">
-              &copy; {new Date().getFullYear()} Woke Rater. All rights
+              &copy; {new Date().getFullYear()} How Very Dare You. All rights
               reserved. Ratings are AI-generated and should be used as a guide,
               not a definitive assessment.
             </p>

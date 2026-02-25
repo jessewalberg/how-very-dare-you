@@ -51,7 +51,7 @@ export function Navbar() {
             <Shield className="size-4" strokeWidth={2.5} />
           </div>
           <span className="text-base font-bold tracking-tight hidden sm:inline">
-            Woke Rater
+            How Very Dare You
           </span>
         </Link>
 
@@ -145,7 +145,7 @@ export function Navbar() {
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <Shield className="size-4" strokeWidth={2.5} />
-              Woke Rater
+              How Very Dare You
             </SheetTitle>
             <SheetDescription className="sr-only">
               Navigation menu

@@ -41,7 +41,7 @@ export const createCheckoutSession = action({
             price_data: {
               currency: "usd",
               product_data: {
-                name: "Woke Rater Premium",
+                name: "How Very Dare You Premium",
                 description:
                   "Personalized weights, advanced filters, watchlist, 10 on-demand ratings/day",
               },

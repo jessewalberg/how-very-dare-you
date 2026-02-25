@@ -12,7 +12,7 @@ import {
 import { CATEGORIES, DEFAULT_WEIGHTS, SEVERITY_LEVELS } from "@/lib/constants";
 import { TitleDetail } from "@/components/title/TitleDetail";
 
-const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://woke-rater.com";
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
 
 export async function generateMetadata(props: {
   params: Promise<{ id: string }>;
@@ -105,7 +105,7 @@ function buildJsonLd(title: NonNullable<Awaited<ReturnType<typeof fetchQuery<typ
           "@type": "Review",
           author: {
             "@type": "Organization",
-            name: "Woke Rater",
+            name: "How Very Dare You",
             url: baseUrl,
           },
           reviewRating: {
