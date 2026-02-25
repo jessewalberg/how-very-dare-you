@@ -30,7 +30,11 @@ Create a new Next.js 16 project with the following setup:
 4. Install these shadcn components: bunx --bun shadcn@latest add button card badge input slider select dialog sheet skeleton tabs tooltip separator avatar dropdown-menu command toggle-group textarea form label progress
 5. Set up the font "Plus Jakarta Sans" from Google Fonts in the layout
 6. Initialize Convex: bunx convex init
-7. IMPORTANT: Append the contents of docs/CLAUDE_APPEND.md to the auto-generated CLAUDE.md file. This adds project-specific context (Convex patterns, rating system details, design system) on top of the official Next.js docs that are already there.
+7. IMPORTANT: The auto-generated CLAUDE.md uses @import syntax. Add this line at the bottom of the generated CLAUDE.md:
+   ```
+   @docs/CLAUDE_PROJECT.md
+   ```
+   Then place the CLAUDE_APPEND.md file at docs/CLAUDE_PROJECT.md. This way Claude Code reads the official Next.js docs AND your project context automatically, and you keep them cleanly separated.
 7. Create the directory structure as specified in docs/SPEC.md under "Directory Structure"
 8. Set up the ConvexClientProvider component with Clerk integration as shown in docs/skills/CONVEX_PATTERNS.md
 
@@ -632,4 +636,277 @@ Prepare for deployment:
 5. Run the seed script against production to populate initial data
 
 6. Trigger a manual batch run to verify the nightly pipeline works
+```
+
+---
+
+## Phase 7: V2 — Overstimulation Video Analysis
+
+> **Prerequisites:** V1 must be live and working. You need a Railway account ($5/mo hobby plan) and a YouTube Data API key.
+
+### Prompt 7.1 — Video Analysis Microservice (Go)
+
+```
+We're building a separate Go microservice that analyzes video for overstimulation metrics. This is NOT part of the Next.js app — it's a standalone Go HTTP service that will be deployed on Railway and called by Convex actions.
+
+Read docs/V2_VIDEO_ANALYSIS.md for the full architecture and Go code patterns. Then:
+
+1. Create a new directory called video-analysis-service/ at the project root (sibling to app/, convex/, etc.)
+2. Initialize it as a Go module:
+   - go mod init video-analysis-service
+   - No external Go dependencies needed — stdlib only (net/http, encoding/json, image, os/exec, math)
+   - External tools (installed in Docker, not Go deps): ffmpeg, ffprobe, yt-dlp
+3. Create these Go files following the patterns in docs/V2_VIDEO_ANALYSIS.md:
+   - main.go — HTTP server with POST /analyze and GET /health endpoints. Bearer token auth via API_SECRET env var.
+   - download.go — downloadVideo(url) shells out to yt-dlp to download at 480p as mp4, returns file path. cleanup() removes the temp directory.
+   - scene_cuts.go — detectSceneCuts(videoPath) shells out to ffmpeg with select='gt(scene,0.3)' filter, parses showinfo output to count cuts. getVideoDuration() via ffprobe. Returns { cutsPerMinute, avgCutDuration, totalCuts, totalDuration }.
+   - color_analysis.go — analyzeColors(videoPath) shells out to ffmpeg to extract frames at 4fps as JPEGs into a temp dir. Decodes each JPEG with Go's image package. Computes HSV saturation and brightness per frame (RGB→HSV conversion in pure Go, no CGo, no OpenCV). Tracks frame-to-frame brightness deltas for flash detection. Returns { avgSaturation, avgBrightness, maxSaturation, brightnessVariance, colorChangeRate, flashCount }.
+4. Create a multi-stage Dockerfile:
+   - Build stage: golang:1.23-bookworm, compile with CGO_ENABLED=0
+   - Runtime stage: debian:bookworm-slim, install ffmpeg + yt-dlp via apt/pip
+   - Copy the Go binary in, expose 8080
+5. Add error handling: request timeout context of 120 seconds, catch download/ffmpeg failures, return meaningful JSON error responses
+6. Add a POST /analyze-url endpoint that accepts a direct video URL (not just YouTube) for testing
+
+Test locally:
+- go run .  (with ffmpeg and yt-dlp installed locally)
+- curl -X POST http://localhost:8080/analyze -H "Authorization: Bearer test" -H "Content-Type: application/json" -d '{"video_url":"https://youtube.com/watch?v=TRAILER_ID","title":"Test","type":"movie"}'
+```
+
+### Prompt 7.2 — Deploy Video Analysis Service
+
+```
+Deploy the video-analysis-service (Go) to Railway:
+
+1. Create a Railway project and service
+2. Connect the video-analysis-service/ directory (or use Railway CLI)
+3. Set environment variables on Railway:
+   - API_SECRET=<generate a random 32-char string>
+   - PORT=8080 (Railway convention)
+4. The multi-stage Dockerfile handles everything — Railway auto-detects it. The final image is a small Debian slim with the Go binary + ffmpeg + yt-dlp.
+5. Verify the service is running by hitting the /health endpoint
+6. Test the /analyze endpoint with a YouTube trailer URL and the API_SECRET bearer token:
+   curl -X POST https://YOUR-RAILWAY-URL/analyze \
+     -H "Authorization: Bearer YOUR_API_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{"video_url":"https://youtube.com/watch?v=SOME_TRAILER","title":"Test","type":"movie"}'
+7. Note the Railway service URL (e.g., https://video-analysis-service-production-xxxx.up.railway.app)
+
+Save the Railway URL and API_SECRET — we'll need them as Convex environment variables.
+```
+
+### Prompt 7.3 — YouTube Trailer Lookup
+
+```
+Create a utility to find YouTube trailers for titles in our database.
+
+1. Create lib/youtube.ts with:
+   - searchTrailer(title, year, type) — uses YouTube Data API v3 to search for "{title} {year} official trailer"
+   - Returns the video ID of the best match (first result), or null if not found
+   - For TV shows, also try "{title} official trailer" (without year) as fallback
+   - Uses YOUTUBE_API_KEY env var
+
+2. Add YOUTUBE_API_KEY to Convex environment variables in the Convex dashboard
+
+3. Add YOUTUBE_API_KEY to the env var list in docs/SPEC.md
+
+Handle edge cases:
+- No results found → return null (title will be skipped for overstimulation rating)
+- Rate limiting → respect YouTube API quotas (10,000 units/day, search costs 100 units each = 100 searches/day max)
+```
+
+### Prompt 7.4 — Extend Schema for Overstimulation
+
+```
+Extend the Convex database schema to support the overstimulation rating. This must be a non-breaking change — all new fields are optional.
+
+1. In convex/schema.ts, add to the ratings object inside the titles table:
+   - overstimulation: v.optional(v.number()) — 0-4 severity scale
+
+2. Add a new videoAnalysis field to the titles table:
+   - youtubeVideoId: v.string()
+   - analyzedAt: v.number()
+   - cutsPerMinute: v.number()
+   - avgCutDuration: v.number()
+   - avgSaturation: v.number()
+   - avgBrightness: v.number()
+   - brightnessVariance: v.number()
+   - flashCount: v.number()
+   - trailerBiasCorrected: v.boolean()
+   Make the entire videoAnalysis object optional.
+
+3. Add overstimulation to the categoryWeights object in the users table (optional, default 5)
+
+4. Run bunx convex dev to verify schema deploys cleanly without breaking existing data
+
+Existing rated titles will simply have overstimulation as undefined until the video analysis runs for them.
+```
+
+### Prompt 7.5 — Overstimulation Rating Pipeline
+
+```
+Read docs/V2_VIDEO_ANALYSIS.md for the complete pipeline architecture. Then build:
+
+1. Add environment variables to Convex dashboard:
+   - VIDEO_ANALYSIS_SERVICE_URL (the Railway URL from Prompt 7.2)
+   - VIDEO_ANALYSIS_API_SECRET (the API_SECRET from Prompt 7.2)
+   - YOUTUBE_API_KEY
+
+2. Create convex/healthRatings.ts with:
+
+   a. analyzeOverstimulation action:
+      - Takes a titleId
+      - Looks up the title in the database
+      - Calls lib/youtube.ts to find the trailer on YouTube
+      - If no trailer found, log and skip (set overstimulation to null)
+      - Calls the video analysis service with the YouTube URL
+      - Sends the returned metrics to Claude via OpenRouter with the overstimulation prompt from docs/V2_VIDEO_ANALYSIS.md
+      - If the title is a TV show, apply the 0.7x trailer bias correction (round to nearest integer, min 0)
+      - Saves the overstimulation score and videoAnalysis metadata to the titles table
+
+   b. runOverstimulationBatch action:
+      - Queries all titles with status "rated" that don't have an overstimulation score yet
+      - Processes them one at a time (to respect YouTube API quota — max 100/day)
+      - Stops after processing 50 titles per run (cost protection)
+      - Logs progress
+
+3. Add a new cron job in convex/crons.ts:
+   - Runs daily at 4 AM UTC (after the cultural rating batch at 2 AM)
+   - Calls healthRatings.runOverstimulationBatch
+
+4. Add an on-demand option: when a user triggers an on-demand cultural rating (rateTitleOnDemand), also queue the overstimulation analysis to run after the cultural rating completes. But don't block the user — the cultural rating shows immediately, and overstimulation appears when ready.
+
+Use the exact overstimulation prompt from docs/V2_VIDEO_ANALYSIS.md for the Claude API call.
+```
+
+### Prompt 7.6 — Update Scoring Logic
+
+```
+Update the composite score calculation and constants to include overstimulation:
+
+1. lib/constants.ts:
+   - Add overstimulation to the CATEGORIES array with key, label ("Overstimulation"), description, and icon (Zap from lucide-react)
+   - Add it as a separate group: { group: "health", ... } to distinguish from cultural categories
+   - Add DEFAULT_WEIGHTS entry: overstimulation: 5
+
+2. lib/scoring.ts:
+   - Update CategoryRatings type to include overstimulation as optional
+   - Update CategoryWeights type to include overstimulation
+   - Update calculateCompositeScore to handle optional overstimulation:
+     - If overstimulation is undefined (not yet rated), exclude from calculation entirely
+     - If overstimulation is defined and weight > 0, include in both peak and average
+   - Update isNoFlags to include overstimulation when present (undefined = ignored, 0 = passes, >0 = fails)
+
+3. Make sure existing titles without overstimulation scores still calculate correctly — no regressions.
+```
+
+### Prompt 7.7 — Update UI for Overstimulation
+
+```
+Update the frontend to display the overstimulation category:
+
+1. components/rating/RatingBreakdown.tsx:
+   - Split the display into two sections: "Cultural Themes" (8 categories) and "Developmental Health" (overstimulation)
+   - Add a subtle divider/section header between them
+   - If overstimulation is undefined (not yet analyzed), show "Pending analysis" in muted text instead of a badge
+   - If overstimulation is 0, show the "None" badge same as cultural categories
+
+2. components/rating/CompositeScore.tsx:
+   - No changes needed — it already calculates from whatever categories have scores and weights
+
+3. components/title/TitleCard.tsx:
+   - No changes needed for the card — composite score handles it
+   - Optionally: add a small lightning bolt indicator on cards for titles with high overstimulation
+
+4. components/settings/WeightSliders.tsx:
+   - Add an overstimulation slider in a separate "Developmental Health" section below the 8 cultural sliders
+   - Same 0-10 range
+   - Show section header: "Developmental Health"
+
+5. app/(app)/title/[id]/page.tsx:
+   - The detail page should show the videoAnalysis metadata in a collapsible "Analysis Details" section:
+     - Cuts per minute
+     - Average scene duration
+     - Color saturation level
+     - Flash count
+   - This is interesting data parents might want to see — make it feel like a data card, not a debug dump
+
+6. app/(app)/browse/page.tsx:
+   - Add overstimulation to the filter sidebar (same pattern as cultural category thresholds)
+   - "Max Overstimulation: [None / Brief / Notable / Any]"
+
+Make sure the "Developmental Health" section is visually distinct but uses the same severity color system. It should feel like part of the same product, just a different lens.
+```
+
+### Prompt 7.8 — Seed Overstimulation Data
+
+```
+Update the seed data to include overstimulation scores for the existing test titles:
+
+| Title                    | Overstimulation | Video Analysis (approximate)              |
+|--------------------------|-----------------|------------------------------------------|
+| Paw Patrol: The Movie    | 1 (Brief)       | 14 cuts/min, moderate saturation          |
+| Cocomelon                | 3 (Significant) | 28 cuts/min, high saturation, some flash  |
+| Bluey                    | 0 (None)        | 7 cuts/min, natural colors                |
+| Super Mario Bros Movie   | 2 (Notable)     | 18 cuts/min, bright vivid colors          |
+| Frozen II                | 1 (Brief)       | 12 cuts/min, natural palette              |
+| Lightyear                | 1 (Brief)       | 15 cuts/min, moderate                     |
+| Strange World            | 2 (Notable)     | 16 cuts/min, highly saturated alien world |
+| Turning Red              | 1 (Brief)       | 13 cuts/min, moderate                     |
+| Elemental                | 1 (Brief)       | 11 cuts/min, bright but steady            |
+| Wish                     | 1 (Brief)       | 12 cuts/min, standard Disney              |
+
+Also add videoAnalysis metadata with plausible numbers matching the scores above. These don't need to be real measurements — they're for testing the UI display.
+```
+
+### Prompt 7.9 — Test Complete V2 Flow
+
+```
+Test the entire overstimulation pipeline end-to-end:
+
+1. Verify the video analysis service is healthy: curl the /health endpoint
+2. Test with a real trailer:
+   - Pick a well-known kids title (e.g., Cocomelon)
+   - Call the /analyze endpoint directly with its YouTube trailer URL
+   - Verify the returned metrics look reasonable (Cocomelon should show high cuts/min and saturation)
+3. Test the Convex pipeline:
+   - Add a test title that doesn't have an overstimulation score
+   - Call analyzeOverstimulation action manually from the Convex dashboard
+   - Verify the overstimulation score appears in the database
+   - Verify the videoAnalysis metadata is saved
+4. Test the UI:
+   - View a title that has overstimulation data — verify it shows in the "Developmental Health" section
+   - View a title without overstimulation data — verify it shows "Pending analysis"
+   - Adjust the overstimulation weight slider — verify the composite score changes
+   - Test the browse filter for overstimulation threshold
+5. Test the batch pipeline:
+   - Trigger runOverstimulationBatch manually
+   - Verify it processes titles and stops at the 50-title limit
+6. Test edge cases:
+   - Title with no trailer on YouTube → should skip gracefully
+   - Video analysis service is down → should fail gracefully, not crash the rating pipeline
+   - TV show trailer bias correction → verify the 0.7x multiplier is applied
+
+Fix any issues found during testing.
+```
+
+### Prompt 7.10 — Deploy V2
+
+```
+Deploy the V2 overstimulation feature to production:
+
+1. Ensure the video analysis service is deployed and stable on Railway (Prompt 7.2)
+2. Add the new environment variables to the Convex production dashboard:
+   - VIDEO_ANALYSIS_SERVICE_URL
+   - VIDEO_ANALYSIS_API_SECRET
+   - YOUTUBE_API_KEY
+3. Run bunx convex deploy to push the updated schema and functions
+4. Deploy the updated Next.js app to Vercel (should auto-deploy if connected to GitHub)
+5. Verify:
+   - Existing titles still display correctly (no regressions)
+   - New "Developmental Health" section appears on title detail pages
+   - Overstimulation weight slider appears in settings
+   - The overstimulation batch cron job is scheduled
+6. Trigger the overstimulation batch manually to start analyzing the existing catalog
+7. Monitor the first batch run — check costs, errors, and YouTube API quota usage
 ```

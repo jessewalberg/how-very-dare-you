@@ -11,7 +11,8 @@ This is a complete build kit for a parental content advisory web application. It
 | `SPEC.md` | Complete technical specification — every product decision, database schema, architecture, costs |
 | `AI_RATING_RUBRIC.md` | The AI prompt and rubric used to rate movies/shows across 8 categories |
 | `PROMPTS.md` | **Start here for building.** Step-by-step prompts to give Claude Code, in order |
-| `CLAUDE_APPEND.md` | Project-specific context — append this to the auto-generated CLAUDE.md that `create-next-app` creates |
+| `CLAUDE_APPEND.md` | Project-specific context — append to the auto-generated CLAUDE.md |
+| `V2_VIDEO_ANALYSIS.md` | V2 architecture — Go video analysis microservice for overstimulation detection |
 | `skills/CONVEX_PATTERNS.md` | Convex patterns for this project (supplements official docs at docs.convex.dev) |
 | `skills/REACT_NEXTJS_PATTERNS.md` | React component patterns for this project (supplements official Next.js bundled docs) |
 | `skills/PROJECT_DESIGN.md` | UI design guide — color system, typography, component wireframes, responsive rules |
@@ -20,7 +21,7 @@ This is a complete build kit for a parental content advisory web application. It
 
 1. Read `SPEC.md` to understand what you're building
 2. Copy all `.md` files and the `skills/` folder into a `docs/` folder in your project root
-3. After running `create-next-app` (Prompt 1.1), append `CLAUDE_APPEND.md` to the auto-generated `CLAUDE.md` — this gives Claude Code both official Next.js docs AND your project-specific context
+3. After running `create-next-app` (Prompt 1.1), add `@docs/CLAUDE_PROJECT.md` to the bottom of the auto-generated `CLAUDE.md`, and place `CLAUDE_APPEND.md` at `docs/CLAUDE_PROJECT.md`. This gives Claude Code both the official Next.js docs AND your project context via import.
 4. Open `PROMPTS.md` and follow the prompts in order, giving each one to Claude Code
 5. Each prompt is a focused task — complete it before moving to the next
 
@@ -34,6 +35,7 @@ This is a complete build kit for a parental content advisory web application. It
 | **4. Backend** | Convex functions, API clients, AI pipeline, payments | 4.1 – 4.6 |
 | **5. Integration** | Wire everything, seed data, polish | 5.1 – 5.4 |
 | **6. Deployment** | Deploy to Vercel + Convex production | 6.1 |
+| **7. V2 — Overstimulation** | Video analysis service, schema extension, UI updates | 7.1 – 7.10 |
 
 ### Tech Stack Summary
 
@@ -56,6 +58,10 @@ Before starting, you'll need accounts/API keys for:
 - [ ] OpenRouter (for Claude API access)
 - [ ] OpenSubtitles (free API key)
 - [ ] Vercel (free tier)
+
+**V2 Additional:**
+- [ ] Railway ($5/mo hobby plan — for video analysis service)
+- [ ] YouTube Data API key (free, 10k units/day)
 
 ### Still To Decide
 

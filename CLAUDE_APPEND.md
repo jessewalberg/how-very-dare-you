@@ -33,6 +33,7 @@ Use `bun` for everything. `bun add` for installs, `bunx` for CLI tools, `bunx --
 Read these files in `docs/` for project-specific architecture and patterns:
 - `docs/SPEC.md` — Full technical specification
 - `docs/AI_RATING_RUBRIC.md` — AI prompt and rating rubric
+- `docs/V2_VIDEO_ANALYSIS.md` — V2 overstimulation video analysis architecture (Go microservice)
 - `docs/skills/CONVEX_PATTERNS.md` — Convex patterns for this project
 - `docs/skills/REACT_NEXTJS_PATTERNS.md` — React component patterns for this project
 - `docs/skills/PROJECT_DESIGN.md` — UI design system (colors, typography, components)

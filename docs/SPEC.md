@@ -149,6 +149,24 @@ composite = peak_weighted_score * 0.6 + average_weighted_scores * 0.4
 - Community features (user reviews, "parent verified" badges)
 - Tiered AI model approach (Haiku for screening, Sonnet for detailed ratings)
 
+### V2: Developmental Health Category
+
+A second rating axis covering content that could affect kids' psychological development. Uses the same 0–4 severity scale. Rated via automated video analysis (no vision AI — pure computed metrics from video frames).
+
+| # | Category | Description |
+|---|----------|-------------|
+| 9 | **Overstimulation** | Fast cuts, flashing colors, rapid-fire editing, no sustained attention required. Patterns linked to attention issues in young children. Measured automatically via scene cut detection, color saturation analysis, and brightness variance. |
+
+**Implementation notes:**
+- Same 0–4 scale (None → Brief → Notable → Significant → Core Theme)
+- Added as an optional field on the existing `ratings` object in the `titles` table (non-breaking schema change)
+- Displayed as a separate "Developmental Health" section below the "Cultural Themes" section on the detail page
+- Included in the composite score calculation if user has weight set for it
+- Requires a lightweight Go video analysis microservice (Go + FFmpeg + yt-dlp) on Railway
+- Analyzes YouTube trailers + clips, no streaming access needed
+- User weights object extends with 1 new key (default weight 5)
+- See `V2_VIDEO_ANALYSIS.md` for complete architecture
+
 ---
 
 ## Convex Database Schema
