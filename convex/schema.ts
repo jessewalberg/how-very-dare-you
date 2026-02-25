@@ -39,6 +39,23 @@ export default defineSchema({
         religious: v.number(),
         political: v.number(),
         sexuality: v.number(),
+        // V2: Developmental health
+        overstimulation: v.optional(v.number()),
+      })
+    ),
+
+    // V2: Video analysis metadata
+    videoAnalysis: v.optional(
+      v.object({
+        youtubeVideoId: v.string(),
+        analyzedAt: v.number(),
+        cutsPerMinute: v.number(),
+        avgCutDuration: v.number(),
+        avgSaturation: v.number(),
+        avgBrightness: v.number(),
+        brightnessVariance: v.number(),
+        flashCount: v.number(),
+        trailerBiasCorrected: v.boolean(),
       })
     ),
 
@@ -105,6 +122,8 @@ export default defineSchema({
         religious: v.number(),
         political: v.number(),
         sexuality: v.number(),
+        // V2: Developmental health
+        overstimulation: v.optional(v.number()),
       })
     ),
 

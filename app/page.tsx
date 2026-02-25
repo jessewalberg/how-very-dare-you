@@ -9,7 +9,6 @@ import {
   Sparkles,
   ArrowRight,
   Check,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LandingSampleCards } from "@/components/landing/LandingSampleCards";

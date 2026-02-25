@@ -7,6 +7,7 @@ import {
   Church,
   Megaphone,
   AlertTriangle,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,13 +19,17 @@ export type CategoryKey =
   | "antiAuthority"
   | "religious"
   | "political"
-  | "sexuality";
+  | "sexuality"
+  | "overstimulation";
+
+export type CategoryGroup = "cultural" | "health";
 
 export interface Category {
   key: CategoryKey;
   label: string;
   description: string;
   icon: LucideIcon;
+  group: CategoryGroup;
 }
 
 export const CATEGORIES: Category[] = [
@@ -34,6 +39,7 @@ export const CATEGORIES: Category[] = [
     description:
       "Same-sex relationships, gender identity, transition storylines",
     icon: Heart,
+    group: "cultural",
   },
   {
     key: "climate",
@@ -41,6 +47,7 @@ export const CATEGORIES: Category[] = [
     description:
       'Climate activism, anti-industry messaging, "save the planet" storylines',
     icon: Leaf,
+    group: "cultural",
   },
   {
     key: "racialIdentity",
@@ -48,6 +55,7 @@ export const CATEGORIES: Category[] = [
     description:
       "Race-focused narratives, privilege themes, revisionist takes",
     icon: Users,
+    group: "cultural",
   },
   {
     key: "genderRoles",
@@ -55,6 +63,7 @@ export const CATEGORIES: Category[] = [
     description:
       'Mocking traditional roles, "girl boss" tropes, "dads are dumb"',
     icon: UserCog,
+    group: "cultural",
   },
   {
     key: "antiAuthority",
@@ -62,6 +71,7 @@ export const CATEGORIES: Category[] = [
     description:
       "Parents portrayed negatively, institutions mocked, rebellion glorified",
     icon: ShieldOff,
+    group: "cultural",
   },
   {
     key: "religious",
@@ -69,6 +79,7 @@ export const CATEGORIES: Category[] = [
     description:
       "Faith mocked, anti-religious messaging, occult/new-age normalized",
     icon: Church,
+    group: "cultural",
   },
   {
     key: "political",
@@ -76,6 +87,7 @@ export const CATEGORIES: Category[] = [
     description:
       "Overt left/right political themes, activist storylines",
     icon: Megaphone,
+    group: "cultural",
   },
   {
     key: "sexuality",
@@ -83,6 +95,15 @@ export const CATEGORIES: Category[] = [
     description:
       "Sexualization, poorly-handled puberty themes, mature romantic content for young audiences",
     icon: AlertTriangle,
+    group: "cultural",
+  },
+  {
+    key: "overstimulation",
+    label: "Overstimulation",
+    description:
+      "Rapid cuts, flashing colors, hyperstimulating visual pacing designed to hijack attention",
+    icon: Zap,
+    group: "health",
   },
 ] as const;
 
@@ -137,6 +158,7 @@ export const DEFAULT_WEIGHTS: Record<CategoryKey, number> = {
   religious: 5,
   political: 5,
   sexuality: 5,
+  overstimulation: 5,
 };
 
 export const RATE_LIMITS = {

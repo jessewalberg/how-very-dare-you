@@ -617,6 +617,16 @@ export const rateTitleOnDemand = action({
         tmdbId: args.tmdbId,
         status: "completed",
       });
+
+      // Queue overstimulation analysis (non-blocking — runs after cultural rating)
+      const ratedTitle = await ctx.runQuery(api.titles.getTitleByTmdbId, {
+        tmdbId: args.tmdbId,
+      });
+      if (ratedTitle && !ratedTitle.videoAnalysis) {
+        await ctx.scheduler.runAfter(0, api.healthRatings.analyzeOverstimulation, {
+          titleId: ratedTitle._id,
+        });
+      }
     } catch (e) {
       // On failure, mark queue item as failed
       const errorMsg = e instanceof Error ? e.message : String(e);
@@ -860,6 +870,7 @@ export const searchTMDB = action({
 
     // Sort by popularity descending, return top 12
     results.sort((a, b) => b.popularity - a.popularity);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     return results.slice(0, 12).map(({ popularity, ...rest }) => rest);
   },
 });

@@ -22,6 +22,7 @@ func downloadVideo(ctx context.Context, videoURL string) (string, error) {
 		"-o", outputTemplate,
 		"--no-playlist",
 		"--merge-output-format", "mp4",
+		"--extractor-args", "youtube:player_client=mediaconnect",
 		videoURL,
 	)
 	cmd.Stderr = os.Stderr

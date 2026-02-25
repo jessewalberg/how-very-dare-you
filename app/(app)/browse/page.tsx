@@ -5,8 +5,6 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { FilterSidebar } from "@/components/browse/FilterSidebar";
 import { TitleGrid } from "@/components/browse/TitleGrid";
-import type { CategoryRatings } from "@/lib/scoring";
-import { isNoFlags } from "@/lib/scoring";
 
 export default function BrowsePage() {
   const searchParams = useSearchParams();

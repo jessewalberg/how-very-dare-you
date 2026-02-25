@@ -167,6 +167,11 @@ A second rating axis covering content that could affect kids' psychological deve
 - User weights object extends with 1 new key (default weight 5)
 - See `V2_VIDEO_ANALYSIS.md` for complete architecture
 
+**Required environment variables (Convex):**
+- `YOUTUBE_API_KEY` — YouTube Data API v3 key (for trailer lookup)
+- `VIDEO_ANALYSIS_SERVICE_URL` — Railway URL for the Go video analysis service
+- `VIDEO_ANALYSIS_API_SECRET` — Shared secret for authenticating with the video analysis service
+
 ---
 
 ## Convex Database Schema

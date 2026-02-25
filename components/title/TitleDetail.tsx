@@ -12,6 +12,11 @@ import {
   Bookmark,
   MessageSquarePlus,
   ArrowLeft,
+  ChevronDown,
+  Zap,
+  Scissors,
+  Palette,
+  Sun,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/convex/_generated/api";
@@ -52,7 +57,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const removeFromWatchlist = useMutation(api.users.removeFromWatchlist);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
 
-  const isInWatchlist = profile?.watchlist?.includes(title?._id!) ?? false;
+  const isInWatchlist = (title && profile?.watchlist?.includes(title._id)) ?? false;
   const isPaid = profile?.tier === "paid";
 
   if (!title) {
@@ -234,6 +239,9 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               </>
             )}
 
+          {/* Video Analysis Details */}
+          {title.videoAnalysis && <VideoAnalysisCard analysis={title.videoAnalysis} />}
+
           {/* Rating metadata */}
           {title.ratedAt && (
             <p className="text-[11px] text-muted-foreground/50">
@@ -331,6 +339,133 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
             </div>
           </SheetContent>
         </Sheet>
+      )}
+    </div>
+  );
+}
+
+function VideoAnalysisCard({
+  analysis,
+}: {
+  analysis: {
+    cutsPerMinute: number;
+    avgCutDuration: number;
+    avgSaturation: number;
+    avgBrightness: number;
+    brightnessVariance: number;
+    flashCount: number;
+    trailerBiasCorrected: boolean;
+    analyzedAt: number;
+  };
+}) {
+  const [open, setOpen] = useState(false);
+
+  const stats = [
+    {
+      icon: Scissors,
+      label: "Cuts per minute",
+      value: analysis.cutsPerMinute.toFixed(1),
+      detail:
+        analysis.cutsPerMinute < 10
+          ? "Gentle pacing"
+          : analysis.cutsPerMinute < 20
+            ? "Moderate pacing"
+            : "Rapid editing",
+    },
+    {
+      icon: Clock,
+      label: "Avg scene duration",
+      value: `${analysis.avgCutDuration.toFixed(1)}s`,
+      detail:
+        analysis.avgCutDuration > 6
+          ? "Long, calm scenes"
+          : analysis.avgCutDuration > 3
+            ? "Moderate scenes"
+            : "Very short scenes",
+    },
+    {
+      icon: Palette,
+      label: "Color saturation",
+      value: `${Math.round(analysis.avgSaturation)}/255`,
+      detail:
+        analysis.avgSaturation < 80
+          ? "Muted, natural colors"
+          : analysis.avgSaturation < 150
+            ? "Moderate colors"
+            : "Highly saturated",
+    },
+    {
+      icon: Sun,
+      label: "Flash count",
+      value: String(analysis.flashCount),
+      detail:
+        analysis.flashCount === 0
+          ? "No flashing"
+          : analysis.flashCount < 5
+            ? "Occasional flashes"
+            : "Frequent flashing",
+    },
+  ];
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/20">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-muted/30 rounded-xl"
+      >
+        <div className="flex items-center gap-2">
+          <Zap className="size-3.5 text-muted-foreground" strokeWidth={1.8} />
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Video Analysis Details
+          </span>
+        </div>
+        <ChevronDown
+          className={cn(
+            "size-4 text-muted-foreground transition-transform duration-200",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+
+      {open && (
+        <div className="border-t border-border/30 px-4 pb-4 pt-3 space-y-3 animate-fade-in-up">
+          <div className="grid grid-cols-2 gap-3">
+            {stats.map((stat) => {
+              const Icon = stat.icon;
+              return (
+                <div
+                  key={stat.label}
+                  className="rounded-lg bg-background/60 border border-border/30 p-3 space-y-1"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Icon className="size-3 text-muted-foreground" strokeWidth={1.8} />
+                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                      {stat.label}
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold tabular-nums tracking-tight">
+                    {stat.value}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">{stat.detail}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-3 text-[10px] text-muted-foreground/60 pt-1">
+            {analysis.trailerBiasCorrected && (
+              <span>Score adjusted for trailer bias (TV show)</span>
+            )}
+            <span>
+              Analyzed{" "}
+              {new Date(analysis.analyzedAt).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </span>
+          </div>
+        </div>
       )}
     </div>
   );

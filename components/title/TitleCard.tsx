@@ -11,6 +11,7 @@ import {
 import { CompositeScore } from "@/components/rating/CompositeScore";
 import { NoFlagsBadge } from "@/components/rating/NoFlagsBadge";
 import { Badge } from "@/components/ui/badge";
+import { Zap } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 
 interface StreamingProvider {
@@ -145,6 +146,14 @@ export function TitleCard({
               {status === "rating" ? "Rating..." : "Pending"}
             </Badge>
           ) : null}
+          {ratings?.overstimulation != null && ratings.overstimulation >= 3 && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded-sm bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-700"
+              title={`Overstimulation: ${ratings.overstimulation}/4`}
+            >
+              <Zap className="size-2.5" />
+            </span>
+          )}
         </div>
 
         {/* Streaming providers */}

@@ -20,7 +20,10 @@ import {
   SheetDescription,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { CATEGORIES, SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
+import { CATEGORIES } from "@/lib/constants";
+
+const culturalCategories = CATEGORIES.filter((c) => c.group === "cultural");
+const healthCategories = CATEGORIES.filter((c) => c.group === "health");
 
 const CONTENT_TYPES = [
   { value: "", label: "All" },
@@ -235,8 +238,53 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
             </Badge>
           )}
         </div>
+
+        {/* Cultural Themes */}
+        <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/60 pt-1">
+          Cultural Themes
+        </p>
         <div className="space-y-1.5">
-          {CATEGORIES.map((category) => {
+          {culturalCategories.map((category) => {
+            const paramKey = `max_${category.key}`;
+            const currentVal = searchParams.get(paramKey) ?? "";
+            return (
+              <div
+                key={category.key}
+                className={cn(
+                  "flex items-center justify-between gap-2",
+                  !isPaid && "opacity-50 pointer-events-none"
+                )}
+              >
+                <span className="text-xs text-muted-foreground truncate">
+                  {category.label}
+                </span>
+                <select
+                  value={currentVal}
+                  onChange={(e) => updateParam(paramKey, e.target.value)}
+                  disabled={!isPaid}
+                  className={cn(
+                    "h-7 rounded-md border bg-transparent px-2 text-[11px] font-medium text-muted-foreground",
+                    "focus:outline-none focus:ring-1 focus:ring-ring",
+                    "disabled:cursor-not-allowed"
+                  )}
+                >
+                  {THRESHOLD_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Developmental Health */}
+        <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/60 pt-2 border-t border-border/30">
+          Developmental Health
+        </p>
+        <div className="space-y-1.5">
+          {healthCategories.map((category) => {
             const paramKey = `max_${category.key}`;
             const currentVal = searchParams.get(paramKey) ?? "";
             return (

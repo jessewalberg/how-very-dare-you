@@ -139,6 +139,7 @@ export const updateCategoryWeights = mutation({
       religious: v.number(),
       political: v.number(),
       sexuality: v.number(),
+      overstimulation: v.number(),
     }),
   },
   handler: async (ctx, args) => {

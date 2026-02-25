@@ -21,13 +21,62 @@ const SAMPLE_RATINGS: CategoryRatings = {
   religious: 0,
   political: 2,
   sexuality: 1,
+  overstimulation: 2,
 };
+
+const culturalCategories = CATEGORIES.filter((c) => c.group === "cultural");
+const healthCategories = CATEGORIES.filter((c) => c.group === "health");
 
 type Weights = Record<CategoryKey, number>;
 
 interface WeightSlidersProps {
   isPaid: boolean;
   currentWeights?: Weights;
+}
+
+function SliderRow({
+  category,
+  value,
+  onChange,
+  disabled,
+}: {
+  category: (typeof CATEGORIES)[number];
+  value: number;
+  onChange: (key: CategoryKey, value: number[]) => void;
+  disabled: boolean;
+}) {
+  const Icon = category.icon;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Icon
+            className="size-4 text-muted-foreground"
+            strokeWidth={1.8}
+          />
+          <span className="text-sm font-medium">{category.label}</span>
+        </div>
+        <span
+          className={cn(
+            "text-sm font-bold tabular-nums w-8 text-right",
+            value === 0
+              ? "text-muted-foreground/50"
+              : "text-foreground"
+          )}
+        >
+          {value}
+        </span>
+      </div>
+      <Slider
+        value={[value]}
+        onValueChange={(v) => onChange(category.key, v)}
+        min={0}
+        max={10}
+        step={1}
+        disabled={disabled}
+      />
+    </div>
+  );
 }
 
 export function WeightSliders({ isPaid, currentWeights }: WeightSlidersProps) {
@@ -127,41 +176,35 @@ export function WeightSliders({ isPaid, currentWeights }: WeightSlidersProps) {
           !isPaid && "opacity-50 pointer-events-none select-none"
         )}
       >
-        {CATEGORIES.map((category) => {
-          const Icon = category.icon;
-          const val = weights[category.key];
-          return (
-            <div key={category.key} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Icon
-                    className="size-4 text-muted-foreground"
-                    strokeWidth={1.8}
-                  />
-                  <span className="text-sm font-medium">{category.label}</span>
-                </div>
-                <span
-                  className={cn(
-                    "text-sm font-bold tabular-nums w-8 text-right",
-                    val === 0
-                      ? "text-muted-foreground/50"
-                      : "text-foreground"
-                  )}
-                >
-                  {val}
-                </span>
-              </div>
-              <Slider
-                value={[val]}
-                onValueChange={(v) => handleChange(category.key, v)}
-                min={0}
-                max={10}
-                step={1}
-                disabled={!isPaid}
-              />
-            </div>
-          );
-        })}
+        {/* Cultural Themes */}
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Cultural Themes
+        </p>
+        {culturalCategories.map((category) => (
+          <SliderRow
+            key={category.key}
+            category={category}
+            value={weights[category.key]}
+            onChange={handleChange}
+            disabled={!isPaid}
+          />
+        ))}
+
+        {/* Developmental Health */}
+        <div className="border-t border-border/40 pt-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-5">
+            Developmental Health
+          </p>
+          {healthCategories.map((category) => (
+            <SliderRow
+              key={category.key}
+              category={category}
+              value={weights[category.key]}
+              onChange={handleChange}
+              disabled={!isPaid}
+            />
+          ))}
+        </div>
 
         <Button
           variant="outline"

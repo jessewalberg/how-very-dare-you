@@ -29,4 +29,12 @@ const crons = cronJobs();
 //   api.titles.refreshStreamingAvailability
 // );
 
+// 4. Overstimulation batch — 4 AM UTC daily (after cultural ratings at 2 AM)
+//    Analyzes trailers via video analysis service + AI for overstimulation scores.
+// crons.daily(
+//   "overstimulation-batch",
+//   { hourUTC: 4, minuteUTC: 0 },
+//   api.healthRatings.runOverstimulationBatch
+// );
+
 export default crons;

@@ -1,0 +1,257 @@
+import { action, internalMutation, internalQuery } from "./_generated/server";
+import { v } from "convex/values";
+import { api, internal } from "./_generated/api";
+import { searchTrailer } from "../lib/youtube";
+import { chatCompletion, parseJSONResponse } from "../lib/openrouter";
+
+// ── Overstimulation Prompt ───────────────────────────────
+
+function constructOverstimPrompt(title: {
+  title: string;
+  type: "movie" | "tv" | "youtube";
+  year: number;
+  ageRating?: string;
+}, metrics: VideoAnalysisMetrics): string {
+  return `You are rating a ${title.type === "tv" ? "TV show" : "movie"} called "${title.title}" (${title.year}) for overstimulation level.
+
+Here are the measured video metrics:
+- Cuts per minute: ${metrics.cuts_per_minute}
+- Average cut duration: ${metrics.avg_cut_duration_seconds} seconds
+- Average color saturation: ${metrics.avg_saturation}/255
+- Brightness variance: ${metrics.brightness_variance}
+- Color change rate (avg frame-to-frame delta): ${metrics.color_change_rate}
+- Flash count (significant brightness jumps): ${metrics.flash_count}
+- Total video duration analyzed: ${metrics.total_duration_seconds} seconds
+
+For reference, here are typical ranges for kids content:
+- Slow-paced shows (Bluey, Daniel Tiger): 5-10 cuts/min, avg 6-12 sec per scene
+- Moderate shows (Paw Patrol, Peppa Pig): 10-18 cuts/min, avg 3-6 sec per scene
+- Fast-paced shows (Cocomelon, YouTube kids): 20-40+ cuts/min, avg 1.5-3 sec per scene
+
+Also consider the target age rating: ${title.ageRating ?? "Unknown"}
+Content aimed at younger children (TV-Y, G) should be judged more strictly.
+
+Rate overstimulation on this scale:
+- 0 None: Gentle pacing, natural colors, long scenes. Suitable visual rhythm for the target age.
+- 1 Brief: Mostly calm with occasional faster sequences.
+- 2 Notable: Moderately fast editing or saturated colors throughout. Noticeable stimulation.
+- 3 Significant: Rapid cuts, highly saturated/bright colors, frequent visual changes. Designed to capture and hold attention through stimulation.
+- 4 Core Theme: Extremely rapid editing, constant flashing/movement, hyperstimulating. The visual style IS the content strategy.
+
+Respond with JSON only:
+{
+  "severity": <0-4>,
+  "confidence": <0.0-1.0>,
+  "note": "<1-2 sentence explanation citing specific metrics>"
+}`;
+}
+
+// ── Types ────────────────────────────────────────────────
+
+interface VideoAnalysisMetrics {
+  cuts_per_minute: number;
+  avg_cut_duration_seconds: number;
+  total_cuts: number;
+  total_duration_seconds: number;
+  avg_saturation: number;
+  avg_brightness: number;
+  max_saturation: number;
+  brightness_variance: number;
+  color_change_rate: number;
+  flash_count: number;
+}
+
+interface OverstimResult {
+  severity: number;
+  confidence: number;
+  note: string;
+}
+
+// ── Actions ──────────────────────────────────────────────
+
+/** Analyze a single title for overstimulation via video analysis pipeline. */
+export const analyzeOverstimulation = action({
+  args: { titleId: v.id("titles") },
+  handler: async (ctx, args): Promise<void> => {
+    const title = await ctx.runQuery(api.titles.getTitle, { titleId: args.titleId });
+    if (!title) throw new Error("Title not found");
+
+    const serviceUrl = process.env.VIDEO_ANALYSIS_SERVICE_URL;
+    const apiSecret = process.env.VIDEO_ANALYSIS_API_SECRET;
+    const openRouterKey = process.env.OPENROUTER_API_KEY!;
+
+    if (!serviceUrl || !apiSecret) {
+      throw new Error("VIDEO_ANALYSIS_SERVICE_URL or VIDEO_ANALYSIS_API_SECRET not set");
+    }
+
+    // 1. Find trailer on YouTube
+    const videoId = await searchTrailer(title.title, title.year, title.type as "movie" | "tv");
+    if (!videoId) {
+      console.log(`[Overstim] No trailer found for "${title.title}" — skipping`);
+      return;
+    }
+
+    console.log(`[Overstim] Found trailer ${videoId} for "${title.title}"`);
+
+    // 2. Call video analysis service
+    const videoUrl = `https://youtube.com/watch?v=${videoId}`;
+    const analysisRes = await fetch(`${serviceUrl}/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiSecret}`,
+      },
+      body: JSON.stringify({
+        video_url: videoUrl,
+        title: title.title,
+        type: title.type,
+      }),
+    });
+
+    if (!analysisRes.ok) {
+      const errBody = await analysisRes.text();
+      throw new Error(`Video analysis service error ${analysisRes.status}: ${errBody}`);
+    }
+
+    const metrics: VideoAnalysisMetrics = await analysisRes.json();
+    console.log(`[Overstim] Metrics for "${title.title}":`, JSON.stringify(metrics));
+
+    // 3. Send metrics to Claude via OpenRouter for overstim rating
+    const completion = await chatCompletion(
+      "You are a developmental health content analyst. Rate video overstimulation based on measured metrics. Respond with JSON only.",
+      constructOverstimPrompt(title, metrics),
+      openRouterKey,
+      { temperature: 0.3, maxTokens: 512 }
+    );
+
+    const result = parseJSONResponse<OverstimResult>(completion.content);
+
+    // Validate
+    if (typeof result.severity !== "number" || result.severity < 0 || result.severity > 4 || !Number.isInteger(result.severity)) {
+      throw new Error(`Invalid overstimulation severity: ${result.severity}`);
+    }
+
+    // 4. Apply trailer bias correction for TV shows
+    let severity = result.severity;
+    if (title.type === "tv") {
+      severity = Math.max(0, Math.round(severity * 0.7));
+      console.log(`[Overstim] TV bias correction: ${result.severity} → ${severity}`);
+    }
+
+    // 5. Save to database
+    await ctx.runMutation(internal.healthRatings.saveOverstimulation, {
+      titleId: args.titleId,
+      overstimulation: severity,
+      videoAnalysis: {
+        youtubeVideoId: videoId,
+        analyzedAt: Date.now(),
+        cutsPerMinute: metrics.cuts_per_minute,
+        avgCutDuration: metrics.avg_cut_duration_seconds,
+        avgSaturation: metrics.avg_saturation,
+        avgBrightness: metrics.avg_brightness,
+        brightnessVariance: metrics.brightness_variance,
+        flashCount: metrics.flash_count,
+        trailerBiasCorrected: title.type === "tv",
+      },
+    });
+
+    console.log(`[Overstim] Saved score ${severity} for "${title.title}"`);
+  },
+});
+
+/** Batch: process rated titles that don't have overstimulation scores yet. */
+export const runOverstimulationBatch = action({
+  args: {},
+  handler: async (ctx): Promise<void> => {
+    console.log("[OverstimBatch] Starting...");
+
+    const titles = await ctx.runQuery(internal.healthRatings.getTitlesNeedingOverstim, {});
+
+    if (titles.length === 0) {
+      console.log("[OverstimBatch] No titles need overstimulation analysis");
+      return;
+    }
+
+    console.log(`[OverstimBatch] Found ${titles.length} titles needing analysis (processing max 50)`);
+
+    let processed = 0;
+    let failed = 0;
+
+    for (const title of titles.slice(0, 50)) {
+      try {
+        await ctx.runAction(api.healthRatings.analyzeOverstimulation, {
+          titleId: title._id,
+        });
+        processed++;
+        console.log(`[OverstimBatch] ✓ ${title.title} (${processed}/${Math.min(titles.length, 50)})`);
+      } catch (e) {
+        failed++;
+        console.error(`[OverstimBatch] ✗ ${title.title}:`, e instanceof Error ? e.message : e);
+      }
+    }
+
+    console.log(`[OverstimBatch] Done. Processed: ${processed}, Failed: ${failed}`);
+  },
+});
+
+// ── Internal Mutations ───────────────────────────────────
+
+export const saveOverstimulation = internalMutation({
+  args: {
+    titleId: v.id("titles"),
+    overstimulation: v.number(),
+    videoAnalysis: v.object({
+      youtubeVideoId: v.string(),
+      analyzedAt: v.number(),
+      cutsPerMinute: v.number(),
+      avgCutDuration: v.number(),
+      avgSaturation: v.number(),
+      avgBrightness: v.number(),
+      brightnessVariance: v.number(),
+      flashCount: v.number(),
+      trailerBiasCorrected: v.boolean(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const title = await ctx.db.get(args.titleId);
+    if (!title) throw new Error("Title not found");
+
+    // Merge overstimulation into existing ratings
+    const existingRatings = title.ratings;
+    if (existingRatings) {
+      await ctx.db.patch(args.titleId, {
+        ratings: {
+          ...existingRatings,
+          overstimulation: args.overstimulation,
+        },
+        videoAnalysis: args.videoAnalysis,
+      });
+    } else {
+      // Title has no cultural ratings yet — just save video analysis metadata
+      await ctx.db.patch(args.titleId, {
+        videoAnalysis: args.videoAnalysis,
+      });
+    }
+  },
+});
+
+/** Find rated titles that don't have an overstimulation score yet. */
+export const getTitlesNeedingOverstim = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const titles = await ctx.db
+      .query("titles")
+      .withIndex("by_status", (q) => q.eq("status", "rated"))
+      .collect();
+
+    return titles.filter((t) => {
+      // Skip if already has video analysis
+      if (t.videoAnalysis) return false;
+      // Only process titles that have cultural ratings
+      if (!t.ratings) return false;
+      // Skip if overstimulation already set
+      if (t.ratings.overstimulation !== undefined) return false;
+      return true;
+    });
+  },
+});
