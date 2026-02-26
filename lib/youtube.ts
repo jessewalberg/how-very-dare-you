@@ -41,6 +41,49 @@ export async function searchTrailer(
   return null;
 }
 
+/**
+ * Search YouTube for full episode clips of a TV show.
+ * Uses "long" video duration filter to find actual episode content.
+ * Returns array of video IDs (up to maxResults).
+ */
+export async function searchEpisodeClips(
+  title: string,
+  maxResults = 2
+): Promise<string[]> {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) {
+    throw new Error("YOUTUBE_API_KEY environment variable is not set");
+  }
+
+  const params = new URLSearchParams({
+    part: "snippet",
+    q: `${title} full episode`,
+    type: "video",
+    videoDuration: "long",
+    maxResults: String(maxResults),
+    key: apiKey,
+  });
+
+  const response = await fetch(`${YOUTUBE_API_BASE}/search?${params}`);
+
+  if (!response.ok) {
+    if (response.status === 403) {
+      console.error("YouTube API quota exceeded or key invalid");
+      return [];
+    }
+    console.error(`YouTube API error: ${response.status} ${response.statusText}`);
+    return [];
+  }
+
+  const data: YouTubeSearchResponse = await response.json();
+
+  if (!data.items || data.items.length === 0) {
+    return [];
+  }
+
+  return data.items.map((item) => item.id.videoId);
+}
+
 async function searchYouTube(
   query: string,
   apiKey: string

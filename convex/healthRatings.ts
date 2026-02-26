@@ -1,7 +1,7 @@
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
-import { searchTrailer } from "../lib/youtube";
+import { searchTrailer, searchEpisodeClips } from "../lib/youtube";
 import { chatCompletion, parseJSONResponse } from "../lib/openrouter";
 
 // ── Overstimulation Prompt ───────────────────────────────
@@ -67,6 +67,56 @@ interface OverstimResult {
   note: string;
 }
 
+// ── Helpers ──────────────────────────────────────────────
+
+/** Call the Go video analysis service for a single YouTube video. */
+async function analyzeVideo(
+  videoId: string,
+  title: string,
+  type: string,
+  serviceUrl: string,
+  apiSecret: string
+): Promise<VideoAnalysisMetrics> {
+  const videoUrl = `https://youtube.com/watch?v=${videoId}`;
+  const res = await fetch(`${serviceUrl}/analyze`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiSecret}`,
+    },
+    body: JSON.stringify({ video_url: videoUrl, title, type }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Video analysis service error ${res.status}: ${errBody}`);
+  }
+
+  return res.json() as Promise<VideoAnalysisMetrics>;
+}
+
+/** Send video metrics to AI for a 0-4 overstimulation rating. */
+async function rateMetrics(
+  title: { title: string; type: "movie" | "tv" | "youtube"; year: number; ageRating?: string },
+  metrics: VideoAnalysisMetrics,
+  openRouterKey: string
+): Promise<OverstimResult> {
+  const completion = await chatCompletion(
+    "You are a developmental health content analyst. Rate video overstimulation based on measured metrics. Respond with JSON only.",
+    constructOverstimPrompt(title, metrics),
+    openRouterKey,
+    { temperature: 0.3, maxTokens: 512 }
+  );
+
+  const result = parseJSONResponse<OverstimResult>(completion.content);
+
+  if (typeof result.severity !== "number" || result.severity < 0 || result.severity > 4 || !Number.isInteger(result.severity)) {
+    throw new Error(`Invalid overstimulation severity: ${result.severity}`);
+  }
+
+  return result;
+}
+
 // ── Actions ──────────────────────────────────────────────
 
 /** Analyze a single title for overstimulation via video analysis pipeline. */
@@ -84,73 +134,81 @@ export const analyzeOverstimulation = action({
       throw new Error("VIDEO_ANALYSIS_SERVICE_URL or VIDEO_ANALYSIS_API_SECRET not set");
     }
 
-    // 1. Find trailer on YouTube
-    const videoId = await searchTrailer(title.title, title.year, title.type as "movie" | "tv");
-    if (!videoId) {
+    const titleMeta = {
+      title: title.title,
+      type: title.type as "movie" | "tv" | "youtube",
+      year: title.year,
+      ageRating: title.ageRating,
+    };
+
+    // 1. Find and analyze trailer
+    const trailerId = await searchTrailer(title.title, title.year, title.type as "movie" | "tv");
+    if (!trailerId) {
       console.log(`[Overstim] No trailer found for "${title.title}" — skipping`);
       return;
     }
 
-    console.log(`[Overstim] Found trailer ${videoId} for "${title.title}"`);
+    console.log(`[Overstim] Found trailer ${trailerId} for "${title.title}"`);
+    const trailerMetrics = await analyzeVideo(trailerId, title.title, title.type, serviceUrl, apiSecret);
+    console.log(`[Overstim] Trailer metrics for "${title.title}":`, JSON.stringify(trailerMetrics));
+    const trailerResult = await rateMetrics(titleMeta, trailerMetrics, openRouterKey);
 
-    // 2. Call video analysis service
-    const videoUrl = `https://youtube.com/watch?v=${videoId}`;
-    const analysisRes = await fetch(`${serviceUrl}/analyze`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiSecret}`,
-      },
-      body: JSON.stringify({
-        video_url: videoUrl,
-        title: title.title,
-        type: title.type,
-      }),
-    });
+    let severity: number;
+    let primaryVideoId = trailerId;
 
-    if (!analysisRes.ok) {
-      const errBody = await analysisRes.text();
-      throw new Error(`Video analysis service error ${analysisRes.status}: ${errBody}`);
-    }
-
-    const metrics: VideoAnalysisMetrics = await analysisRes.json();
-    console.log(`[Overstim] Metrics for "${title.title}":`, JSON.stringify(metrics));
-
-    // 3. Send metrics to Claude via OpenRouter for overstim rating
-    const completion = await chatCompletion(
-      "You are a developmental health content analyst. Rate video overstimulation based on measured metrics. Respond with JSON only.",
-      constructOverstimPrompt(title, metrics),
-      openRouterKey,
-      { temperature: 0.3, maxTokens: 512 }
-    );
-
-    const result = parseJSONResponse<OverstimResult>(completion.content);
-
-    // Validate
-    if (typeof result.severity !== "number" || result.severity < 0 || result.severity > 4 || !Number.isInteger(result.severity)) {
-      throw new Error(`Invalid overstimulation severity: ${result.severity}`);
-    }
-
-    // 4. Apply trailer bias correction for TV shows
-    let severity = result.severity;
     if (title.type === "tv") {
-      severity = Math.max(0, Math.round(severity * 0.7));
-      console.log(`[Overstim] TV bias correction: ${result.severity} → ${severity}`);
+      // 2. For TV: search for episode clips
+      let episodeResults: OverstimResult[] = [];
+      try {
+        const episodeIds = await searchEpisodeClips(title.title, 2);
+        console.log(`[Overstim] Found ${episodeIds.length} episode clips for "${title.title}"`);
+
+        for (const epId of episodeIds) {
+          try {
+            const epMetrics = await analyzeVideo(epId, title.title, title.type, serviceUrl, apiSecret);
+            const epResult = await rateMetrics(titleMeta, epMetrics, openRouterKey);
+            episodeResults.push(epResult);
+          } catch (e) {
+            console.error(`[Overstim] Episode clip ${epId} analysis failed (non-fatal):`, e instanceof Error ? e.message : e);
+          }
+        }
+
+        if (episodeIds.length > 0) {
+          primaryVideoId = episodeIds[0];
+        }
+      } catch (e) {
+        console.error(`[Overstim] Episode clip search failed (non-fatal):`, e instanceof Error ? e.message : e);
+      }
+
+      if (episodeResults.length > 0) {
+        // Weighted average: 70% episodes / 30% trailer (per spec)
+        const episodeAvg = episodeResults.reduce((sum, r) => sum + r.severity, 0) / episodeResults.length;
+        severity = Math.round(episodeAvg * 0.7 + trailerResult.severity * 0.3);
+        severity = Math.max(0, Math.min(4, severity));
+        console.log(`[Overstim] TV weighted score: episodes=${episodeAvg.toFixed(1)} trailer=${trailerResult.severity} → ${severity}`);
+      } else {
+        // Trailer only — apply 0.7x bias correction
+        severity = Math.max(0, Math.round(trailerResult.severity * 0.7));
+        console.log(`[Overstim] TV bias correction (no episodes): ${trailerResult.severity} → ${severity}`);
+      }
+    } else {
+      // Movies: use trailer score directly
+      severity = trailerResult.severity;
     }
 
-    // 5. Save to database
+    // 3. Save to database
     await ctx.runMutation(internal.healthRatings.saveOverstimulation, {
       titleId: args.titleId,
       overstimulation: severity,
       videoAnalysis: {
-        youtubeVideoId: videoId,
+        youtubeVideoId: primaryVideoId,
         analyzedAt: Date.now(),
-        cutsPerMinute: metrics.cuts_per_minute,
-        avgCutDuration: metrics.avg_cut_duration_seconds,
-        avgSaturation: metrics.avg_saturation,
-        avgBrightness: metrics.avg_brightness,
-        brightnessVariance: metrics.brightness_variance,
-        flashCount: metrics.flash_count,
+        cutsPerMinute: trailerMetrics.cuts_per_minute,
+        avgCutDuration: trailerMetrics.avg_cut_duration_seconds,
+        avgSaturation: trailerMetrics.avg_saturation,
+        avgBrightness: trailerMetrics.avg_brightness,
+        brightnessVariance: trailerMetrics.brightness_variance,
+        flashCount: trailerMetrics.flash_count,
         trailerBiasCorrected: title.type === "tv",
       },
     });
@@ -227,8 +285,19 @@ export const saveOverstimulation = internalMutation({
         videoAnalysis: args.videoAnalysis,
       });
     } else {
-      // Title has no cultural ratings yet — just save video analysis metadata
+      // Title has no cultural ratings yet — save placeholder ratings with overstimulation
       await ctx.db.patch(args.titleId, {
+        ratings: {
+          lgbtq: 0,
+          climate: 0,
+          racialIdentity: 0,
+          genderRoles: 0,
+          antiAuthority: 0,
+          religious: 0,
+          political: 0,
+          sexuality: 0,
+          overstimulation: args.overstimulation,
+        },
         videoAnalysis: args.videoAnalysis,
       });
     }

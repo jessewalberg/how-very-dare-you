@@ -65,7 +65,7 @@ export default defineSchema({
     ratingModel: v.optional(v.string()),
     ratedAt: v.optional(v.number()),
 
-    // Episode flags (TV shows only)
+    // Episode flags (TV shows only — legacy holistic ratings)
     episodeFlags: v.optional(
       v.array(
         v.object({
@@ -78,6 +78,23 @@ export default defineSchema({
         })
       )
     ),
+
+    // Per-episode rating system (TV shows)
+    numberOfSeasons: v.optional(v.number()),
+    seasonData: v.optional(
+      v.array(
+        v.object({
+          seasonNumber: v.number(),
+          episodeCount: v.number(),
+          name: v.optional(v.string()),
+          overview: v.optional(v.string()),
+          posterPath: v.optional(v.string()),
+          airDate: v.optional(v.string()),
+        })
+      )
+    ),
+    ratedEpisodeCount: v.optional(v.number()),
+    hasEpisodeRatings: v.optional(v.boolean()),
 
     // Status
     status: v.union(
@@ -159,7 +176,7 @@ export default defineSchema({
   ratingQueue: defineTable({
     tmdbId: v.number(),
     title: v.string(),
-    type: v.union(v.literal("movie"), v.literal("tv")),
+    type: v.union(v.literal("movie"), v.literal("tv"), v.literal("episode")),
     priority: v.number(),
     source: v.union(v.literal("batch"), v.literal("user_request")),
     status: v.union(
@@ -171,7 +188,58 @@ export default defineSchema({
     attempts: v.optional(v.number()),
     lastError: v.optional(v.string()),
     createdAt: v.number(),
+    // Episode-specific fields
+    episodeId: v.optional(v.id("episodes")),
+    seasonNumber: v.optional(v.number()),
+    episodeNumber: v.optional(v.number()),
   })
     .index("by_status_priority", ["status", "priority"])
     .index("by_tmdbId", ["tmdbId"]),
+
+  episodes: defineTable({
+    titleId: v.id("titles"),
+    tmdbShowId: v.number(),
+    seasonNumber: v.number(),
+    episodeNumber: v.number(),
+
+    // Episode metadata from TMDB
+    name: v.optional(v.string()),
+    overview: v.optional(v.string()),
+    airDate: v.optional(v.string()),
+    stillPath: v.optional(v.string()),
+    runtime: v.optional(v.number()),
+
+    // AI Rating Results (same 8-category shape as titles)
+    ratings: v.optional(
+      v.object({
+        lgbtq: v.number(),
+        climate: v.number(),
+        racialIdentity: v.number(),
+        genderRoles: v.number(),
+        antiAuthority: v.number(),
+        religious: v.number(),
+        political: v.number(),
+        sexuality: v.number(),
+      })
+    ),
+    ratingConfidence: v.optional(v.number()),
+    ratingNotes: v.optional(v.string()),
+    ratingModel: v.optional(v.string()),
+    ratedAt: v.optional(v.number()),
+
+    // Status
+    status: v.union(
+      v.literal("unrated"),
+      v.literal("rating"),
+      v.literal("rated"),
+      v.literal("failed")
+    ),
+  })
+    .index("by_titleId", ["titleId"])
+    .index("by_titleId_season", ["titleId", "seasonNumber"])
+    .index("by_tmdbShowId_season_episode", [
+      "tmdbShowId",
+      "seasonNumber",
+      "episodeNumber",
+    ]),
 });

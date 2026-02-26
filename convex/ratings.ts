@@ -14,6 +14,7 @@ import {
   downloadSubtitle,
   extractDialogue,
   pickBestSubtitle,
+  gatherTVEpisodeDialogue,
 } from "../lib/opensubtitles";
 import { chatCompletion, parseJSONResponse } from "../lib/openrouter";
 
@@ -278,6 +279,16 @@ interface GatheredData {
   parentalGuide?: string;
   subtitleExcerpt?: string;
   streamingProviders?: { name: string; logoPath: string }[];
+  // TV-specific
+  numberOfSeasons?: number;
+  seasonData?: {
+    seasonNumber: number;
+    episodeCount: number;
+    name?: string;
+    overview?: string;
+    posterPath?: string;
+    airDate?: string;
+  }[];
 }
 
 async function gatherMovieData(
@@ -327,14 +338,23 @@ async function gatherMovieData(
     }
   }
 
-  // Fetch subtitles for dialogue analysis
+  // Fetch subtitles for dialogue analysis (8s timeout so it never blocks the pipeline)
   if (options.includeSubtitles && subtitlesKey && tmdb.imdb_id) {
     try {
-      const searchResults = await searchSubtitles(tmdb.imdb_id, subtitlesKey);
-      const best = pickBestSubtitle(searchResults);
-      if (best) {
-        const srtText = await downloadSubtitle(best.fileId, subtitlesKey);
-        data.subtitleExcerpt = extractDialogue(srtText, 300);
+      const subtitleResult = await Promise.race([
+        (async () => {
+          const searchResults = await searchSubtitles(tmdb.imdb_id!, subtitlesKey);
+          const best = pickBestSubtitle(searchResults);
+          if (best) {
+            const srtText = await downloadSubtitle(best.fileId, subtitlesKey);
+            return extractDialogue(srtText, 300);
+          }
+          return null;
+        })(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+      ]);
+      if (subtitleResult) {
+        data.subtitleExcerpt = subtitleResult;
       }
     } catch (e) {
       console.error("Subtitle fetch failed (non-fatal):", e);
@@ -361,6 +381,15 @@ async function gatherTVData(
   const runtime = tmdb.episode_run_time.length > 0 ? tmdb.episode_run_time[0] : undefined;
   const streamingProviders = extractStreamingProviders(tmdb["watch/providers"]);
 
+  const seasonData = tmdb.seasons?.map((s) => ({
+    seasonNumber: s.season_number,
+    episodeCount: s.episode_count,
+    name: s.name || undefined,
+    overview: s.overview || undefined,
+    posterPath: s.poster_path || undefined,
+    airDate: s.air_date || undefined,
+  }));
+
   const data: GatheredData = {
     title: tmdb.name,
     year,
@@ -374,6 +403,8 @@ async function gatherTVData(
     tmdbOverview: tmdb.overview,
     keywords,
     streamingProviders,
+    numberOfSeasons: tmdb.number_of_seasons,
+    seasonData,
   };
 
   // For TV, attempt OMDB lookup by title+year since TMDB TV doesn't give imdb_id directly
@@ -400,14 +431,15 @@ async function gatherTVData(
     }
   }
 
-  // Fetch subtitles if we got an IMDB ID
+  // Fetch per-episode subtitles if we got an IMDB ID (15s timeout for multi-episode fetch)
   if (options.includeSubtitles && subtitlesKey && data.imdbId) {
     try {
-      const searchResults = await searchSubtitles(data.imdbId, subtitlesKey);
-      const best = pickBestSubtitle(searchResults);
-      if (best) {
-        const srtText = await downloadSubtitle(best.fileId, subtitlesKey);
-        data.subtitleExcerpt = extractDialogue(srtText, 300);
+      const subtitleResult = await Promise.race([
+        gatherTVEpisodeDialogue(data.imdbId, subtitlesKey),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)),
+      ]);
+      if (subtitleResult) {
+        data.subtitleExcerpt = subtitleResult;
       }
     } catch (e) {
       console.error("Subtitle fetch failed (non-fatal):", e);
@@ -461,6 +493,178 @@ async function runRatingPipeline(
   return { data, result, model: completion.model };
 }
 
+// ── Episode Rating ────────────────────────────────────────
+
+const EPISODE_RATING_SYSTEM_PROMPT = `You are a content advisory analyst for a parental content rating service. Your job is to analyze a SINGLE EPISODE of a TV show and rate it across 8 specific cultural/ideological theme categories on a 0-4 severity scale.
+
+You must be OBJECTIVE and CONSISTENT. You are not making value judgments about whether these themes are good or bad — you are simply detecting their presence and intensity so parents can make informed decisions.
+
+Use the same 8-category rubric (lgbtq, climate, racialIdentity, genderRoles, antiAuthority, religious, political, sexuality) with 0-4 severity scale.
+
+## Output Format
+
+Respond with ONLY a JSON object. No preamble, no markdown fences, no explanation outside the JSON.
+
+{
+  "ratings": {
+    "lgbtq": <0-4>,
+    "climate": <0-4>,
+    "racialIdentity": <0-4>,
+    "genderRoles": <0-4>,
+    "antiAuthority": <0-4>,
+    "religious": <0-4>,
+    "political": <0-4>,
+    "sexuality": <0-4>
+  },
+  "confidence": <0.0-1.0>,
+  "notes": "<2-3 sentence summary of this specific episode's content. Be factual and specific — cite scenes or plot points from this episode.>"
+}
+
+The "confidence" score should reflect how much data you had to work with:
+- 0.9-1.0: Detailed plot info, dialogue data, multiple sources
+- 0.7-0.89: Good plot info and at least one detailed source
+- 0.5-0.69: Basic plot/overview only
+- Below 0.5: Very limited information`;
+
+function constructEpisodeRatingPrompt(data: {
+  showTitle: string;
+  showYear: number;
+  showGenre?: string;
+  showAgeRating?: string;
+  seasonNumber: number;
+  episodeNumber: number;
+  episodeName?: string;
+  episodeOverview?: string;
+  episodeRuntime?: number;
+  subtitleExcerpt?: string;
+}): string {
+  let prompt = `Rate the following SINGLE EPISODE for our content advisory service.\n\n`;
+  prompt += `## Show Context\n`;
+  prompt += `- **Show:** ${data.showTitle} (${data.showYear})\n`;
+  if (data.showGenre) prompt += `- **Genre:** ${data.showGenre}\n`;
+  if (data.showAgeRating) prompt += `- **Target Age Rating:** ${data.showAgeRating}\n`;
+
+  prompt += `\n## Episode\n`;
+  prompt += `- **Season ${data.seasonNumber}, Episode ${data.episodeNumber}`;
+  if (data.episodeName) prompt += `: "${data.episodeName}"`;
+  prompt += `\n`;
+  if (data.episodeRuntime) prompt += `- **Runtime:** ${data.episodeRuntime} minutes\n`;
+
+  if (data.episodeOverview) {
+    prompt += `\n## Episode Plot\n${data.episodeOverview}\n`;
+  }
+
+  if (data.subtitleExcerpt) {
+    prompt += `\n## Dialogue Sample (from subtitles)\n${data.subtitleExcerpt}\n`;
+  }
+
+  prompt += `\n---\n\nRate THIS SPECIFIC EPISODE across all 8 categories. Remember:\n`;
+  prompt += `- Rate only what happens in this episode, not the show overall\n`;
+  prompt += `- Be objective and consistent\n`;
+  prompt += `- Rate what is shown, not what could be theoretically interpreted\n`;
+
+  return prompt;
+}
+
+interface EpisodeRatingResult {
+  ratings: {
+    lgbtq: number;
+    climate: number;
+    racialIdentity: number;
+    genderRoles: number;
+    antiAuthority: number;
+    religious: number;
+    political: number;
+    sexuality: number;
+  };
+  confidence: number;
+  notes: string;
+}
+
+function parseEpisodeRatingResponse(responseText: string): EpisodeRatingResult {
+  const parsed = parseJSONResponse<EpisodeRatingResult>(responseText);
+
+  for (const cat of CATEGORY_KEYS) {
+    const val = parsed.ratings[cat];
+    if (typeof val !== "number" || val < 0 || val > 4 || !Number.isInteger(val)) {
+      throw new Error(`Invalid rating for ${cat}: ${val}`);
+    }
+  }
+
+  if (typeof parsed.confidence !== "number" || parsed.confidence < 0 || parsed.confidence > 1) {
+    throw new Error(`Invalid confidence: ${parsed.confidence}`);
+  }
+
+  if (typeof parsed.notes !== "string" || parsed.notes.length === 0) {
+    throw new Error("Missing notes in rating response");
+  }
+
+  return parsed;
+}
+
+async function runEpisodeRatingPipeline(
+  showContext: {
+    title: string;
+    year: number;
+    genre?: string;
+    ageRating?: string;
+    imdbId?: string;
+  },
+  episodeData: {
+    seasonNumber: number;
+    episodeNumber: number;
+    name?: string;
+    overview?: string;
+    runtime?: number;
+  }
+): Promise<{ result: EpisodeRatingResult; model: string }> {
+  const openRouterKey = process.env.OPENROUTER_API_KEY!;
+  const subtitlesKey = process.env.OPENSUBTITLES_API_KEY;
+
+  // Gather subtitle dialogue for this episode (8s timeout)
+  let subtitleExcerpt: string | undefined;
+  if (subtitlesKey && showContext.imdbId) {
+    try {
+      const { gatherSingleEpisodeDialogue } = await import("../lib/opensubtitles");
+      const dialogue = await Promise.race([
+        gatherSingleEpisodeDialogue(
+          showContext.imdbId,
+          episodeData.seasonNumber,
+          episodeData.episodeNumber,
+          subtitlesKey
+        ),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+      ]);
+      if (dialogue) subtitleExcerpt = dialogue;
+    } catch (e) {
+      console.error("Episode subtitle fetch failed (non-fatal):", e);
+    }
+  }
+
+  const userMessage = constructEpisodeRatingPrompt({
+    showTitle: showContext.title,
+    showYear: showContext.year,
+    showGenre: showContext.genre,
+    showAgeRating: showContext.ageRating,
+    seasonNumber: episodeData.seasonNumber,
+    episodeNumber: episodeData.episodeNumber,
+    episodeName: episodeData.name,
+    episodeOverview: episodeData.overview,
+    episodeRuntime: episodeData.runtime,
+    subtitleExcerpt,
+  });
+
+  const completion = await chatCompletion(
+    EPISODE_RATING_SYSTEM_PROMPT,
+    userMessage,
+    openRouterKey,
+    { temperature: 0.3, maxTokens: 2048 }
+  );
+
+  const result = parseEpisodeRatingResponse(completion.content);
+  return { result, model: completion.model };
+}
+
 // ── Public Actions ───────────────────────────────────────
 
 /** Full rating pipeline — called for batch processing and queue items. */
@@ -498,6 +702,8 @@ export const rateTitle = action({
           name: p.name,
           logoPath: p.logoPath,
         })),
+        numberOfSeasons: data.numberOfSeasons,
+        seasonData: data.seasonData,
       });
     }
 
@@ -518,14 +724,21 @@ export const rateTitle = action({
       })),
     });
 
+    // Queue overstimulation analysis (non-blocking — runs after cultural rating)
+    const ratedTitle = await ctx.runQuery(api.titles.getTitleByTmdbId, {
+      tmdbId: args.tmdbId,
+    });
+    if (ratedTitle && !ratedTitle.videoAnalysis) {
+      await ctx.scheduler.runAfter(0, api.healthRatings.analyzeOverstimulation, {
+        titleId: ratedTitle._id,
+      });
+    }
+
     // If low confidence, mark as disputed for manual review
     if (result.confidence < 0.5) {
-      const title = await ctx.runQuery(api.titles.getTitleByTmdbId, {
-        tmdbId: args.tmdbId,
-      });
-      if (title) {
+      if (ratedTitle) {
         await ctx.runMutation(api.titles.updateStatus, {
-          titleId: title._id,
+          titleId: ratedTitle._id,
           status: "disputed",
         });
       }
@@ -557,11 +770,11 @@ export const rateTitleOnDemand = action({
     }
 
     try {
-      // Run pipeline WITHOUT subtitles for speed
+      // Run pipeline with subtitles (timeout-protected so they don't block)
       const { data, result, model } = await runRatingPipeline(
         args.tmdbId,
         args.type,
-        { includeSubtitles: false }
+        { includeSubtitles: true }
       );
 
       // Update title metadata if it was created as a stub
@@ -579,6 +792,8 @@ export const rateTitleOnDemand = action({
             name: p.name,
             logoPath: p.logoPath,
           })),
+          numberOfSeasons: data.numberOfSeasons,
+          seasonData: data.seasonData,
         });
       }
 
@@ -649,6 +864,91 @@ export const rateTitleOnDemand = action({
   },
 });
 
+/** Rate a single episode on demand. */
+export const rateEpisodeOnDemand = action({
+  args: { episodeId: v.id("episodes") },
+  handler: async (ctx, args): Promise<void> => {
+    const episode = await ctx.runQuery(internal.episodes.getEpisodeInternal, {
+      episodeId: args.episodeId,
+    });
+    if (!episode) throw new Error("Episode not found");
+    if (episode.status === "rated") return;
+
+    const title = await ctx.runQuery(api.titles.getTitle, {
+      titleId: episode.titleId,
+    });
+    if (!title) throw new Error("Parent title not found");
+
+    // Mark as rating
+    await ctx.runMutation(internal.episodes.setEpisodeStatus, {
+      episodeId: args.episodeId,
+      status: "rating",
+    });
+
+    try {
+      // Find IMDB ID for subtitle lookup
+      let imdbId = title.imdbId;
+      if (!imdbId) {
+        const omdbKey = process.env.OMDB_API_KEY;
+        if (omdbKey) {
+          try {
+            const url = new URL("https://www.omdbapi.com/");
+            url.searchParams.set("t", title.title);
+            url.searchParams.set("y", String(title.year));
+            url.searchParams.set("type", "series");
+            url.searchParams.set("apikey", omdbKey);
+            const res = await fetch(url.toString());
+            if (res.ok) {
+              const omdb = await res.json();
+              if (omdb.Response === "True") imdbId = omdb.imdbID;
+            }
+          } catch {
+            // non-fatal
+          }
+        }
+      }
+
+      const { result, model } = await runEpisodeRatingPipeline(
+        {
+          title: title.title,
+          year: title.year,
+          genre: title.genre ?? undefined,
+          ageRating: title.ageRating ?? undefined,
+          imdbId: imdbId ?? undefined,
+        },
+        {
+          seasonNumber: episode.seasonNumber,
+          episodeNumber: episode.episodeNumber,
+          name: episode.name ?? undefined,
+          overview: episode.overview ?? undefined,
+          runtime: episode.runtime ?? undefined,
+        }
+      );
+
+      // Save episode rating
+      await ctx.runMutation(internal.episodes.saveEpisodeRating, {
+        episodeId: args.episodeId,
+        ratings: result.ratings,
+        confidence: result.confidence,
+        notes: result.notes,
+        model,
+      });
+
+      // Aggregate show-level ratings from all rated episodes
+      await ctx.runMutation(internal.titles.aggregateShowRatings, {
+        titleId: episode.titleId,
+      });
+    } catch (e) {
+      // Reset on failure
+      await ctx.runMutation(internal.episodes.setEpisodeStatus, {
+        episodeId: args.episodeId,
+        status: "failed",
+      });
+      throw e;
+    }
+  },
+});
+
 /** Process a single queue item through the full rating pipeline. */
 export const processQueueItem = action({
   args: { queueItemId: v.id("ratingQueue") },
@@ -665,16 +965,25 @@ export const processQueueItem = action({
     });
 
     try {
-      // Use on-demand for user requests (faster), full for batch
-      if (item.source === "user_request") {
+      if (item.type === "episode" && item.episodeId) {
+        // Episode rating
+        await ctx.runAction(api.ratings.rateEpisodeOnDemand, {
+          episodeId: item.episodeId,
+        });
+        await ctx.runMutation(internal.ratings.updateQueueStatus, {
+          tmdbId: item.tmdbId,
+          status: "completed",
+        });
+      } else if (item.source === "user_request") {
+        // Use on-demand for user requests (faster), full for batch
         await ctx.runAction(api.ratings.rateTitleOnDemand, {
           tmdbId: item.tmdbId,
-          type: item.type,
+          type: item.type as "movie" | "tv",
         });
       } else {
         await ctx.runAction(api.ratings.rateTitle, {
           tmdbId: item.tmdbId,
-          type: item.type,
+          type: item.type as "movie" | "tv",
         });
         // Mark completed
         await ctx.runMutation(internal.ratings.updateQueueStatus, {
@@ -968,6 +1277,19 @@ export const createTitleFromData = internalMutation({
     streamingProviders: v.optional(
       v.array(v.object({ name: v.string(), logoPath: v.optional(v.string()) }))
     ),
+    numberOfSeasons: v.optional(v.number()),
+    seasonData: v.optional(
+      v.array(
+        v.object({
+          seasonNumber: v.number(),
+          episodeCount: v.number(),
+          name: v.optional(v.string()),
+          overview: v.optional(v.string()),
+          posterPath: v.optional(v.string()),
+          airDate: v.optional(v.string()),
+        })
+      )
+    ),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("titles", {
@@ -985,6 +1307,8 @@ export const createTitleFromData = internalMutation({
         name: p.name,
         logoPath: p.logoPath,
       })),
+      numberOfSeasons: args.numberOfSeasons,
+      seasonData: args.seasonData,
       status: "pending",
     });
   },
@@ -1002,6 +1326,19 @@ export const updateTitleMetadata = internalMutation({
     runtime: v.optional(v.number()),
     streamingProviders: v.optional(
       v.array(v.object({ name: v.string(), logoPath: v.optional(v.string()) }))
+    ),
+    numberOfSeasons: v.optional(v.number()),
+    seasonData: v.optional(
+      v.array(
+        v.object({
+          seasonNumber: v.number(),
+          episodeCount: v.number(),
+          name: v.optional(v.string()),
+          overview: v.optional(v.string()),
+          posterPath: v.optional(v.string()),
+          airDate: v.optional(v.string()),
+        })
+      )
     ),
   },
   handler: async (ctx, args) => {

@@ -22,6 +22,7 @@ func writeCookiesFile() string {
 	cookiesOnce.Do(func() {
 		encoded := os.Getenv("YOUTUBE_COOKIES")
 		if encoded == "" {
+			fmt.Fprintf(os.Stderr, "warning: YOUTUBE_COOKIES not set — yt-dlp will run without cookies and YouTube may block downloads\n")
 			return
 		}
 		data, err := base64.StdEncoding.DecodeString(encoded)

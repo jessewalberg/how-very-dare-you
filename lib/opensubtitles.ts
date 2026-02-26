@@ -57,7 +57,8 @@ export interface OpenSubtitlesDownload {
 
 export async function searchSubtitles(
   imdbId: string,
-  apiKey: string
+  apiKey: string,
+  options?: { seasonNumber?: number; episodeNumber?: number }
 ): Promise<OpenSubtitlesSearchResult> {
   // Normalize: OMDB gives "tt1234567", OpenSubtitles wants the numeric part
   const numericId = imdbId.replace(/^tt/, "");
@@ -67,6 +68,13 @@ export async function searchSubtitles(
   url.searchParams.set("languages", "en");
   url.searchParams.set("order_by", "download_count");
   url.searchParams.set("order_direction", "desc");
+
+  if (options?.seasonNumber !== undefined) {
+    url.searchParams.set("season_number", String(options.seasonNumber));
+  }
+  if (options?.episodeNumber !== undefined) {
+    url.searchParams.set("episode_number", String(options.episodeNumber));
+  }
 
   const res = await fetch(url.toString(), {
     headers: {
@@ -82,6 +90,75 @@ export async function searchSubtitles(
   }
 
   return res.json() as Promise<OpenSubtitlesSearchResult>;
+}
+
+/**
+ * Gather dialogue from two representative episodes of a TV show (S01E01 + S01E05).
+ * Returns combined dialogue excerpt, or null if nothing found.
+ */
+export async function gatherTVEpisodeDialogue(
+  imdbId: string,
+  apiKey: string,
+  linesPerEpisode = 150
+): Promise<string | null> {
+  const episodes = [
+    { season: 1, episode: 1 },
+    { season: 1, episode: 5 },
+  ];
+
+  const dialogueParts: string[] = [];
+
+  for (const ep of episodes) {
+    try {
+      const results = await searchSubtitles(imdbId, apiKey, {
+        seasonNumber: ep.season,
+        episodeNumber: ep.episode,
+      });
+      const best = pickBestSubtitle(results);
+      if (best) {
+        const srtText = await downloadSubtitle(best.fileId, apiKey);
+        const dialogue = extractDialogue(srtText, linesPerEpisode);
+        if (dialogue) {
+          dialogueParts.push(`[S${String(ep.season).padStart(2, "0")}E${String(ep.episode).padStart(2, "0")}]\n${dialogue}`);
+        }
+      }
+    } catch (e) {
+      console.error(`Subtitle fetch failed for S${ep.season}E${ep.episode} (non-fatal):`, e);
+    }
+  }
+
+  return dialogueParts.length > 0 ? dialogueParts.join("\n\n") : null;
+}
+
+/**
+ * Gather dialogue from a single specific episode of a TV show.
+ * Returns dialogue excerpt, or null if nothing found.
+ */
+export async function gatherSingleEpisodeDialogue(
+  imdbId: string,
+  season: number,
+  episode: number,
+  apiKey: string,
+  maxLines = 300
+): Promise<string | null> {
+  try {
+    const results = await searchSubtitles(imdbId, apiKey, {
+      seasonNumber: season,
+      episodeNumber: episode,
+    });
+    const best = pickBestSubtitle(results);
+    if (best) {
+      const srtText = await downloadSubtitle(best.fileId, apiKey);
+      return extractDialogue(srtText, maxLines);
+    }
+    return null;
+  } catch (e) {
+    console.error(
+      `Subtitle fetch failed for S${season}E${episode} (non-fatal):`,
+      e
+    );
+    return null;
+  }
 }
 
 export async function downloadSubtitle(

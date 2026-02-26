@@ -104,6 +104,17 @@ export interface TMDBMovieDetails {
   };
 }
 
+export interface TMDBSeasonSummary {
+  air_date: string | null;
+  episode_count: number;
+  id: number;
+  name: string;
+  overview: string;
+  poster_path: string | null;
+  season_number: number;
+  vote_average: number;
+}
+
 export interface TMDBTVDetails {
   id: number;
   name: string;
@@ -116,6 +127,7 @@ export interface TMDBTVDetails {
   episode_run_time: number[];
   number_of_seasons: number;
   number_of_episodes: number;
+  seasons: TMDBSeasonSummary[];
   popularity: number;
   vote_average: number;
   vote_count: number;
@@ -124,6 +136,29 @@ export interface TMDBTVDetails {
   keywords?: { results: TMDBKeyword[] };
   "watch/providers"?: TMDBWatchProviderResult;
   content_ratings?: { results: TMDBContentRating[] };
+}
+
+export interface TMDBEpisode {
+  id: number;
+  name: string;
+  overview: string;
+  air_date: string | null;
+  episode_number: number;
+  season_number: number;
+  still_path: string | null;
+  runtime: number | null;
+  vote_average: number;
+  vote_count: number;
+}
+
+export interface TMDBSeason {
+  id: number;
+  name: string;
+  overview: string;
+  air_date: string | null;
+  season_number: number;
+  poster_path: string | null;
+  episodes: TMDBEpisode[];
 }
 
 // ── Helpers ───────────────────────────────────────────────
@@ -202,6 +237,26 @@ export async function getPopularTV(
   page = 1
 ): Promise<TMDBSearchResult<TMDBTVShow>> {
   return tmdbFetch("/tv/popular", apiKey, { page: String(page) });
+}
+
+export async function getTVSeason(
+  tvId: number,
+  seasonNumber: number,
+  apiKey: string
+): Promise<TMDBSeason> {
+  return tmdbFetch(`/tv/${tvId}/season/${seasonNumber}`, apiKey);
+}
+
+export async function getTVEpisode(
+  tvId: number,
+  seasonNumber: number,
+  episodeNumber: number,
+  apiKey: string
+): Promise<TMDBEpisode> {
+  return tmdbFetch(
+    `/tv/${tvId}/season/${seasonNumber}/episode/${episodeNumber}`,
+    apiKey
+  );
 }
 
 // ── Utility ───────────────────────────────────────────────

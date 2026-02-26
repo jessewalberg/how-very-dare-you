@@ -36,6 +36,7 @@ import { NoFlagsBadge } from "@/components/rating/NoFlagsBadge";
 import { EpisodeFlags } from "@/components/rating/EpisodeFlags";
 import { StreamingLinks } from "@/components/title/StreamingLinks";
 import { RatingLoading } from "@/components/title/RatingLoading";
+import { SeasonList } from "@/components/title/SeasonList";
 import { CorrectionForm } from "@/components/corrections/CorrectionForm";
 import { CorrectionsList } from "@/components/corrections/CorrectionsList";
 import {
@@ -204,11 +205,21 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {hasRatings && !noFlags && composite !== null && (
             <div className="lg:hidden">
               <CompositeScore score={composite} />
+              {title.hasEpisodeRatings && title.ratedEpisodeCount != null && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Based on {title.ratedEpisodeCount} episode{title.ratedEpisodeCount !== 1 ? "s" : ""}
+                </p>
+              )}
             </div>
           )}
           {hasRatings && noFlags && (
             <div className="lg:hidden">
               <NoFlagsBadge />
+              {title.hasEpisodeRatings && title.ratedEpisodeCount != null && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Based on {title.ratedEpisodeCount} episode{title.ratedEpisodeCount !== 1 ? "s" : ""}
+                </p>
+              )}
             </div>
           )}
 
@@ -229,8 +240,21 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
             />
           )}
 
-          {/* Episode flags */}
+          {/* Per-episode ratings (new system) */}
+          {title.type === "tv" && title.tmdbId && (
+            <>
+              <Separator />
+              <SeasonList
+                titleId={title._id}
+                tmdbShowId={title.tmdbId}
+                showTitle={title.title}
+              />
+            </>
+          )}
+
+          {/* Episode flags (legacy holistic ratings — shown when no per-episode ratings) */}
           {title.type === "tv" &&
+            !title.hasEpisodeRatings &&
             title.episodeFlags &&
             title.episodeFlags.length > 0 && (
               <>

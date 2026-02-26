@@ -10,6 +10,7 @@
 
 import type * as corrections from "../corrections.js";
 import type * as crons from "../crons.js";
+import type * as episodes from "../episodes.js";
 import type * as healthRatings from "../healthRatings.js";
 import type * as ratings from "../ratings.js";
 import type * as search from "../search.js";
@@ -27,6 +28,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   corrections: typeof corrections;
   crons: typeof crons;
+  episodes: typeof episodes;
   healthRatings: typeof healthRatings;
   ratings: typeof ratings;
   search: typeof search;
