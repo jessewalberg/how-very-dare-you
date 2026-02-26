@@ -2,7 +2,7 @@
 // Docs: https://openrouter.ai/docs
 
 const BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODEL = "anthropic/claude-sonnet-4-20250514";
+const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
 

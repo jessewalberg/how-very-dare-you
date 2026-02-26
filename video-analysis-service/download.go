@@ -59,9 +59,12 @@ func downloadVideo(ctx context.Context, videoURL string) (string, error) {
 		"--remote-components", "ejs:github",
 	}
 
-	// Add cookies if available
+	// Add cookies: prefer YOUTUBE_COOKIES env var, fall back to browser cookies
 	if cp := writeCookiesFile(); cp != "" {
 		args = append(args, "--cookies", cp)
+	} else if browser := os.Getenv("YOUTUBE_COOKIES_BROWSER"); browser != "" {
+		// e.g. YOUTUBE_COOKIES_BROWSER=chrome or chrome:~/.config/google-chrome
+		args = append(args, "--cookies-from-browser", browser)
 	}
 
 	args = append(args, videoURL)
