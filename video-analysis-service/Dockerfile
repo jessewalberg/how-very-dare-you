@@ -6,7 +6,9 @@ RUN CGO_ENABLED=0 go build -o /video-analyzer .
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg python3-pip nodejs \
+    ffmpeg python3-pip ca-certificates curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && pip3 install --break-system-packages --upgrade yt-dlp \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /video-analyzer /video-analyzer
