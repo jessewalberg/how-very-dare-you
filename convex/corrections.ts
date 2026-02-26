@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { requireAdmin } from "./lib/adminAuth";
 
 export const submit = mutation({
   args: {
@@ -57,6 +58,8 @@ export const listAll = query({
     ),
   },
   handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
     if (args.status) {
       return await ctx.db
         .query("corrections")
@@ -73,7 +76,8 @@ export const updateStatus = mutation({
     status: v.union(v.literal("accepted"), v.literal("rejected")),
   },
   handler: async (ctx, args) => {
-    // In production, add admin check here
+    await requireAdmin(ctx);
+
     const correction = await ctx.db.get(args.correctionId);
     if (!correction) throw new Error("Correction not found");
 

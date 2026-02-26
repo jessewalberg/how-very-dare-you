@@ -228,7 +228,7 @@ export function extractDialogue(
 /** Find the best subtitle file from search results. Prefers non-AI, high downloads. */
 export function pickBestSubtitle(
   results: OpenSubtitlesSearchResult
-): { fileId: number; release: string } | null {
+): { fileId: number; release: string; language: string } | null {
   const candidates = results.data
     .filter(
       (d) =>
@@ -246,5 +246,6 @@ export function pickBestSubtitle(
   return {
     fileId: best.attributes.files[0].file_id,
     release: best.attributes.release,
+    language: best.attributes.language,
   };
 }

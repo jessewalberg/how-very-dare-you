@@ -1,6 +1,17 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const categoryEvidenceValidator = v.optional(v.object({
+  lgbtq: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+  climate: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+  racialIdentity: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+  genderRoles: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+  antiAuthority: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+  religious: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+  political: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+  sexuality: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+}));
+
 export default defineSchema({
   titles: defineTable({
     // External IDs
@@ -62,8 +73,17 @@ export default defineSchema({
     // AI rating metadata
     ratingConfidence: v.optional(v.number()),
     ratingNotes: v.optional(v.string()),
+    categoryEvidence: categoryEvidenceValidator,
     ratingModel: v.optional(v.string()),
     ratedAt: v.optional(v.number()),
+
+    // Subtitle fetch tracking
+    subtitleInfo: v.optional(v.object({
+      status: v.union(v.literal("success"), v.literal("failed"), v.literal("skipped"), v.literal("timeout")),
+      source: v.optional(v.string()),
+      language: v.optional(v.string()),
+      dialogueLines: v.optional(v.number()),
+    })),
 
     // Episode flags (TV shows only — legacy holistic ratings)
     episodeFlags: v.optional(
@@ -96,6 +116,27 @@ export default defineSchema({
     ratedEpisodeCount: v.optional(v.number()),
     hasEpisodeRatings: v.optional(v.boolean()),
 
+    // Rating history (preserved when re-rated)
+    ratingHistory: v.optional(v.array(v.object({
+      ratings: v.object({
+        lgbtq: v.number(),
+        climate: v.number(),
+        racialIdentity: v.number(),
+        genderRoles: v.number(),
+        antiAuthority: v.number(),
+        religious: v.number(),
+        political: v.number(),
+        sexuality: v.number(),
+        overstimulation: v.optional(v.number()),
+      }),
+      ratingConfidence: v.optional(v.number()),
+      ratingNotes: v.optional(v.string()),
+      ratingModel: v.optional(v.string()),
+      ratedAt: v.optional(v.number()),
+      archivedAt: v.number(),
+      archivedBy: v.optional(v.string()),
+    }))),
+
     // Status
     status: v.union(
       v.literal("pending"),
@@ -121,6 +162,7 @@ export default defineSchema({
     clerkId: v.string(),
     email: v.optional(v.string()),
     name: v.optional(v.string()),
+    isAdmin: v.optional(v.boolean()),
 
     // Subscription
     tier: v.union(v.literal("free"), v.literal("paid")),
@@ -178,7 +220,7 @@ export default defineSchema({
     title: v.string(),
     type: v.union(v.literal("movie"), v.literal("tv"), v.literal("episode")),
     priority: v.number(),
-    source: v.union(v.literal("batch"), v.literal("user_request")),
+    source: v.union(v.literal("batch"), v.literal("user_request"), v.literal("admin_rerate")),
     status: v.union(
       v.literal("queued"),
       v.literal("processing"),
@@ -187,6 +229,14 @@ export default defineSchema({
     ),
     attempts: v.optional(v.number()),
     lastError: v.optional(v.string()),
+    completedAt: v.optional(v.number()),
+    durationMs: v.optional(v.number()),
+    tokenUsage: v.optional(v.object({
+      promptTokens: v.number(),
+      completionTokens: v.number(),
+      totalTokens: v.number(),
+    })),
+    estimatedCostCents: v.optional(v.number()),
     createdAt: v.number(),
     // Episode-specific fields
     episodeId: v.optional(v.id("episodes")),
@@ -224,8 +274,17 @@ export default defineSchema({
     ),
     ratingConfidence: v.optional(v.number()),
     ratingNotes: v.optional(v.string()),
+    categoryEvidence: categoryEvidenceValidator,
     ratingModel: v.optional(v.string()),
     ratedAt: v.optional(v.number()),
+
+    // Subtitle fetch tracking
+    subtitleInfo: v.optional(v.object({
+      status: v.union(v.literal("success"), v.literal("failed"), v.literal("skipped"), v.literal("timeout")),
+      source: v.optional(v.string()),
+      language: v.optional(v.string()),
+      dialogueLines: v.optional(v.number()),
+    })),
 
     // Status
     status: v.union(

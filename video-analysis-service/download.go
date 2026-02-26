@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,23 +23,23 @@ func writeCookiesFile() string {
 	cookiesOnce.Do(func() {
 		encoded := os.Getenv("YOUTUBE_COOKIES")
 		if encoded == "" {
-			fmt.Fprintf(os.Stderr, "warning: YOUTUBE_COOKIES not set — yt-dlp will run without cookies and YouTube may block downloads\n")
+			slog.Warn("YOUTUBE_COOKIES not set — yt-dlp will run without cookies and YouTube may block downloads")
 			return
 		}
 		data, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to decode YOUTUBE_COOKIES: %v\n", err)
+			slog.Warn("failed to decode YOUTUBE_COOKIES", "error", err)
 			return
 		}
 		f, err := os.CreateTemp("", "yt-cookies-*.txt")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to create cookies file: %v\n", err)
+			slog.Warn("failed to create cookies file", "error", err)
 			return
 		}
 		f.Write(data)
 		f.Close()
 		cookiesPath = f.Name()
-		fmt.Fprintf(os.Stderr, "info: loaded YouTube cookies file (%d bytes)\n", len(data))
+		slog.Info("loaded YouTube cookies file", "bytes", len(data))
 	})
 	return cookiesPath
 }

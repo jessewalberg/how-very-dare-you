@@ -11,11 +11,13 @@ import {
 import { RatingBadge } from "./RatingBadge";
 import { NoFlagsBadge } from "./NoFlagsBadge";
 import { CompositeScore } from "./CompositeScore";
+import { CategoryEvidence } from "./CategoryEvidence";
 
 interface RatingBreakdownProps {
   ratings: CategoryRatings;
   weights?: CategoryWeights;
   notes?: string;
+  categoryEvidence?: Partial<Record<string, { explanation: string; quote?: string }>>;
 }
 
 const culturalCategories = CATEGORIES.filter((c) => c.group === "cultural");
@@ -87,6 +89,7 @@ export function RatingBreakdown({
   ratings,
   weights,
   notes,
+  categoryEvidence,
 }: RatingBreakdownProps) {
   const composite = calculateCompositeScore(ratings, weights);
   const noFlags = isNoFlags(ratings);
@@ -167,6 +170,11 @@ export function RatingBreakdown({
             {notes}
           </p>
         </div>
+      )}
+
+      {/* Per-category evidence */}
+      {categoryEvidence && Object.keys(categoryEvidence).length > 0 && (
+        <CategoryEvidence evidence={categoryEvidence} />
       )}
     </div>
   );

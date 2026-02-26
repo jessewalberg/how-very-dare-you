@@ -8,10 +8,12 @@
  * @module
  */
 
+import type * as admin from "../admin.js";
 import type * as corrections from "../corrections.js";
 import type * as crons from "../crons.js";
 import type * as episodes from "../episodes.js";
 import type * as healthRatings from "../healthRatings.js";
+import type * as lib_adminAuth from "../lib/adminAuth.js";
 import type * as ratings from "../ratings.js";
 import type * as search from "../search.js";
 import type * as seed from "../seed.js";
@@ -26,10 +28,12 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  admin: typeof admin;
   corrections: typeof corrections;
   crons: typeof crons;
   episodes: typeof episodes;
   healthRatings: typeof healthRatings;
+  "lib/adminAuth": typeof lib_adminAuth;
   ratings: typeof ratings;
   search: typeof search;
   seed: typeof seed;

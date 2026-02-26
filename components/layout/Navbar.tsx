@@ -3,7 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
-import { Menu, Search, Shield, X } from "lucide-react";
+import { useQuery } from "convex/react";
+import { Menu, Search, Settings, Shield, X } from "lucide-react";
+import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +26,7 @@ const NAV_LINKS = [
 
 export function Navbar() {
   const { isSignedIn, isLoaded } = useUser();
+  const isAdmin = useQuery(api.admin.isCurrentUserAdmin);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
@@ -70,6 +73,20 @@ export function Navbar() {
               {link.label}
             </Link>
           ))}
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className={cn(
+                "px-3 py-1.5 rounded-md text-sm font-medium",
+                "text-muted-foreground transition-colors duration-150",
+                "hover:text-foreground hover:bg-muted/50",
+                "flex items-center gap-1"
+              )}
+            >
+              <Settings className="size-3.5" />
+              Admin
+            </Link>
+          )}
         </nav>
 
         {/* Desktop search — centered */}
@@ -166,6 +183,20 @@ export function Navbar() {
                 {link.label}
               </Link>
             ))}
+            {isAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setMobileMenuOpen(false)}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-3 py-2.5",
+                  "text-sm font-medium text-foreground",
+                  "transition-colors hover:bg-muted/50"
+                )}
+              >
+                <Settings className="size-4" />
+                Admin
+              </Link>
+            )}
           </nav>
         </SheetContent>
       </Sheet>

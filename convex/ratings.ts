@@ -16,7 +16,7 @@ import {
   pickBestSubtitle,
   gatherTVEpisodeDialogue,
 } from "../lib/opensubtitles";
-import { chatCompletion, parseJSONResponse } from "../lib/openrouter";
+import { chatCompletion, parseJSONResponse, estimateCostCents } from "../lib/openrouter";
 
 // ── System Prompt ────────────────────────────────────────
 
@@ -108,6 +108,13 @@ Respond with ONLY a JSON object. No preamble, no markdown fences, no explanation
   },
   "confidence": <0.0-1.0>,
   "notes": "<2-3 sentence summary explaining the key ratings. Focus on the highest-rated categories and why they received that score. Be factual and specific — cite scenes or plot points.>",
+  "categoryEvidence": {
+    // Include ONLY categories rated 1 or higher. Omit categories rated 0.
+    "<categoryKey>": {
+      "explanation": "<1-2 sentences: why this score, citing specific scenes/characters/plot points.>",
+      "quote": "<If dialogue/subtitle data was provided, include a short relevant quote. Otherwise omit this field.>"
+    }
+  },
   "episodeFlags": [
     // ONLY for TV shows. Omit for movies. List any specific episodes that deviate significantly from the show-level rating.
     {
@@ -129,6 +136,11 @@ The "confidence" score should reflect how much data you had to work with:
 
 // ── Rating Result Types ──────────────────────────────────
 
+interface CategoryEvidenceEntry {
+  explanation: string;
+  quote?: string;
+}
+
 interface RatingResult {
   ratings: {
     lgbtq: number;
@@ -142,6 +154,7 @@ interface RatingResult {
   };
   confidence: number;
   notes: string;
+  categoryEvidence?: Partial<Record<string, CategoryEvidenceEntry>>;
   episodeFlags?: {
     season: number;
     episode: number;
@@ -240,6 +253,20 @@ function parseRatingResponse(responseText: string): RatingResult {
     throw new Error("Missing notes in rating response");
   }
 
+  // Validate categoryEvidence if present (backward compat: don't fail if absent)
+  if (parsed.categoryEvidence && typeof parsed.categoryEvidence === "object") {
+    const validKeys = new Set(CATEGORY_KEYS);
+    for (const [key, entry] of Object.entries(parsed.categoryEvidence)) {
+      if (!validKeys.has(key as typeof CATEGORY_KEYS[number])) {
+        delete parsed.categoryEvidence[key];
+        continue;
+      }
+      if (entry && typeof entry === "object" && typeof entry.explanation !== "string") {
+        delete parsed.categoryEvidence[key];
+      }
+    }
+  }
+
   // Validate episodeFlags if present
   if (parsed.episodeFlags) {
     if (!Array.isArray(parsed.episodeFlags)) {
@@ -263,6 +290,13 @@ function parseRatingResponse(responseText: string): RatingResult {
 
 // ── Data Gathering ───────────────────────────────────────
 
+interface SubtitleInfo {
+  status: "success" | "failed" | "skipped" | "timeout";
+  source?: string;
+  language?: string;
+  dialogueLines?: number;
+}
+
 interface GatheredData {
   title: string;
   year: number;
@@ -278,6 +312,7 @@ interface GatheredData {
   keywords?: string[];
   parentalGuide?: string;
   subtitleExcerpt?: string;
+  subtitleInfo?: SubtitleInfo;
   streamingProviders?: { name: string; logoPath: string }[];
   // TV-specific
   numberOfSeasons?: number;
@@ -341,24 +376,39 @@ async function gatherMovieData(
   // Fetch subtitles for dialogue analysis (8s timeout so it never blocks the pipeline)
   if (options.includeSubtitles && subtitlesKey && tmdb.imdb_id) {
     try {
+      const SUBTITLE_TIMEOUT = 8000;
       const subtitleResult = await Promise.race([
         (async () => {
           const searchResults = await searchSubtitles(tmdb.imdb_id!, subtitlesKey);
           const best = pickBestSubtitle(searchResults);
           if (best) {
             const srtText = await downloadSubtitle(best.fileId, subtitlesKey);
-            return extractDialogue(srtText, 300);
+            const dialogue = extractDialogue(srtText, 300);
+            const lines = dialogue ? dialogue.split("\n").length : 0;
+            return { dialogue, language: best.language, lines };
           }
           return null;
         })(),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), SUBTITLE_TIMEOUT)),
       ]);
       if (subtitleResult) {
-        data.subtitleExcerpt = subtitleResult;
+        data.subtitleExcerpt = subtitleResult.dialogue;
+        data.subtitleInfo = {
+          status: "success",
+          source: "opensubtitles",
+          language: subtitleResult.language,
+          dialogueLines: subtitleResult.lines,
+        };
+      } else {
+        // null from race = either no subtitle found or timeout
+        data.subtitleInfo = { status: "timeout" };
       }
     } catch (e) {
       console.error("Subtitle fetch failed (non-fatal):", e);
+      data.subtitleInfo = { status: "failed" };
     }
+  } else if (!options.includeSubtitles) {
+    data.subtitleInfo = { status: "skipped" };
   }
 
   return data;
@@ -434,16 +484,29 @@ async function gatherTVData(
   // Fetch per-episode subtitles if we got an IMDB ID (15s timeout for multi-episode fetch)
   if (options.includeSubtitles && subtitlesKey && data.imdbId) {
     try {
+      const SUBTITLE_TIMEOUT = 15000;
       const subtitleResult = await Promise.race([
         gatherTVEpisodeDialogue(data.imdbId, subtitlesKey),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), SUBTITLE_TIMEOUT)),
       ]);
       if (subtitleResult) {
         data.subtitleExcerpt = subtitleResult;
+        const lines = subtitleResult.split("\n").length;
+        data.subtitleInfo = {
+          status: "success",
+          source: "opensubtitles",
+          language: "en",
+          dialogueLines: lines,
+        };
+      } else {
+        data.subtitleInfo = { status: "timeout" };
       }
     } catch (e) {
       console.error("Subtitle fetch failed (non-fatal):", e);
+      data.subtitleInfo = { status: "failed" };
     }
+  } else if (!options.includeSubtitles) {
+    data.subtitleInfo = { status: "skipped" };
   }
 
   return data;
@@ -451,12 +514,19 @@ async function gatherTVData(
 
 // ── Core Rating Function ─────────────────────────────────
 
+interface PipelineMetrics {
+  durationMs: number;
+  tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number };
+  estimatedCostCents: number;
+}
+
 async function runRatingPipeline(
   tmdbId: number,
   type: "movie" | "tv",
   options: { includeSubtitles: boolean } = { includeSubtitles: true }
-): Promise<{ data: GatheredData; result: RatingResult; model: string }> {
+): Promise<{ data: GatheredData; result: RatingResult; model: string; pipelineMetrics: PipelineMetrics }> {
   const openRouterKey = process.env.OPENROUTER_API_KEY!;
+  const startTime = Date.now();
 
   // 1. Gather data
   const data =
@@ -484,13 +554,24 @@ async function runRatingPipeline(
     RATING_SYSTEM_PROMPT,
     userMessage,
     openRouterKey,
-    { temperature: 0.3, maxTokens: 4096 }
+    { temperature: 0.3, maxTokens: 6144 }
   );
 
   // 4. Parse and validate
   const result = parseRatingResponse(completion.content);
 
-  return { data, result, model: completion.model };
+  const durationMs = Date.now() - startTime;
+  const pipelineMetrics: PipelineMetrics = {
+    durationMs,
+    tokenUsage: {
+      promptTokens: completion.usage.prompt_tokens,
+      completionTokens: completion.usage.completion_tokens,
+      totalTokens: completion.usage.total_tokens,
+    },
+    estimatedCostCents: estimateCostCents(completion.usage),
+  };
+
+  return { data, result, model: completion.model, pipelineMetrics };
 }
 
 // ── Episode Rating ────────────────────────────────────────
@@ -517,7 +598,14 @@ Respond with ONLY a JSON object. No preamble, no markdown fences, no explanation
     "sexuality": <0-4>
   },
   "confidence": <0.0-1.0>,
-  "notes": "<2-3 sentence summary of this specific episode's content. Be factual and specific — cite scenes or plot points from this episode.>"
+  "notes": "<2-3 sentence summary of this specific episode's content. Be factual and specific — cite scenes or plot points from this episode.>",
+  "categoryEvidence": {
+    // Include ONLY categories rated 1 or higher. Omit categories rated 0.
+    "<categoryKey>": {
+      "explanation": "<1-2 sentences: why this score, citing specific scenes/characters/plot points from this episode.>",
+      "quote": "<If dialogue/subtitle data was provided, include a short relevant quote. Otherwise omit this field.>"
+    }
+  }
 }
 
 The "confidence" score should reflect how much data you had to work with:
@@ -579,6 +667,7 @@ interface EpisodeRatingResult {
   };
   confidence: number;
   notes: string;
+  categoryEvidence?: Partial<Record<string, CategoryEvidenceEntry>>;
 }
 
 function parseEpisodeRatingResponse(responseText: string): EpisodeRatingResult {
@@ -599,6 +688,20 @@ function parseEpisodeRatingResponse(responseText: string): EpisodeRatingResult {
     throw new Error("Missing notes in rating response");
   }
 
+  // Validate categoryEvidence if present
+  if (parsed.categoryEvidence && typeof parsed.categoryEvidence === "object") {
+    const validKeys = new Set(CATEGORY_KEYS);
+    for (const [key, entry] of Object.entries(parsed.categoryEvidence)) {
+      if (!validKeys.has(key as typeof CATEGORY_KEYS[number])) {
+        delete parsed.categoryEvidence[key];
+        continue;
+      }
+      if (entry && typeof entry === "object" && typeof entry.explanation !== "string") {
+        delete parsed.categoryEvidence[key];
+      }
+    }
+  }
+
   return parsed;
 }
 
@@ -617,9 +720,10 @@ async function runEpisodeRatingPipeline(
     overview?: string;
     runtime?: number;
   }
-): Promise<{ result: EpisodeRatingResult; model: string }> {
+): Promise<{ result: EpisodeRatingResult; model: string; pipelineMetrics: PipelineMetrics }> {
   const openRouterKey = process.env.OPENROUTER_API_KEY!;
   const subtitlesKey = process.env.OPENSUBTITLES_API_KEY;
+  const startTime = Date.now();
 
   // Gather subtitle dialogue for this episode (8s timeout)
   let subtitleExcerpt: string | undefined;
@@ -658,11 +762,23 @@ async function runEpisodeRatingPipeline(
     EPISODE_RATING_SYSTEM_PROMPT,
     userMessage,
     openRouterKey,
-    { temperature: 0.3, maxTokens: 2048 }
+    { temperature: 0.3, maxTokens: 3072 }
   );
 
   const result = parseEpisodeRatingResponse(completion.content);
-  return { result, model: completion.model };
+
+  const durationMs = Date.now() - startTime;
+  const pipelineMetrics: PipelineMetrics = {
+    durationMs,
+    tokenUsage: {
+      promptTokens: completion.usage.prompt_tokens,
+      completionTokens: completion.usage.completion_tokens,
+      totalTokens: completion.usage.total_tokens,
+    },
+    estimatedCostCents: estimateCostCents(completion.usage),
+  };
+
+  return { result, model: completion.model, pipelineMetrics };
 }
 
 // ── Public Actions ───────────────────────────────────────
@@ -674,7 +790,7 @@ export const rateTitle = action({
     type: v.union(v.literal("movie"), v.literal("tv")),
   },
   handler: async (ctx, args): Promise<void> => {
-    const { data, result, model } = await runRatingPipeline(
+    const { data, result, model, pipelineMetrics } = await runRatingPipeline(
       args.tmdbId,
       args.type,
       { includeSubtitles: true }
@@ -722,6 +838,18 @@ export const rateTitle = action({
         severity: f.severity,
         note: f.note,
       })),
+      subtitleInfo: data.subtitleInfo,
+      categoryEvidence: result.categoryEvidence as Record<string, { explanation: string; quote?: string }> | undefined,
+    });
+
+    // Update queue with metrics
+    await ctx.runMutation(internal.ratings.updateQueueStatus, {
+      tmdbId: args.tmdbId,
+      status: "completed",
+      completedAt: Date.now(),
+      durationMs: pipelineMetrics.durationMs,
+      tokenUsage: pipelineMetrics.tokenUsage,
+      estimatedCostCents: pipelineMetrics.estimatedCostCents,
     });
 
     // Queue overstimulation analysis (non-blocking — runs after cultural rating)
@@ -771,7 +899,7 @@ export const rateTitleOnDemand = action({
 
     try {
       // Run pipeline with subtitles (timeout-protected so they don't block)
-      const { data, result, model } = await runRatingPipeline(
+      const { data, result, model, pipelineMetrics } = await runRatingPipeline(
         args.tmdbId,
         args.type,
         { includeSubtitles: true }
@@ -812,6 +940,8 @@ export const rateTitleOnDemand = action({
           severity: f.severity,
           note: f.note,
         })),
+        subtitleInfo: data.subtitleInfo,
+        categoryEvidence: result.categoryEvidence as Record<string, { explanation: string; quote?: string }> | undefined,
       });
 
       // Low confidence → disputed
@@ -827,10 +957,14 @@ export const rateTitleOnDemand = action({
         }
       }
 
-      // Mark queue item as completed
+      // Mark queue item as completed with metrics
       await ctx.runMutation(internal.ratings.updateQueueStatus, {
         tmdbId: args.tmdbId,
         status: "completed",
+        completedAt: Date.now(),
+        durationMs: pipelineMetrics.durationMs,
+        tokenUsage: pipelineMetrics.tokenUsage,
+        estimatedCostCents: pipelineMetrics.estimatedCostCents,
       });
 
       // Queue overstimulation analysis (non-blocking — runs after cultural rating)
@@ -908,7 +1042,7 @@ export const rateEpisodeOnDemand = action({
         }
       }
 
-      const { result, model } = await runEpisodeRatingPipeline(
+      const { result, model, pipelineMetrics } = await runEpisodeRatingPipeline(
         {
           title: title.title,
           year: title.year,
@@ -932,6 +1066,17 @@ export const rateEpisodeOnDemand = action({
         confidence: result.confidence,
         notes: result.notes,
         model,
+        categoryEvidence: result.categoryEvidence as Record<string, { explanation: string; quote?: string }> | undefined,
+      });
+
+      // Update queue with metrics
+      await ctx.runMutation(internal.ratings.updateQueueStatus, {
+        tmdbId: episode.tmdbShowId,
+        status: "completed",
+        completedAt: Date.now(),
+        durationMs: pipelineMetrics.durationMs,
+        tokenUsage: pipelineMetrics.tokenUsage,
+        estimatedCostCents: pipelineMetrics.estimatedCostCents,
       });
 
       // Aggregate show-level ratings from all rated episodes
@@ -966,13 +1111,9 @@ export const processQueueItem = action({
 
     try {
       if (item.type === "episode" && item.episodeId) {
-        // Episode rating
+        // Episode rating (rateEpisodeOnDemand handles queue status + metrics)
         await ctx.runAction(api.ratings.rateEpisodeOnDemand, {
           episodeId: item.episodeId,
-        });
-        await ctx.runMutation(internal.ratings.updateQueueStatus, {
-          tmdbId: item.tmdbId,
-          status: "completed",
         });
       } else if (item.source === "user_request") {
         // Use on-demand for user requests (faster), full for batch
@@ -981,14 +1122,10 @@ export const processQueueItem = action({
           type: item.type as "movie" | "tv",
         });
       } else {
+        // Batch processing (rateTitle handles queue status + metrics)
         await ctx.runAction(api.ratings.rateTitle, {
           tmdbId: item.tmdbId,
           type: item.type as "movie" | "tv",
-        });
-        // Mark completed
-        await ctx.runMutation(internal.ratings.updateQueueStatus, {
-          tmdbId: item.tmdbId,
-          status: "completed",
         });
       }
     } catch (e) {
@@ -1372,6 +1509,14 @@ export const updateQueueStatus = internalMutation({
     tmdbId: v.number(),
     status: v.union(v.literal("completed"), v.literal("failed")),
     error: v.optional(v.string()),
+    completedAt: v.optional(v.number()),
+    durationMs: v.optional(v.number()),
+    tokenUsage: v.optional(v.object({
+      promptTokens: v.number(),
+      completionTokens: v.number(),
+      totalTokens: v.number(),
+    })),
+    estimatedCostCents: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db
@@ -1382,6 +1527,10 @@ export const updateQueueStatus = internalMutation({
       await ctx.db.patch(item._id, {
         status: args.status,
         lastError: args.error,
+        completedAt: args.completedAt,
+        durationMs: args.durationMs,
+        tokenUsage: args.tokenUsage,
+        estimatedCostCents: args.estimatedCostCents,
       });
     }
   },

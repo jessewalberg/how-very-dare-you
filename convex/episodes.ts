@@ -115,12 +115,23 @@ export const saveEpisodeRating = internalMutation({
     confidence: v.number(),
     notes: v.string(),
     model: v.string(),
+    categoryEvidence: v.optional(v.object({
+      lgbtq: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      climate: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      racialIdentity: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      genderRoles: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      antiAuthority: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      religious: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      political: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      sexuality: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+    })),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.episodeId, {
       ratings: args.ratings,
       ratingConfidence: args.confidence,
       ratingNotes: args.notes,
+      categoryEvidence: args.categoryEvidence,
       ratingModel: args.model,
       ratedAt: Date.now(),
       status: "rated",

@@ -145,6 +145,15 @@ export function parseJSONResponse<T>(content: string): T {
   return JSON.parse(cleaned) as T;
 }
 
+// ── Cost Estimation ───────────────────────────────────
+
+/** Estimate cost in cents for a request (claude-sonnet-4 via OpenRouter pricing snapshot). */
+export function estimateCostCents(usage: { prompt_tokens: number; completion_tokens: number }): number {
+  const inputCost = (usage.prompt_tokens / 1_000_000) * 300;
+  const outputCost = (usage.completion_tokens / 1_000_000) * 1500;
+  return Math.round((inputCost + outputCost) * 100) / 100;
+}
+
 // ── Helpers ───────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {

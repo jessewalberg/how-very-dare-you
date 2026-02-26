@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { LandingSampleCards } from "@/components/landing/LandingSampleCards";
 import { LandingSearch } from "@/components/landing/LandingSearch";
+import { LandingAuthButtons, LandingNavAuth } from "@/components/landing/LandingAuthButtons";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/" },
@@ -53,6 +54,22 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(HOME_JSON_LD) }}
       />
+
+      {/* Top nav */}
+      <header className="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="flex items-center justify-center size-7 rounded-lg bg-foreground text-background transition-transform duration-200 group-hover:scale-105">
+              <Shield className="size-4" strokeWidth={2.5} />
+            </div>
+            <span className="text-base font-bold tracking-tight">
+              How Very Dare You
+            </span>
+          </Link>
+          <LandingNavAuth />
+        </div>
+      </header>
+
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-border/30">
         {/* Subtle grid background */}
@@ -349,7 +366,7 @@ export default function HomePage() {
                 ))}
               </ul>
               <Button className="w-full" asChild>
-                <Link href="/sign-up">Get Premium</Link>
+                <Link href="/settings">Get Premium</Link>
               </Button>
             </div>
           </div>
@@ -368,22 +385,7 @@ export default function HomePage() {
             or show — completely free.
           </p>
           <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <Button
-              size="lg"
-              variant="secondary"
-              className="min-w-[160px]"
-              asChild
-            >
-              <Link href="/browse">Browse Titles</Link>
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="min-w-[160px] border-background/20 text-background hover:bg-background/10 hover:text-background"
-              asChild
-            >
-              <Link href="/sign-up">Create Account</Link>
-            </Button>
+            <LandingAuthButtons />
           </div>
         </div>
       </section>

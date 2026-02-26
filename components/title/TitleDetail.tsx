@@ -237,6 +237,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
             <RatingBreakdown
               ratings={ratings}
               notes={title.ratingNotes ?? undefined}
+              categoryEvidence={title.categoryEvidence ?? undefined}
             />
           )}
 

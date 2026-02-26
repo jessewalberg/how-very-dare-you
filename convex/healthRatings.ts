@@ -69,6 +69,17 @@ interface OverstimResult {
 
 // ── Helpers ──────────────────────────────────────────────
 
+interface VideoAnalysisTiming {
+  download_ms: number;
+  scene_detection_ms: number;
+  color_analysis_ms: number;
+  total_ms: number;
+}
+
+interface VideoAnalysisResponse extends VideoAnalysisMetrics {
+  timing?: VideoAnalysisTiming;
+}
+
 /** Call the Go video analysis service for a single YouTube video. */
 async function analyzeVideo(
   videoId: string,
@@ -78,11 +89,13 @@ async function analyzeVideo(
   apiSecret: string
 ): Promise<VideoAnalysisMetrics> {
   const videoUrl = `https://youtube.com/watch?v=${videoId}`;
+  const requestId = `convex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const res = await fetch(`${serviceUrl}/analyze`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiSecret}`,
+      "X-Request-ID": requestId,
     },
     body: JSON.stringify({ video_url: videoUrl, title, type }),
   });
@@ -92,7 +105,13 @@ async function analyzeVideo(
     throw new Error(`Video analysis service error ${res.status}: ${errBody}`);
   }
 
-  return res.json() as Promise<VideoAnalysisMetrics>;
+  const data = await res.json() as VideoAnalysisResponse;
+
+  if (data.timing) {
+    console.log(`[VideoAnalysis] ${title} (${videoId}) timing: download=${data.timing.download_ms}ms scene=${data.timing.scene_detection_ms}ms color=${data.timing.color_analysis_ms}ms total=${data.timing.total_ms}ms request_id=${requestId}`);
+  }
+
+  return data;
 }
 
 /** Send video metrics to AI for a 0-4 overstimulation rating. */

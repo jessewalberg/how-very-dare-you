@@ -109,6 +109,22 @@ export const saveRating = mutation({
         })
       )
     ),
+    subtitleInfo: v.optional(v.object({
+      status: v.union(v.literal("success"), v.literal("failed"), v.literal("skipped"), v.literal("timeout")),
+      source: v.optional(v.string()),
+      language: v.optional(v.string()),
+      dialogueLines: v.optional(v.number()),
+    })),
+    categoryEvidence: v.optional(v.object({
+      lgbtq: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      climate: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      racialIdentity: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      genderRoles: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      antiAuthority: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      religious: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      political: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+      sexuality: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
+    })),
   },
   handler: async (ctx, args) => {
     const title = await ctx.db
@@ -122,6 +138,7 @@ export const saveRating = mutation({
       ratings: { ...args.ratings, overstimulation: title.ratings?.overstimulation },
       ratingConfidence: args.confidence,
       ratingNotes: args.notes,
+      categoryEvidence: args.categoryEvidence,
       ratingModel: args.model,
       ratedAt: Date.now(),
       status: "rated",
@@ -129,6 +146,7 @@ export const saveRating = mutation({
         args.episodeFlags && args.episodeFlags.length > 0
           ? args.episodeFlags
           : undefined,
+      subtitleInfo: args.subtitleInfo,
     });
   },
 });

@@ -1,6 +1,8 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useState } from "react";
+import { useQuery, useAction } from "convex/react";
+import { RefreshCw } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import {
@@ -12,6 +14,7 @@ import {
 } from "@/components/ui/sheet";
 import { RatingBreakdown } from "@/components/rating/RatingBreakdown";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import type { CategoryRatings } from "@/lib/scoring";
 
 interface EpisodeDetailSheetProps {
@@ -31,8 +34,23 @@ export function EpisodeDetailSheet({
     api.episodes.getEpisode,
     episodeId ? { episodeId } : "skip"
   );
+  const isAdmin = useQuery(api.admin.isCurrentUserAdmin);
+  const reRateEpisode = useAction(api.admin.reRateEpisode);
+  const [reRating, setReRating] = useState(false);
 
   const hasRatings = episode?.status === "rated" && episode?.ratings;
+
+  async function handleReRate() {
+    if (!episodeId) return;
+    setReRating(true);
+    try {
+      await reRateEpisode({ episodeId });
+    } catch (e) {
+      console.error("Re-rate failed:", e);
+    } finally {
+      setReRating(false);
+    }
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -65,6 +83,7 @@ export function EpisodeDetailSheet({
             <RatingBreakdown
               ratings={episode.ratings as CategoryRatings}
               notes={episode.ratingNotes ?? undefined}
+              categoryEvidence={episode.categoryEvidence ?? undefined}
             />
           )}
 
@@ -80,6 +99,28 @@ export function EpisodeDetailSheet({
               {episode.ratingConfidence != null &&
                 ` · Confidence: ${Math.round(episode.ratingConfidence * 100)}%`}
             </p>
+          )}
+
+          {isAdmin && episodeId && (episode?.status === "rated" || episode?.status === "failed") && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full h-8 text-xs gap-1.5"
+              onClick={handleReRate}
+              disabled={reRating}
+            >
+              {reRating ? (
+                <>
+                  <RefreshCw className="size-3 animate-spin" />
+                  Re-rating...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="size-3" />
+                  Re-rate Episode
+                </>
+              )}
+            </Button>
           )}
         </div>
       </SheetContent>
