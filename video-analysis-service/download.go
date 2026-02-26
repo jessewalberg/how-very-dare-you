@@ -51,11 +51,11 @@ func downloadVideo(ctx context.Context, videoURL string) (string, error) {
 	outputTemplate := filepath.Join(tmpDir, "video.%(ext)s")
 
 	args := []string{
-		"-f", "bestvideo[height<=480]+bestaudio/best[height<=480]",
+		"-f", "best[height<=480]/bestvideo[height<=480]+bestaudio/best",
 		"-o", outputTemplate,
 		"--no-playlist",
 		"--merge-output-format", "mp4",
-		"--js-runtimes", "nodejs",
+		"--js-runtimes", "node",
 	}
 
 	// Add cookies if available
