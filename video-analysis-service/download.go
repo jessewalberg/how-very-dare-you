@@ -56,6 +56,7 @@ func downloadVideo(ctx context.Context, videoURL string) (string, error) {
 		"--no-playlist",
 		"--merge-output-format", "mp4",
 		"--js-runtimes", "node",
+		"--remote-components", "ejs:github",
 	}
 
 	// Add cookies if available
