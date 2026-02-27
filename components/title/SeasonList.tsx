@@ -48,7 +48,8 @@ export function SeasonList({ titleId, tmdbShowId, showTitle }: SeasonListProps) 
 
   // Filter out "Specials" (season 0) unless it's the only season
   const seasons = seasonInfo.seasonData.filter(
-    (s) => s.seasonNumber > 0 || seasonInfo.seasonData!.length === 1
+    (s: (typeof seasonInfo.seasonData)[number]) =>
+      s.seasonNumber > 0 || seasonInfo.seasonData!.length === 1
   );
 
   if (seasons.length === 0) return null;
@@ -66,9 +67,12 @@ export function SeasonList({ titleId, tmdbShowId, showTitle }: SeasonListProps) 
           </span>
         )}
       </div>
+      <p className="text-[11px] text-muted-foreground/70">
+        Episode badges are per-episode scores (0-4). The main title score is show-level.
+      </p>
 
       <div className="space-y-1.5">
-        {seasons.map((season) => (
+        {seasons.map((season: (typeof seasons)[number]) => (
           <SeasonAccordion
             key={season.seasonNumber}
             titleId={titleId}

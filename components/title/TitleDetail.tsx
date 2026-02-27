@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Preloaded, usePreloadedQuery, useQuery, useMutation } from "convex/react";
+import { Preloaded, usePreloadedQuery, useQuery, useMutation, useAction } from "convex/react";
 import { useUser } from "@clerk/nextjs";
 import {
   Clock,
@@ -13,6 +13,8 @@ import {
   MessageSquarePlus,
   ArrowLeft,
   ChevronDown,
+  Sparkles,
+  RefreshCw,
   Zap,
   Scissors,
   Palette,
@@ -56,7 +58,15 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const profile = useQuery(api.users.getMyProfile);
   const addToWatchlist = useMutation(api.users.addToWatchlist);
   const removeFromWatchlist = useMutation(api.users.removeFromWatchlist);
+  const requestRating = useMutation(api.ratings.requestOnDemandRating);
+  const adminReRateTitle = useAction(api.admin.reRateTitle);
+  const refreshAllSeasons = useAction(api.admin.refreshAllSeasonsForTitle);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const [requestingRating, setRequestingRating] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [refreshingSeasons, setRefreshingSeasons] = useState(false);
+  const [seasonRefreshMessage, setSeasonRefreshMessage] = useState<string | null>(null);
+  const [seasonRefreshError, setSeasonRefreshError] = useState<string | null>(null);
 
   const isInWatchlist = (title && profile?.watchlist?.includes(title._id)) ?? false;
   const isPaid = profile?.tier === "paid";
@@ -83,6 +93,25 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const ratings = title.ratings as CategoryRatings | undefined;
   const noFlags = ratings ? isNoFlags(ratings) : false;
   const composite = ratings ? calculateCompositeScore(ratings) : null;
+  const totalSeasonEpisodes =
+    title.type === "tv"
+      ? (title.seasonData ?? []).reduce(
+          (sum: number, season: NonNullable<typeof title.seasonData>[number]) =>
+            sum + season.episodeCount,
+          0
+        )
+      : undefined;
+  const normalizedRatingNotes =
+    title.hasEpisodeRatings &&
+    title.ratedEpisodeCount != null &&
+    totalSeasonEpisodes != null &&
+    totalSeasonEpisodes > 0
+      ? `Based on ${title.ratedEpisodeCount} of ${totalSeasonEpisodes} episodes. Average severity per category across rated episodes.`
+      : title.ratingNotes ?? undefined;
+  const showScoreExplanation =
+    title.hasEpisodeRatings && title.ratedEpisodeCount != null
+      ? `Show-level score from ${title.ratedEpisodeCount} rated episode${title.ratedEpisodeCount !== 1 ? "s" : ""} (average per category across rated episodes).`
+      : "Show-level score on a 0-4 scale.";
   const TypeIcon = title.type === "tv" ? Tv : Film;
   const typeLabel =
     title.type === "tv"
@@ -90,6 +119,61 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
       : title.type === "youtube"
         ? "YouTube"
         : "Movie";
+  const canRequestTitleRating = title.type === "movie" || title.type === "tv";
+  const canManuallyRate = title.status === "pending" && canRequestTitleRating;
+  const isAdmin = profile?.isAdmin === true;
+  const canReRateTitle = canRequestTitleRating && hasRatings && isAdmin;
+  const canInitialRateTitle = canRequestTitleRating && !hasRatings;
+  const showTitleRateAction = canInitialRateTitle || canReRateTitle;
+  const titleRateButtonLabel = canReRateTitle ? "Re-Rate Title" : "Rate This Title";
+  const canRefreshSeasonData = isAdmin && title.type === "tv";
+
+  async function handleRequestTitleRating() {
+    if (!title) return;
+    if (!canRequestTitleRating) return;
+    setRequestError(null);
+    setRequestingRating(true);
+    try {
+      if (canReRateTitle) {
+        await adminReRateTitle({ titleId: title._id });
+      } else {
+        await requestRating({
+          tmdbId: title.tmdbId,
+          title: title.title,
+          type: title.type as "movie" | "tv",
+        });
+      }
+    } catch (e) {
+      setRequestError(e instanceof Error ? e.message : "Failed to request rating");
+    } finally {
+      setRequestingRating(false);
+    }
+  }
+
+  async function handleRefreshSeasonData() {
+    if (!title) return;
+    if (!canRefreshSeasonData) return;
+
+    setSeasonRefreshError(null);
+    setSeasonRefreshMessage(null);
+    setRefreshingSeasons(true);
+    try {
+      const result = await refreshAllSeasons({ titleId: title._id });
+      const failed =
+        result.seasonsFailed > 0
+          ? ` (${result.seasonsFailed} failed: ${result.failedSeasons.join(", ")})`
+          : "";
+      setSeasonRefreshMessage(
+        `Refreshed ${result.seasonsRefreshed}/${result.seasonCount} seasons. ${result.episodeCount} episodes indexed.${failed}`
+      );
+    } catch (e) {
+      setSeasonRefreshError(
+        e instanceof Error ? e.message : "Failed to refresh season data"
+      );
+    } finally {
+      setRefreshingSeasons(false);
+    }
+  }
 
   // Show loading state while AI is rating
   if (isLoading) {
@@ -110,6 +194,21 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           genre={title.genre}
           posterPath={title.posterPath}
         />
+        {canManuallyRate && (
+          <div className="mt-4 flex flex-col items-center gap-3">
+            {requestError && (
+              <p className="text-sm text-destructive">{requestError}</p>
+            )}
+            <Button
+              onClick={handleRequestTitleRating}
+              disabled={requestingRating}
+              className="gap-1.5"
+            >
+              <Sparkles className={cn("size-4", requestingRating && "animate-pulse")} />
+              {requestingRating ? "Requesting rating..." : "Rate This Title"}
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -205,21 +304,17 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {hasRatings && !noFlags && composite !== null && (
             <div className="lg:hidden">
               <CompositeScore score={composite} />
-              {title.hasEpisodeRatings && title.ratedEpisodeCount != null && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Based on {title.ratedEpisodeCount} episode{title.ratedEpisodeCount !== 1 ? "s" : ""}
-                </p>
-              )}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {showScoreExplanation}
+              </p>
             </div>
           )}
           {hasRatings && noFlags && (
             <div className="lg:hidden">
               <NoFlagsBadge />
-              {title.hasEpisodeRatings && title.ratedEpisodeCount != null && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Based on {title.ratedEpisodeCount} episode{title.ratedEpisodeCount !== 1 ? "s" : ""}
-                </p>
-              )}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {showScoreExplanation}
+              </p>
             </div>
           )}
 
@@ -236,7 +331,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {ratings && (
             <RatingBreakdown
               ratings={ratings}
-              notes={title.ratingNotes ?? undefined}
+              notes={normalizedRatingNotes}
               categoryEvidence={title.categoryEvidence ?? undefined}
             />
           )}
@@ -286,6 +381,42 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
 
           {/* Actions */}
           <div className="flex flex-wrap gap-3">
+            {showTitleRateAction && (
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  size="sm"
+                  onClick={handleRequestTitleRating}
+                  disabled={requestingRating}
+                  className="gap-1.5"
+                >
+                  <Sparkles className={cn("size-3.5", requestingRating && "animate-pulse")} />
+                  {requestingRating ? "Requesting rating..." : titleRateButtonLabel}
+                </Button>
+                {requestError && (
+                  <p className="text-xs text-destructive">{requestError}</p>
+                )}
+              </div>
+            )}
+            {canRefreshSeasonData && (
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefreshSeasonData}
+                  disabled={refreshingSeasons}
+                  className="gap-1.5"
+                >
+                  <RefreshCw className={cn("size-3.5", refreshingSeasons && "animate-spin")} />
+                  {refreshingSeasons ? "Refreshing seasons..." : "Refresh Seasons Data"}
+                </Button>
+                {seasonRefreshMessage && (
+                  <p className="text-xs text-muted-foreground">{seasonRefreshMessage}</p>
+                )}
+                {seasonRefreshError && (
+                  <p className="text-xs text-destructive">{seasonRefreshError}</p>
+                )}
+              </div>
+            )}
             {isSignedIn && (
               <Button
                 variant="outline"

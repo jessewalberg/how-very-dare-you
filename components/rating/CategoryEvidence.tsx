@@ -2,7 +2,7 @@
 
 import { Quote } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CATEGORIES, type CategoryKey } from "@/lib/constants";
+import { CATEGORIES } from "@/lib/constants";
 
 interface CategoryEvidenceEntry {
   explanation: string;

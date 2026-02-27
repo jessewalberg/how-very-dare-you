@@ -7,6 +7,24 @@ import {
 } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
+import {
+  assertCategoryRatings,
+  assertConfidence,
+  assertSeverityScore,
+  sanitizeCategoryEvidence,
+} from "./lib/ratingValidation";
+
+function isGenericEpisodeName(name?: string): boolean {
+  if (!name) return false;
+  return /^episode\s+\d+$/i.test(name.trim());
+}
+
+function normalizeOmdbDate(date?: string): string | undefined {
+  if (!date || date === "N/A") return undefined;
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString().slice(0, 10);
+}
 
 // ── Queries ──────────────────────────────────────────────
 
@@ -94,6 +112,32 @@ export const createEpisodesFromTMDB = internalMutation({
           runtime: ep.runtime,
           status: "unrated",
         });
+        continue;
+      }
+
+      // Refresh existing records with better metadata when we get it.
+      const patch: {
+        name?: string;
+        overview?: string;
+        airDate?: string;
+        stillPath?: string;
+        runtime?: number;
+      } = {};
+
+      if (
+        ep.name &&
+        (!existing.name ||
+          (isGenericEpisodeName(existing.name) && !isGenericEpisodeName(ep.name)))
+      ) {
+        patch.name = ep.name;
+      }
+      if (ep.overview && !existing.overview) patch.overview = ep.overview;
+      if (ep.airDate && !existing.airDate) patch.airDate = ep.airDate;
+      if (ep.stillPath && !existing.stillPath) patch.stillPath = ep.stillPath;
+      if (ep.runtime && !existing.runtime) patch.runtime = ep.runtime;
+
+      if (Object.keys(patch).length > 0) {
+        await ctx.db.patch(existing._id, patch);
       }
     }
   },
@@ -115,6 +159,20 @@ export const saveEpisodeRating = internalMutation({
     confidence: v.number(),
     notes: v.string(),
     model: v.string(),
+    subtitleInfo: v.optional(v.object({
+      status: v.union(v.literal("success"), v.literal("failed"), v.literal("skipped"), v.literal("timeout")),
+      source: v.optional(v.string()),
+      language: v.optional(v.string()),
+      dialogueLines: v.optional(v.number()),
+      transcriptStorage: v.optional(v.object({
+        provider: v.literal("r2"),
+        bucket: v.string(),
+        key: v.string(),
+        bytes: v.number(),
+        sha256: v.string(),
+        uploadedAt: v.number(),
+      })),
+    })),
     categoryEvidence: v.optional(v.object({
       lgbtq: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
       climate: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
@@ -127,14 +185,78 @@ export const saveEpisodeRating = internalMutation({
     })),
   },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.episodeId);
+    if (!existing) throw new Error("Episode not found");
+    assertCategoryRatings(args.ratings, "episode ratings");
+    assertConfidence(args.confidence, "episode confidence");
+
+    const categoryEvidence = sanitizeCategoryEvidence(
+      args.categoryEvidence,
+      args.ratings
+    );
+
     await ctx.db.patch(args.episodeId, {
-      ratings: args.ratings,
+      ratings: {
+        ...args.ratings,
+        overstimulation: existing?.ratings?.overstimulation,
+      },
       ratingConfidence: args.confidence,
       ratingNotes: args.notes,
-      categoryEvidence: args.categoryEvidence,
+      categoryEvidence,
       ratingModel: args.model,
+      subtitleInfo: args.subtitleInfo,
       ratedAt: Date.now(),
       status: "rated",
+    });
+  },
+});
+
+export const saveEpisodeOverstimulation = internalMutation({
+  args: {
+    episodeId: v.id("episodes"),
+    overstimulation: v.number(),
+    analysis: v.optional(v.object({
+      methodVersion: v.string(),
+      videoId: v.string(),
+      analyzedAt: v.number(),
+      metrics: v.object({
+        cutsPerMinute: v.number(),
+        avgCutDuration: v.number(),
+        avgSaturation: v.number(),
+        avgBrightness: v.number(),
+        brightnessVariance: v.number(),
+        flashCount: v.number(),
+      }),
+      ai: v.object({
+        severity: v.number(),
+        confidence: v.number(),
+        note: v.string(),
+        model: v.string(),
+      }),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const episode = await ctx.db.get(args.episodeId);
+    if (!episode) throw new Error("Episode not found");
+    if (!episode.ratings) return;
+    assertSeverityScore(args.overstimulation, "episode overstimulation");
+    if (args.analysis) {
+      assertSeverityScore(
+        args.analysis.ai.severity,
+        "episode overstimulation analysis severity"
+      );
+      assertConfidence(
+        args.analysis.ai.confidence,
+        "episode overstimulation analysis confidence"
+      );
+    }
+
+    await ctx.db.patch(args.episodeId, {
+      ratings: {
+        ...episode.ratings,
+        overstimulation: args.overstimulation,
+      },
+      overstimulationAnalysis: args.analysis,
     });
   },
 });
@@ -187,12 +309,13 @@ export const requestEpisodeRating = mutation({
         ? user?.onDemandRatingsToday ?? 0
         : 0;
 
-    if (used >= limit) {
+    const isAdmin = user?.isAdmin === true;
+    if (!isAdmin && used >= limit) {
       throw new Error("Daily on-demand rating limit reached");
     }
 
-    // Update rate limit counter
-    if (user) {
+    // Update rate limit counter (skip for admins)
+    if (user && !isAdmin) {
       await ctx.db.patch(user._id, {
         onDemandRatingsToday: used + 1,
         onDemandRatingsDate: today,
@@ -236,23 +359,88 @@ export const fetchSeasonEpisodes = action({
   },
   handler: async (ctx, args): Promise<void> => {
     const { getTVSeason } = await import("../lib/tmdb");
+    const { getSeasonByImdbId, getByImdbId } = await import("../lib/omdb");
     const tmdbKey = process.env.TMDB_API_KEY!;
+    const omdbKey = process.env.OMDB_API_KEY;
+
+    const title = await ctx.runQuery(api.titles.getTitle, { titleId: args.titleId });
+    if (!title || title.type !== "tv") {
+      throw new Error("Parent TV title not found");
+    }
 
     const season = await getTVSeason(args.tmdbShowId, args.seasonNumber, tmdbKey);
 
-    // Create episode records
+    // Optional OMDB enrichment to improve naming/date completeness.
+    const omdbByEpisode = new Map<number, { title?: string; released?: string }>();
+    let omdbPoster: string | undefined;
+    if (omdbKey && title.imdbId) {
+      try {
+        const omdbSeries = await getByImdbId(title.imdbId, omdbKey);
+        if (omdbSeries?.Poster && omdbSeries.Poster !== "N/A") {
+          omdbPoster = omdbSeries.Poster;
+        }
+
+        const omdbSeason = await getSeasonByImdbId(
+          title.imdbId,
+          args.seasonNumber,
+          omdbKey
+        );
+        for (const ep of omdbSeason?.Episodes ?? []) {
+          const episodeNumber = parseInt(ep.Episode, 10);
+          if (Number.isNaN(episodeNumber)) continue;
+          omdbByEpisode.set(episodeNumber, {
+            title: ep.Title && ep.Title !== "N/A" ? ep.Title : undefined,
+            released: normalizeOmdbDate(ep.Released),
+          });
+        }
+      } catch (e) {
+        console.error("OMDB season fetch failed (non-fatal):", e);
+      }
+    }
+
+    // Merge episode rows from TMDB and OMDB by episode number.
+    const tmdbByEpisode = new Map(
+      season.episodes.map((ep) => [ep.episode_number, ep] as const)
+    );
+    const episodeNumbers = new Set<number>([
+      ...tmdbByEpisode.keys(),
+      ...omdbByEpisode.keys(),
+    ]);
+    const mergedEpisodes = Array.from(episodeNumbers)
+      .sort((a, b) => a - b)
+      .map((episodeNumber) => {
+        const tmdbEp = tmdbByEpisode.get(episodeNumber);
+        const omdbEp = omdbByEpisode.get(episodeNumber);
+
+        const tmdbName = tmdbEp?.name || undefined;
+        const preferredName =
+          !tmdbName || isGenericEpisodeName(tmdbName)
+            ? omdbEp?.title || tmdbName
+            : tmdbName;
+
+        return {
+          episodeNumber,
+          name: preferredName,
+          overview: tmdbEp?.overview || undefined,
+          airDate: tmdbEp?.air_date || omdbEp?.released || undefined,
+          // TMDB stills are best; fallback to OMDB series poster, then show poster.
+          stillPath:
+            tmdbEp?.still_path || omdbPoster || title.posterPath || undefined,
+          runtime: tmdbEp?.runtime || undefined,
+        };
+      });
+
+    // Create or update episode records.
     await ctx.runMutation(internal.episodes.createEpisodesFromTMDB, {
       titleId: args.titleId,
       tmdbShowId: args.tmdbShowId,
       seasonNumber: args.seasonNumber,
-      episodes: season.episodes.map((ep) => ({
-        episodeNumber: ep.episode_number,
-        name: ep.name || undefined,
-        overview: ep.overview || undefined,
-        airDate: ep.air_date || undefined,
-        stillPath: ep.still_path || undefined,
-        runtime: ep.runtime || undefined,
-      })),
+      episodes: mergedEpisodes,
+    });
+
+    // Keep show-level episode-count note in sync as seasons/episodes are refreshed.
+    await ctx.runMutation(internal.titles.refreshEpisodeRatingNotes, {
+      titleId: args.titleId,
     });
   },
 });

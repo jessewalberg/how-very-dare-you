@@ -4,10 +4,10 @@ import Image from "next/image";
 import { Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { RatingBadge } from "@/components/rating/RatingBadge";
+import { Badge } from "@/components/ui/badge";
 import { calculateCompositeScore, isNoFlags, type CategoryRatings } from "@/lib/scoring";
 import { NoFlagsBadge } from "@/components/rating/NoFlagsBadge";
-import type { SeverityLevel } from "@/lib/constants";
+import { SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
 
 interface EpisodeCardProps {
   episodeNumber: number;
@@ -34,6 +34,23 @@ export function EpisodeCard({
   const isRating = status === "rating";
   const noFlags = isRated ? isNoFlags(ratings) : false;
   const composite = isRated ? calculateCompositeScore(ratings) : null;
+  const roundedSeverity =
+    composite !== null ? (Math.round(composite) as SeverityLevel) : null;
+  const adjustedSeverity =
+    roundedSeverity === 0 && composite !== null && composite > 0
+      ? 1
+      : roundedSeverity;
+  const scoreLabel =
+    composite !== null
+      ? roundedSeverity === 0 && composite > 0
+        ? `Low (${composite.toFixed(1)}/4)`
+        : `${SEVERITY_LEVELS[roundedSeverity!].label} (${composite.toFixed(1)}/4)`
+      : null;
+  const stillImageSrc = stillPath
+    ? stillPath.startsWith("http")
+      ? stillPath
+      : `https://image.tmdb.org/t/p/w300${stillPath}`
+    : null;
 
   return (
     <div
@@ -46,9 +63,9 @@ export function EpisodeCard({
     >
       {/* Still image */}
       <div className="relative w-24 shrink-0 overflow-hidden rounded-md bg-muted aspect-video">
-        {stillPath ? (
+        {stillImageSrc ? (
           <Image
-            src={`https://image.tmdb.org/t/p/w300${stillPath}`}
+            src={stillImageSrc}
             alt={name || `Episode ${episodeNumber}`}
             fill
             className="object-cover"
@@ -74,11 +91,22 @@ export function EpisodeCard({
 
         <div className="flex items-center gap-2">
           {isRated && noFlags && <NoFlagsBadge compact />}
-          {isRated && !noFlags && composite !== null && (
-            <RatingBadge
-              severity={Math.round(composite) as SeverityLevel}
-              compact
-            />
+          {isRated && !noFlags && composite !== null && adjustedSeverity !== null && (
+            <Badge
+              variant="outline"
+              role="status"
+              aria-label={`Episode score ${composite.toFixed(1)} out of 4`}
+              className={cn(
+                SEVERITY_LEVELS[adjustedSeverity].border,
+                SEVERITY_LEVELS[adjustedSeverity].color,
+                SEVERITY_LEVELS[adjustedSeverity].bg,
+                "font-semibold tracking-tight transition-all duration-200",
+                "hover:shadow-sm hover:scale-[1.04]",
+                "text-[10px] leading-tight px-1.5 py-0"
+              )}
+            >
+              {scoreLabel}
+            </Badge>
           )}
           {isRating && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">

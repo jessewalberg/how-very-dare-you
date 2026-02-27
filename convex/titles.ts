@@ -6,6 +6,12 @@ import {
   getTVDetails,
   extractStreamingProviders,
 } from "../lib/tmdb";
+import {
+  assertCategoryRatings,
+  assertConfidence,
+  sanitizeCategoryEvidence,
+  sanitizeEpisodeFlags,
+} from "./lib/ratingValidation";
 
 export const getTitle = query({
   args: { titleId: v.id("titles") },
@@ -114,6 +120,14 @@ export const saveRating = mutation({
       source: v.optional(v.string()),
       language: v.optional(v.string()),
       dialogueLines: v.optional(v.number()),
+      transcriptStorage: v.optional(v.object({
+        provider: v.literal("r2"),
+        bucket: v.string(),
+        key: v.string(),
+        bytes: v.number(),
+        sha256: v.string(),
+        uploadedAt: v.number(),
+      })),
     })),
     categoryEvidence: v.optional(v.object({
       lgbtq: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
@@ -133,19 +147,25 @@ export const saveRating = mutation({
       .first();
 
     if (!title) throw new Error("Title not found");
+    assertCategoryRatings(args.ratings, "title ratings");
+    assertConfidence(args.confidence, "title confidence");
+
+    const categoryEvidence = sanitizeCategoryEvidence(
+      args.categoryEvidence,
+      args.ratings
+    );
+    const episodeFlags =
+      title.type === "tv" ? sanitizeEpisodeFlags(args.episodeFlags) : undefined;
 
     await ctx.db.patch(title._id, {
       ratings: { ...args.ratings, overstimulation: title.ratings?.overstimulation },
       ratingConfidence: args.confidence,
       ratingNotes: args.notes,
-      categoryEvidence: args.categoryEvidence,
+      categoryEvidence,
       ratingModel: args.model,
       ratedAt: Date.now(),
       status: "rated",
-      episodeFlags:
-        args.episodeFlags && args.episodeFlags.length > 0
-          ? args.episodeFlags
-          : undefined,
+      episodeFlags,
       subtitleInfo: args.subtitleInfo,
     });
   },
@@ -219,7 +239,7 @@ export const refreshStreamingAvailability = action({
   },
 });
 
-/** Aggregate show-level ratings from all rated episodes (max per category). */
+/** Aggregate show-level ratings from all rated episodes (average per category). */
 export const aggregateShowRatings = internalMutation({
   args: { titleId: v.id("titles") },
   handler: async (ctx, args) => {
@@ -238,8 +258,8 @@ export const aggregateShowRatings = internalMutation({
 
     if (ratedEpisodes.length === 0) return;
 
-    // Compute max per category
-    const aggregated = {
+    // Compute average per category across rated episodes.
+    const totals = {
       lgbtq: 0,
       climate: 0,
       racialIdentity: 0,
@@ -249,37 +269,83 @@ export const aggregateShowRatings = internalMutation({
       political: 0,
       sexuality: 0,
     };
+    let overstimulationTotal = 0;
+    let overstimulationCount = 0;
 
     let totalConfidence = 0;
 
     for (const ep of ratedEpisodes) {
       const r = ep.ratings!;
-      aggregated.lgbtq = Math.max(aggregated.lgbtq, r.lgbtq);
-      aggregated.climate = Math.max(aggregated.climate, r.climate);
-      aggregated.racialIdentity = Math.max(aggregated.racialIdentity, r.racialIdentity);
-      aggregated.genderRoles = Math.max(aggregated.genderRoles, r.genderRoles);
-      aggregated.antiAuthority = Math.max(aggregated.antiAuthority, r.antiAuthority);
-      aggregated.religious = Math.max(aggregated.religious, r.religious);
-      aggregated.political = Math.max(aggregated.political, r.political);
-      aggregated.sexuality = Math.max(aggregated.sexuality, r.sexuality);
+      totals.lgbtq += r.lgbtq;
+      totals.climate += r.climate;
+      totals.racialIdentity += r.racialIdentity;
+      totals.genderRoles += r.genderRoles;
+      totals.antiAuthority += r.antiAuthority;
+      totals.religious += r.religious;
+      totals.political += r.political;
+      totals.sexuality += r.sexuality;
+      if (r.overstimulation !== undefined) {
+        overstimulationTotal += r.overstimulation;
+        overstimulationCount++;
+      }
       totalConfidence += ep.ratingConfidence ?? 0;
     }
 
+    const count = ratedEpisodes.length;
+    const aggregated = {
+      lgbtq: Math.round(totals.lgbtq / count),
+      climate: Math.round(totals.climate / count),
+      racialIdentity: Math.round(totals.racialIdentity / count),
+      genderRoles: Math.round(totals.genderRoles / count),
+      antiAuthority: Math.round(totals.antiAuthority / count),
+      religious: Math.round(totals.religious / count),
+      political: Math.round(totals.political / count),
+      sexuality: Math.round(totals.sexuality / count),
+      overstimulation: overstimulationCount > 0 ? Math.round(overstimulationTotal / overstimulationCount) : undefined,
+    };
+
     const avgConfidence = totalConfidence / ratedEpisodes.length;
     const totalEpisodeCount = allEpisodes.length;
-    const notes = `Based on ${ratedEpisodes.length} of ${totalEpisodeCount} episodes. Max severity per category across rated episodes.`;
+    const notes = `Based on ${ratedEpisodes.length} of ${totalEpisodeCount} episodes. Average severity per category across rated episodes.`;
 
     await ctx.db.patch(args.titleId, {
-      ratings: {
-        ...aggregated,
-        overstimulation: title.ratings?.overstimulation,
-      },
+      ratings: aggregated,
       ratingConfidence: Math.round(avgConfidence * 100) / 100,
       ratingNotes: notes,
       ratedAt: Date.now(),
       status: "rated",
       ratedEpisodeCount: ratedEpisodes.length,
       hasEpisodeRatings: true,
+    });
+  },
+});
+
+/** Refresh episode-based rating note/count after episode indexing changes. */
+export const refreshEpisodeRatingNotes = internalMutation({
+  args: { titleId: v.id("titles") },
+  handler: async (ctx, args) => {
+    const title = await ctx.db.get(args.titleId);
+    if (!title || title.type !== "tv") return;
+
+    const allEpisodes = await ctx.db
+      .query("episodes")
+      .withIndex("by_titleId", (q) => q.eq("titleId", args.titleId))
+      .collect();
+
+    if (allEpisodes.length === 0) return;
+
+    const ratedEpisodeCount = allEpisodes.filter(
+      (ep) => ep.status === "rated" && ep.ratings
+    ).length;
+
+    if (ratedEpisodeCount === 0) return;
+
+    const notes = `Based on ${ratedEpisodeCount} of ${allEpisodes.length} episodes. Average severity per category across rated episodes.`;
+
+    await ctx.db.patch(args.titleId, {
+      ratedEpisodeCount,
+      hasEpisodeRatings: true,
+      ratingNotes: notes,
     });
   },
 });

@@ -32,6 +32,7 @@ export default function SearchPage() {
   );
 
   const rateLimit = useQuery(api.users.getRateLimitStatus);
+  const isAdmin = useQuery(api.admin.isCurrentUserAdmin);
   const requestRating = useMutation(api.ratings.requestOnDemandRating);
   const searchTMDB = useAction(api.ratings.searchTMDB);
 
@@ -52,20 +53,40 @@ export default function SearchPage() {
   const isLoading = dbResults === undefined && q.length >= 2;
   const hasDbResults = dbResults && dbResults.length > 0;
   const remaining = rateLimit ? rateLimit.limit - rateLimit.used : null;
+  const canAdminAdd = isAdmin === true;
+  const canRequestFromSearch = canAdminAdd || (remaining !== null && remaining > 0);
 
-  // When DB has no results, search TMDB
+  // Always search TMDB for additional candidates, then de-duplicate against DB hits.
   useEffect(() => {
-    if (dbResults && dbResults.length === 0 && q.length >= 2) {
+    if (q.length >= 2) {
+      let cancelled = false;
       setTmdbLoading(true);
       setTmdbResults([]);
       searchTMDB({ query: q })
-        .then(setTmdbResults)
+        .then((results) => {
+          if (!cancelled) setTmdbResults(results);
+        })
         .catch(() => {})
-        .finally(() => setTmdbLoading(false));
+        .finally(() => {
+          if (!cancelled) setTmdbLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
     } else {
       setTmdbResults([]);
+      setTmdbLoading(false);
     }
   }, [dbResults, q, searchTMDB]);
+
+  const dbKeys = new Set(
+    (dbResults ?? []).map(
+      (t: NonNullable<typeof dbResults>[number]) => `${t.type}-${t.tmdbId}`
+    )
+  );
+  const tmdbAdditionalResults = tmdbResults.filter(
+    (r) => !dbKeys.has(`${r.type}-${r.tmdbId}`)
+  );
 
   async function handleRequestRating(
     tmdbId: number,
@@ -107,17 +128,23 @@ export default function SearchPage() {
         <div
           className={cn(
             "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs",
-            remaining === 0
+            !canAdminAdd && remaining === 0
               ? "border-red-200 bg-red-50 text-red-700"
               : "border-border/50 bg-muted/30 text-muted-foreground"
           )}
         >
           <Sparkles className="size-3.5" />
           <span>
-            <span className="font-semibold tabular-nums">{remaining}</span> of{" "}
-            {rateLimit.limit} on-demand lookups remaining today
+            {canAdminAdd ? (
+              "Admin mode: add/rerate requests from search are always enabled"
+            ) : (
+              <>
+                <span className="font-semibold tabular-nums">{remaining}</span> of{" "}
+                {rateLimit.limit} on-demand lookups remaining today
+              </>
+            )}
           </span>
-          {rateLimit.tier === "free" && (
+          {!canAdminAdd && rateLimit.tier === "free" && (
             <Button
               variant="ghost"
               size="sm"
@@ -158,7 +185,7 @@ export default function SearchPage() {
       {q.length >= 2 && (
         <TitleGrid
           titles={
-            dbResults?.map((t) => ({
+            dbResults?.map((t: NonNullable<typeof dbResults>[number]) => ({
               ...t,
               ratings: t.ratings as CategoryRatings | undefined,
             }))
@@ -167,8 +194,8 @@ export default function SearchPage() {
         />
       )}
 
-      {/* TMDB results — shown when nothing in our DB */}
-      {q.length >= 2 && dbResults && dbResults.length === 0 && (
+      {/* Additional TMDB results (not already in our DB) */}
+      {q.length >= 2 && dbResults && (
         <div className="space-y-4">
           <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -177,10 +204,10 @@ export default function SearchPage() {
               </div>
               <div>
                 <h3 className="text-sm font-semibold">
-                  Not yet rated — found on TMDB
+                  More titles from TMDB
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Select a title to request an AI content rating (10–30 seconds)
+                  Titles not yet in our database can be added from here.
                 </p>
               </div>
             </div>
@@ -194,15 +221,15 @@ export default function SearchPage() {
               </div>
             )}
 
-            {!tmdbLoading && tmdbResults.length === 0 && (
+            {!tmdbLoading && dbResults.length === 0 && tmdbAdditionalResults.length === 0 && (
               <p className="py-6 text-center text-sm text-muted-foreground">
                 No titles found on TMDB for &ldquo;{q}&rdquo;
               </p>
             )}
 
-            {!tmdbLoading && tmdbResults.length > 0 && (
+            {!tmdbLoading && tmdbAdditionalResults.length > 0 && (
               <div className="grid gap-2">
-                {tmdbResults.map((result) => {
+                {tmdbAdditionalResults.map((result) => {
                   const TypeIcon = result.type === "tv" ? Tv : Film;
                   const isRequesting = requestingId === result.tmdbId;
 
@@ -247,7 +274,7 @@ export default function SearchPage() {
                       </div>
 
                       {/* Request button */}
-                      {remaining !== null && remaining > 0 ? (
+                      {canRequestFromSearch ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -264,12 +291,12 @@ export default function SearchPage() {
                           {isRequesting ? (
                             <>
                               <Loader2 className="size-3.5 animate-spin" />
-                              Rating...
+                              {canAdminAdd ? "Adding..." : "Rating..."}
                             </>
                           ) : (
                             <>
                               <Sparkles className="size-3.5" />
-                              Rate
+                              {canAdminAdd ? "Add" : "Rate"}
                             </>
                           )}
                         </Button>

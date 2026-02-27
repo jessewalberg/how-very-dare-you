@@ -1,8 +1,9 @@
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
-import { searchTrailer, searchEpisodeClips } from "../lib/youtube";
+import { searchTrailer, searchEpisodeClips, searchEpisodeVideo } from "../lib/youtube";
 import { chatCompletion, parseJSONResponse } from "../lib/openrouter";
+import { assertConfidence, assertSeverityScore } from "./lib/ratingValidation";
 
 // ── Overstimulation Prompt ───────────────────────────────
 
@@ -61,11 +62,17 @@ interface VideoAnalysisMetrics {
   flash_count: number;
 }
 
-interface OverstimResult {
+interface OverstimLLMResult {
   severity: number;
   confidence: number;
   note: string;
 }
+
+interface OverstimResult extends OverstimLLMResult {
+  model: string;
+}
+
+const OVERSTIM_METHOD_VERSION = "overstim-v1";
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -127,23 +134,35 @@ async function rateMetrics(
     { temperature: 0.3, maxTokens: 512 }
   );
 
-  const result = parseJSONResponse<OverstimResult>(completion.content);
+  const result = parseJSONResponse<OverstimLLMResult>(completion.content);
 
-  if (typeof result.severity !== "number" || result.severity < 0 || result.severity > 4 || !Number.isInteger(result.severity)) {
-    throw new Error(`Invalid overstimulation severity: ${result.severity}`);
+  assertSeverityScore(result.severity, "overstimulation severity");
+  assertConfidence(result.confidence, "overstimulation confidence");
+  if (typeof result.note !== "string" || result.note.trim().length === 0) {
+    throw new Error("Missing overstimulation note");
   }
 
-  return result;
+  return {
+    ...result,
+    note: result.note.trim(),
+    model: completion.model,
+  };
 }
 
 // ── Actions ──────────────────────────────────────────────
 
 /** Analyze a single title for overstimulation via video analysis pipeline. */
 export const analyzeOverstimulation = action({
-  args: { titleId: v.id("titles") },
+  args: { titleId: v.id("titles"), force: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<void> => {
     const title = await ctx.runQuery(api.titles.getTitle, { titleId: args.titleId });
     if (!title) throw new Error("Title not found");
+
+    // Skip redundant analyses unless explicitly forced (e.g. admin re-rate).
+    if (!args.force && title.videoAnalysis && title.ratings?.overstimulation !== undefined) {
+      console.log(`[Overstim] Skipping "${title.title}" (already analyzed)`);
+      return;
+    }
 
     const serviceUrl = process.env.VIDEO_ANALYSIS_SERVICE_URL;
     const apiSecret = process.env.VIDEO_ANALYSIS_API_SECRET;
@@ -173,20 +192,35 @@ export const analyzeOverstimulation = action({
     const trailerResult = await rateMetrics(titleMeta, trailerMetrics, openRouterKey);
 
     let severity: number;
+    let sourceType: "movie_trailer" | "tv_weighted" | "tv_trailer_fallback" =
+      "movie_trailer";
+    let formula = "round(clamp(trailer, 0, 4))";
+    let computedScore = trailerResult.severity;
     let primaryVideoId = trailerId;
+    let episodeSampleDetails:
+      | {
+          requestedCount: number;
+          analyzedCount: number;
+          videoIds: string[];
+          severities: number[];
+          averageSeverity?: number;
+        }
+      | undefined;
 
     if (title.type === "tv") {
       // 2. For TV: search for episode clips
-      let episodeResults: OverstimResult[] = [];
+      const episodeResults: Array<{ videoId: string; result: OverstimResult }> = [];
+      let requestedEpisodeCount = 0;
       try {
         const episodeIds = await searchEpisodeClips(title.title, 2);
+        requestedEpisodeCount = episodeIds.length;
         console.log(`[Overstim] Found ${episodeIds.length} episode clips for "${title.title}"`);
 
         for (const epId of episodeIds) {
           try {
             const epMetrics = await analyzeVideo(epId, title.title, title.type, serviceUrl, apiSecret);
             const epResult = await rateMetrics(titleMeta, epMetrics, openRouterKey);
-            episodeResults.push(epResult);
+            episodeResults.push({ videoId: epId, result: epResult });
           } catch (e) {
             console.error(`[Overstim] Episode clip ${epId} analysis failed (non-fatal):`, e instanceof Error ? e.message : e);
           }
@@ -201,13 +235,34 @@ export const analyzeOverstimulation = action({
 
       if (episodeResults.length > 0) {
         // Weighted average: 70% episodes / 30% trailer (per spec)
-        const episodeAvg = episodeResults.reduce((sum, r) => sum + r.severity, 0) / episodeResults.length;
-        severity = Math.round(episodeAvg * 0.7 + trailerResult.severity * 0.3);
+        const episodeAvg =
+          episodeResults.reduce((sum, r) => sum + r.result.severity, 0) /
+          episodeResults.length;
+        computedScore = episodeAvg * 0.7 + trailerResult.severity * 0.3;
+        severity = Math.round(computedScore);
         severity = Math.max(0, Math.min(4, severity));
+        sourceType = "tv_weighted";
+        formula = "round(clamp((episode_avg*0.7)+(trailer*0.3), 0, 4))";
+        episodeSampleDetails = {
+          requestedCount: requestedEpisodeCount,
+          analyzedCount: episodeResults.length,
+          videoIds: episodeResults.map((r) => r.videoId),
+          severities: episodeResults.map((r) => r.result.severity),
+          averageSeverity: episodeAvg,
+        };
         console.log(`[Overstim] TV weighted score: episodes=${episodeAvg.toFixed(1)} trailer=${trailerResult.severity} → ${severity}`);
       } else {
         // Trailer only — apply 0.7x bias correction
-        severity = Math.max(0, Math.round(trailerResult.severity * 0.7));
+        computedScore = trailerResult.severity * 0.7;
+        severity = Math.max(0, Math.round(computedScore));
+        sourceType = "tv_trailer_fallback";
+        formula = "round(clamp(trailer*0.7, 0, 4))";
+        episodeSampleDetails = {
+          requestedCount: requestedEpisodeCount,
+          analyzedCount: 0,
+          videoIds: [],
+          severities: [],
+        };
         console.log(`[Overstim] TV bias correction (no episodes): ${trailerResult.severity} → ${severity}`);
       }
     } else {
@@ -229,10 +284,104 @@ export const analyzeOverstimulation = action({
         brightnessVariance: trailerMetrics.brightness_variance,
         flashCount: trailerMetrics.flash_count,
         trailerBiasCorrected: title.type === "tv",
+        derivation: {
+          methodVersion: OVERSTIM_METHOD_VERSION,
+          sourceType,
+          formula,
+          computedScore,
+          trailer: {
+            videoId: trailerId,
+            severity: trailerResult.severity,
+            confidence: trailerResult.confidence,
+            note: trailerResult.note,
+            model: trailerResult.model,
+          },
+          episodeSamples: episodeSampleDetails,
+        },
       },
     });
 
     console.log(`[Overstim] Saved score ${severity} for "${title.title}"`);
+  },
+});
+
+/** Analyze a specific episode for overstimulation and merge into episode ratings. */
+export const analyzeEpisodeOverstimulation = action({
+  args: { episodeId: v.id("episodes") },
+  handler: async (ctx, args): Promise<void> => {
+    const episode = await ctx.runQuery(internal.episodes.getEpisodeInternal, {
+      episodeId: args.episodeId,
+    });
+    if (!episode) throw new Error("Episode not found");
+
+    const title = await ctx.runQuery(api.titles.getTitle, {
+      titleId: episode.titleId,
+    });
+    if (!title) throw new Error("Parent title not found");
+    if (!episode.ratings) return;
+
+    const serviceUrl = process.env.VIDEO_ANALYSIS_SERVICE_URL;
+    const apiSecret = process.env.VIDEO_ANALYSIS_API_SECRET;
+    const openRouterKey = process.env.OPENROUTER_API_KEY!;
+
+    if (!serviceUrl || !apiSecret) {
+      throw new Error("VIDEO_ANALYSIS_SERVICE_URL or VIDEO_ANALYSIS_API_SECRET not set");
+    }
+
+    const videoId = await searchEpisodeVideo(
+      title.title,
+      episode.seasonNumber,
+      episode.episodeNumber,
+      episode.name ?? undefined
+    );
+    if (!videoId) {
+      console.log(`[Overstim] No episode video found for "${title.title}" S${episode.seasonNumber}E${episode.episodeNumber}`);
+      return;
+    }
+
+    const label = `${title.title} S${episode.seasonNumber}E${episode.episodeNumber}`;
+    const metrics = await analyzeVideo(videoId, label, title.type, serviceUrl, apiSecret);
+    const result = await rateMetrics(
+      {
+        title: label,
+        type: title.type as "movie" | "tv" | "youtube",
+        year: title.year,
+        ageRating: title.ageRating,
+      },
+      metrics,
+      openRouterKey
+    );
+
+    await ctx.runMutation(internal.episodes.saveEpisodeOverstimulation, {
+      episodeId: args.episodeId,
+      overstimulation: result.severity,
+      analysis: {
+        methodVersion: OVERSTIM_METHOD_VERSION,
+        videoId,
+        analyzedAt: Date.now(),
+        metrics: {
+          cutsPerMinute: metrics.cuts_per_minute,
+          avgCutDuration: metrics.avg_cut_duration_seconds,
+          avgSaturation: metrics.avg_saturation,
+          avgBrightness: metrics.avg_brightness,
+          brightnessVariance: metrics.brightness_variance,
+          flashCount: metrics.flash_count,
+        },
+        ai: {
+          severity: result.severity,
+          confidence: result.confidence,
+          note: result.note,
+          model: result.model,
+        },
+      },
+    });
+
+    // Recompute show-level ratings from the updated episode set.
+    await ctx.runMutation(internal.titles.aggregateShowRatings, {
+      titleId: episode.titleId,
+    });
+
+    console.log(`[Overstim] Saved episode score ${result.severity} for "${label}"`);
   },
 });
 
@@ -287,11 +436,46 @@ export const saveOverstimulation = internalMutation({
       brightnessVariance: v.number(),
       flashCount: v.number(),
       trailerBiasCorrected: v.boolean(),
+      derivation: v.optional(v.object({
+        methodVersion: v.string(),
+        sourceType: v.union(
+          v.literal("movie_trailer"),
+          v.literal("tv_weighted"),
+          v.literal("tv_trailer_fallback")
+        ),
+        formula: v.string(),
+        computedScore: v.number(),
+        trailer: v.object({
+          videoId: v.string(),
+          severity: v.number(),
+          confidence: v.number(),
+          note: v.string(),
+          model: v.string(),
+        }),
+        episodeSamples: v.optional(v.object({
+          requestedCount: v.number(),
+          analyzedCount: v.number(),
+          videoIds: v.array(v.string()),
+          severities: v.array(v.number()),
+          averageSeverity: v.optional(v.number()),
+        })),
+      })),
     }),
   },
   handler: async (ctx, args) => {
     const title = await ctx.db.get(args.titleId);
     if (!title) throw new Error("Title not found");
+    assertSeverityScore(args.overstimulation, "title overstimulation");
+    if (args.videoAnalysis.derivation) {
+      assertSeverityScore(
+        args.videoAnalysis.derivation.trailer.severity,
+        "title overstimulation trailer severity"
+      );
+      assertConfidence(
+        args.videoAnalysis.derivation.trailer.confidence,
+        "title overstimulation trailer confidence"
+      );
+    }
 
     // Merge overstimulation into existing ratings
     const existingRatings = title.ratings;

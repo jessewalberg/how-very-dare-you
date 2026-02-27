@@ -56,7 +56,7 @@ const STREAMING_SERVICES = [
 
 const THRESHOLD_OPTIONS = [
   { value: "", label: "Any" },
-  { value: "0", label: "None only" },
+  { value: "0", label: "No concerns only" },
   { value: "1", label: "Up to Brief" },
   { value: "2", label: "Up to Notable" },
   { value: "3", label: "Up to Significant" },

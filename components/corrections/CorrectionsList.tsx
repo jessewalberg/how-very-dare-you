@@ -60,7 +60,7 @@ export function CorrectionsList({
       </div>
 
       <div className="space-y-2">
-        {corrections.map((correction) => {
+        {corrections.map((correction: NonNullable<typeof corrections>[number]) => {
           const config =
             STATUS_CONFIG[
               correction.status as keyof typeof STATUS_CONFIG

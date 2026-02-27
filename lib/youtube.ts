@@ -84,17 +84,52 @@ export async function searchEpisodeClips(
   return data.items.map((item) => item.id.videoId);
 }
 
+/**
+ * Search YouTube for a specific episode video/clip.
+ * Returns the best-match video ID or null.
+ */
+export async function searchEpisodeVideo(
+  title: string,
+  seasonNumber: number,
+  episodeNumber: number,
+  episodeName?: string
+): Promise<string | null> {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) {
+    throw new Error("YOUTUBE_API_KEY environment variable is not set");
+  }
+
+  const episodeCode = `S${seasonNumber}E${episodeNumber}`;
+  const queries = [
+    `${title} ${episodeCode} ${episodeName ?? ""} full episode`.trim(),
+    `${title} season ${seasonNumber} episode ${episodeNumber} ${episodeName ?? ""}`.trim(),
+    `${title} ${episodeName ?? ""} clip`.trim(),
+  ];
+
+  for (const query of queries) {
+    const videoId = await searchYouTube(query, apiKey, { videoDuration: "long" });
+    if (videoId) return videoId;
+  }
+
+  // Final fallback without long-duration constraint.
+  return searchYouTube(`${title} ${episodeCode} ${episodeName ?? ""}`.trim(), apiKey);
+}
+
 async function searchYouTube(
   query: string,
-  apiKey: string
+  apiKey: string,
+  options?: { maxResults?: number; videoDuration?: "any" | "short" | "medium" | "long" }
 ): Promise<string | null> {
   const params = new URLSearchParams({
     part: "snippet",
     q: query,
     type: "video",
-    maxResults: "1",
+    maxResults: String(options?.maxResults ?? 1),
     key: apiKey,
   });
+  if (options?.videoDuration) {
+    params.set("videoDuration", options.videoDuration);
+  }
 
   const response = await fetch(`${YOUTUBE_API_BASE}/search?${params}`);
 

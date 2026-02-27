@@ -17,6 +17,16 @@ import {
   gatherTVEpisodeDialogue,
 } from "../lib/opensubtitles";
 import { chatCompletion, parseJSONResponse, estimateCostCents } from "../lib/openrouter";
+import { uploadTextToR2, type R2TranscriptStorage } from "../lib/r2";
+import {
+  assertCategoryRatings,
+  assertConfidence,
+  sanitizeCategoryEvidence,
+  sanitizeEpisodeFlags,
+  type CategoryKey,
+  type CategoryEvidenceEntry,
+  type EpisodeFlag,
+} from "./lib/ratingValidation";
 
 // ── System Prompt ────────────────────────────────────────
 
@@ -76,8 +86,8 @@ You must be OBJECTIVE and CONSISTENT. You are not making value judgments about w
    - 4 Core Theme: The story is fundamentally political. An election narrative, a revolution story with clear real-world parallels, or an allegory for a specific political issue.
 
 8. **Sexuality / Age-Inappropriate Content** (sexuality)
-   - 0 None: No sexual content or age-inappropriate romantic content
-   - 1 Brief: A single kiss, a character has a crush, mild romantic tension appropriate for the target age group.
+   - 0 None: No on-screen romantic affection, sexual content, or age-inappropriate romantic content.
+   - 1 Brief: A single kiss, a character has a crush, or mild romantic relationship content appropriate for the target age group.
    - 2 Notable: Romantic content that pushes the target age boundary. Puberty discussions, dating/relationship drama in a show aimed at young kids, innuendo parents would notice.
    - 3 Significant: Sexual themes that many parents would find inappropriate for the target age. Sexualized character designs, explicit romantic relationships in content for pre-teens, body-focused humor.
    - 4 Core Theme: Sexual content or romantic drama dominates the narrative in content marketed to children/young teens.
@@ -90,6 +100,8 @@ You must be OBJECTIVE and CONSISTENT. You are not making value judgments about w
 - **Context matters.** A villain who pollutes is different from an entire plotline about saving the planet. Rate the *emphasis and messaging*, not isolated plot mechanics.
 - **Rate what's SHOWN, not what's theoretically there.** Don't speculate or read deeper meaning into ambiguous content. Rate the surface-level, as-experienced content.
 - **Target audience matters for sexuality.** A romantic kiss in a PG-13 movie is different from the same kiss in content aimed at 4-year-olds. Rate against the content's intended age group.
+- **Category overlap is allowed.** The same scene can affect multiple categories (for example, an LGBT relationship scene can increase both \`lgbtq\` and \`sexuality\`).
+- **Sexuality floor rule.** If on-screen romantic affection/relationship content is present (kiss, dating, spouse/partner dynamics), \`sexuality\` should be at least 1, even when age-appropriate.
 
 ## Output Format
 
@@ -136,33 +148,12 @@ The "confidence" score should reflect how much data you had to work with:
 
 // ── Rating Result Types ──────────────────────────────────
 
-interface CategoryEvidenceEntry {
-  explanation: string;
-  quote?: string;
-}
-
 interface RatingResult {
-  ratings: {
-    lgbtq: number;
-    climate: number;
-    racialIdentity: number;
-    genderRoles: number;
-    antiAuthority: number;
-    religious: number;
-    political: number;
-    sexuality: number;
-  };
+  ratings: Record<CategoryKey, number>;
   confidence: number;
   notes: string;
-  categoryEvidence?: Partial<Record<string, CategoryEvidenceEntry>>;
-  episodeFlags?: {
-    season: number;
-    episode: number;
-    episodeTitle?: string;
-    category: string;
-    severity: number;
-    note: string;
-  }[];
+  categoryEvidence?: Partial<Record<CategoryKey, CategoryEvidenceEntry>>;
+  episodeFlags?: EpisodeFlag[];
 }
 
 // ── Prompt Construction ──────────────────────────────────
@@ -223,67 +214,66 @@ function constructRatingPrompt(data: {
 
 // ── Response Parsing ─────────────────────────────────────
 
-const CATEGORY_KEYS = [
-  "lgbtq",
-  "climate",
-  "racialIdentity",
-  "genderRoles",
-  "antiAuthority",
-  "religious",
-  "political",
-  "sexuality",
-] as const;
+const ROMANCE_SIGNAL_REGEX =
+  /\b(kiss|kissing|romance|romantic|crush|dating|date|boyfriend|girlfriend|husband|wife|married|marriage|partner|relationship|couple)\b/i;
 
-function parseRatingResponse(responseText: string): RatingResult {
+function maybeApplySexualityFloor(
+  result: Pick<RatingResult, "ratings" | "notes" | "categoryEvidence">
+): void {
+  if (result.ratings.sexuality > 0) return;
+  if (result.ratings.lgbtq < 1) return;
+
+  const lgbtEvidence = result.categoryEvidence?.lgbtq;
+  const evidenceText = [
+    lgbtEvidence?.explanation ?? "",
+    lgbtEvidence?.quote ?? "",
+    result.notes ?? "",
+  ]
+    .join(" ")
+    .trim();
+
+  if (!ROMANCE_SIGNAL_REGEX.test(evidenceText)) return;
+
+  result.ratings.sexuality = 1;
+
+  if (!result.categoryEvidence) {
+    result.categoryEvidence = {};
+  }
+  if (!result.categoryEvidence.sexuality) {
+    result.categoryEvidence.sexuality = {
+      explanation:
+        "Brief romantic/relationship content is present on-screen, so Sexuality is set to 1 per rubric.",
+    };
+  }
+}
+
+function parseRatingResponse(
+  responseText: string,
+  titleType: "movie" | "tv"
+): RatingResult {
   const parsed = parseJSONResponse<RatingResult>(responseText);
-
-  // Validate all ratings are 0-4 integers
-  for (const cat of CATEGORY_KEYS) {
-    const val = parsed.ratings[cat];
-    if (typeof val !== "number" || val < 0 || val > 4 || !Number.isInteger(val)) {
-      throw new Error(`Invalid rating for ${cat}: ${val}`);
-    }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Rating response is not an object");
   }
 
-  if (typeof parsed.confidence !== "number" || parsed.confidence < 0 || parsed.confidence > 1) {
-    throw new Error(`Invalid confidence: ${parsed.confidence}`);
-  }
+  assertCategoryRatings(parsed.ratings, "ratings");
+  assertConfidence(parsed.confidence, "confidence");
 
-  if (typeof parsed.notes !== "string" || parsed.notes.length === 0) {
+  if (typeof parsed.notes !== "string" || parsed.notes.trim().length === 0) {
     throw new Error("Missing notes in rating response");
   }
+  parsed.notes = parsed.notes.trim();
 
-  // Validate categoryEvidence if present (backward compat: don't fail if absent)
-  if (parsed.categoryEvidence && typeof parsed.categoryEvidence === "object") {
-    const validKeys = new Set(CATEGORY_KEYS);
-    for (const [key, entry] of Object.entries(parsed.categoryEvidence)) {
-      if (!validKeys.has(key as typeof CATEGORY_KEYS[number])) {
-        delete parsed.categoryEvidence[key];
-        continue;
-      }
-      if (entry && typeof entry === "object" && typeof entry.explanation !== "string") {
-        delete parsed.categoryEvidence[key];
-      }
-    }
-  }
+  parsed.categoryEvidence = sanitizeCategoryEvidence(
+    parsed.categoryEvidence,
+    parsed.ratings
+  );
 
-  // Validate episodeFlags if present
-  if (parsed.episodeFlags) {
-    if (!Array.isArray(parsed.episodeFlags)) {
-      throw new Error("episodeFlags must be an array");
-    }
-    for (const flag of parsed.episodeFlags) {
-      if (typeof flag.season !== "number" || typeof flag.episode !== "number") {
-        throw new Error("Invalid episode flag: missing season/episode");
-      }
-      if (!CATEGORY_KEYS.includes(flag.category as typeof CATEGORY_KEYS[number])) {
-        throw new Error(`Invalid episode flag category: ${flag.category}`);
-      }
-      if (typeof flag.severity !== "number" || flag.severity < 0 || flag.severity > 4) {
-        throw new Error(`Invalid episode flag severity: ${flag.severity}`);
-      }
-    }
-  }
+  const episodeFlags = sanitizeEpisodeFlags(parsed.episodeFlags);
+  parsed.episodeFlags = titleType === "tv" ? episodeFlags : undefined;
+
+  // Guardrail: avoid 0 sexuality when relationship content is clearly present.
+  maybeApplySexualityFloor(parsed);
 
   return parsed;
 }
@@ -295,6 +285,7 @@ interface SubtitleInfo {
   source?: string;
   language?: string;
   dialogueLines?: number;
+  transcriptStorage?: R2TranscriptStorage;
 }
 
 interface GatheredData {
@@ -312,6 +303,7 @@ interface GatheredData {
   keywords?: string[];
   parentalGuide?: string;
   subtitleExcerpt?: string;
+  subtitleTranscript?: string;
   subtitleInfo?: SubtitleInfo;
   streamingProviders?: { name: string; logoPath: string }[];
   // TV-specific
@@ -324,6 +316,55 @@ interface GatheredData {
     posterPath?: string;
     airDate?: string;
   }[];
+}
+
+const MAX_PROMPT_SUBTITLE_LINES = 300;
+const MAX_ARCHIVED_SUBTITLE_LINES = 2500;
+
+function toTranscriptExcerpt(text: string, maxLines = MAX_PROMPT_SUBTITLE_LINES): string {
+  return text.split("\n").slice(0, maxLines).join("\n");
+}
+
+function slugForKey(input: string): string {
+  const slug = input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const capped = slug.slice(0, 80);
+  return capped || "untitled";
+}
+
+function buildTitleTranscriptKey(args: {
+  tmdbId: number;
+  type: "movie" | "tv";
+  title: string;
+}): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `titles/${args.type}/${args.tmdbId}/${stamp}-${slugForKey(args.title)}.txt`;
+}
+
+function buildEpisodeTranscriptKey(args: {
+  tmdbShowId: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  showTitle: string;
+}): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const episodeCode = `s${String(args.seasonNumber).padStart(2, "0")}e${String(args.episodeNumber).padStart(2, "0")}`;
+  return `episodes/${args.tmdbShowId}/${episodeCode}-${stamp}-${slugForKey(args.showTitle)}.txt`;
+}
+
+async function maybeArchiveTranscript(
+  key: string,
+  text: string
+): Promise<R2TranscriptStorage | undefined> {
+  try {
+    const stored = await uploadTextToR2({ key, text });
+    return stored ?? undefined;
+  } catch (e) {
+    console.error("Transcript upload to R2 failed (non-fatal):", e);
+    return undefined;
+  }
 }
 
 async function gatherMovieData(
@@ -383,9 +424,12 @@ async function gatherMovieData(
           const best = pickBestSubtitle(searchResults);
           if (best) {
             const srtText = await downloadSubtitle(best.fileId, subtitlesKey);
-            const dialogue = extractDialogue(srtText, 300);
-            const lines = dialogue ? dialogue.split("\n").length : 0;
-            return { dialogue, language: best.language, lines };
+            const transcript = extractDialogue(srtText, MAX_ARCHIVED_SUBTITLE_LINES);
+            const dialogue = transcript
+              ? toTranscriptExcerpt(transcript)
+              : extractDialogue(srtText, MAX_PROMPT_SUBTITLE_LINES);
+            const lines = transcript ? transcript.split("\n").length : 0;
+            return { dialogue, transcript, language: best.language, lines };
           }
           return null;
         })(),
@@ -393,6 +437,7 @@ async function gatherMovieData(
       ]);
       if (subtitleResult) {
         data.subtitleExcerpt = subtitleResult.dialogue;
+        data.subtitleTranscript = subtitleResult.transcript;
         data.subtitleInfo = {
           status: "success",
           source: "opensubtitles",
@@ -486,11 +531,12 @@ async function gatherTVData(
     try {
       const SUBTITLE_TIMEOUT = 15000;
       const subtitleResult = await Promise.race([
-        gatherTVEpisodeDialogue(data.imdbId, subtitlesKey),
+        gatherTVEpisodeDialogue(data.imdbId, subtitlesKey, MAX_ARCHIVED_SUBTITLE_LINES),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), SUBTITLE_TIMEOUT)),
       ]);
       if (subtitleResult) {
-        data.subtitleExcerpt = subtitleResult;
+        data.subtitleTranscript = subtitleResult;
+        data.subtitleExcerpt = toTranscriptExcerpt(subtitleResult);
         const lines = subtitleResult.split("\n").length;
         data.subtitleInfo = {
           status: "success",
@@ -534,6 +580,23 @@ async function runRatingPipeline(
       ? await gatherMovieData(tmdbId, options)
       : await gatherTVData(tmdbId, options);
 
+  if (data.subtitleTranscript) {
+    const transcriptStorage = await maybeArchiveTranscript(
+      buildTitleTranscriptKey({
+        tmdbId,
+        type,
+        title: data.title,
+      }),
+      data.subtitleTranscript
+    );
+    if (transcriptStorage) {
+      data.subtitleInfo = {
+        ...(data.subtitleInfo ?? { status: "success" }),
+        transcriptStorage,
+      };
+    }
+  }
+
   // 2. Construct prompt
   const userMessage = constructRatingPrompt({
     title: data.title,
@@ -558,7 +621,7 @@ async function runRatingPipeline(
   );
 
   // 4. Parse and validate
-  const result = parseRatingResponse(completion.content);
+  const result = parseRatingResponse(completion.content, data.type);
 
   const durationMs = Date.now() - startTime;
   const pipelineMetrics: PipelineMetrics = {
@@ -581,6 +644,8 @@ const EPISODE_RATING_SYSTEM_PROMPT = `You are a content advisory analyst for a p
 You must be OBJECTIVE and CONSISTENT. You are not making value judgments about whether these themes are good or bad — you are simply detecting their presence and intensity so parents can make informed decisions.
 
 Use the same 8-category rubric (lgbtq, climate, racialIdentity, genderRoles, antiAuthority, religious, political, sexuality) with 0-4 severity scale.
+
+Category overlap is allowed for episodes too. If the episode shows on-screen romantic affection/relationship content (kiss, dating, spouse/partner dynamics), \`sexuality\` should be at least 1, even when age-appropriate.
 
 ## Output Format
 
@@ -655,58 +720,40 @@ function constructEpisodeRatingPrompt(data: {
 }
 
 interface EpisodeRatingResult {
-  ratings: {
-    lgbtq: number;
-    climate: number;
-    racialIdentity: number;
-    genderRoles: number;
-    antiAuthority: number;
-    religious: number;
-    political: number;
-    sexuality: number;
-  };
+  ratings: Record<CategoryKey, number>;
   confidence: number;
   notes: string;
-  categoryEvidence?: Partial<Record<string, CategoryEvidenceEntry>>;
+  categoryEvidence?: Partial<Record<CategoryKey, CategoryEvidenceEntry>>;
 }
 
 function parseEpisodeRatingResponse(responseText: string): EpisodeRatingResult {
   const parsed = parseJSONResponse<EpisodeRatingResult>(responseText);
-
-  for (const cat of CATEGORY_KEYS) {
-    const val = parsed.ratings[cat];
-    if (typeof val !== "number" || val < 0 || val > 4 || !Number.isInteger(val)) {
-      throw new Error(`Invalid rating for ${cat}: ${val}`);
-    }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Episode rating response is not an object");
   }
 
-  if (typeof parsed.confidence !== "number" || parsed.confidence < 0 || parsed.confidence > 1) {
-    throw new Error(`Invalid confidence: ${parsed.confidence}`);
-  }
+  assertCategoryRatings(parsed.ratings, "episode ratings");
+  assertConfidence(parsed.confidence, "episode confidence");
 
-  if (typeof parsed.notes !== "string" || parsed.notes.length === 0) {
+  if (typeof parsed.notes !== "string" || parsed.notes.trim().length === 0) {
     throw new Error("Missing notes in rating response");
   }
+  parsed.notes = parsed.notes.trim();
 
-  // Validate categoryEvidence if present
-  if (parsed.categoryEvidence && typeof parsed.categoryEvidence === "object") {
-    const validKeys = new Set(CATEGORY_KEYS);
-    for (const [key, entry] of Object.entries(parsed.categoryEvidence)) {
-      if (!validKeys.has(key as typeof CATEGORY_KEYS[number])) {
-        delete parsed.categoryEvidence[key];
-        continue;
-      }
-      if (entry && typeof entry === "object" && typeof entry.explanation !== "string") {
-        delete parsed.categoryEvidence[key];
-      }
-    }
-  }
+  parsed.categoryEvidence = sanitizeCategoryEvidence(
+    parsed.categoryEvidence,
+    parsed.ratings
+  );
+
+  // Reuse the same guardrail for episode outputs.
+  maybeApplySexualityFloor(parsed);
 
   return parsed;
 }
 
 async function runEpisodeRatingPipeline(
   showContext: {
+    tmdbShowId: number;
     title: string;
     year: number;
     genre?: string;
@@ -720,13 +767,20 @@ async function runEpisodeRatingPipeline(
     overview?: string;
     runtime?: number;
   }
-): Promise<{ result: EpisodeRatingResult; model: string; pipelineMetrics: PipelineMetrics }> {
+): Promise<{
+  result: EpisodeRatingResult;
+  model: string;
+  pipelineMetrics: PipelineMetrics;
+  subtitleInfo?: SubtitleInfo;
+}> {
   const openRouterKey = process.env.OPENROUTER_API_KEY!;
   const subtitlesKey = process.env.OPENSUBTITLES_API_KEY;
   const startTime = Date.now();
 
   // Gather subtitle dialogue for this episode (8s timeout)
   let subtitleExcerpt: string | undefined;
+  let subtitleTranscript: string | undefined;
+  let subtitleInfo: SubtitleInfo | undefined;
   if (subtitlesKey && showContext.imdbId) {
     try {
       const { gatherSingleEpisodeDialogue } = await import("../lib/opensubtitles");
@@ -735,13 +789,46 @@ async function runEpisodeRatingPipeline(
           showContext.imdbId,
           episodeData.seasonNumber,
           episodeData.episodeNumber,
-          subtitlesKey
+          subtitlesKey,
+          MAX_ARCHIVED_SUBTITLE_LINES
         ),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
       ]);
-      if (dialogue) subtitleExcerpt = dialogue;
+      if (dialogue) {
+        subtitleTranscript = dialogue;
+        subtitleExcerpt = toTranscriptExcerpt(dialogue);
+        subtitleInfo = {
+          status: "success",
+          source: "opensubtitles",
+          language: "en",
+          dialogueLines: dialogue.split("\n").length,
+        };
+      } else {
+        subtitleInfo = { status: "timeout" };
+      }
     } catch (e) {
       console.error("Episode subtitle fetch failed (non-fatal):", e);
+      subtitleInfo = { status: "failed" };
+    }
+  } else {
+    subtitleInfo = { status: "skipped" };
+  }
+
+  if (subtitleTranscript) {
+    const transcriptStorage = await maybeArchiveTranscript(
+      buildEpisodeTranscriptKey({
+        tmdbShowId: showContext.tmdbShowId,
+        seasonNumber: episodeData.seasonNumber,
+        episodeNumber: episodeData.episodeNumber,
+        showTitle: showContext.title,
+      }),
+      subtitleTranscript
+    );
+    if (transcriptStorage) {
+      subtitleInfo = {
+        ...(subtitleInfo ?? { status: "success" }),
+        transcriptStorage,
+      };
     }
   }
 
@@ -778,7 +865,7 @@ async function runEpisodeRatingPipeline(
     estimatedCostCents: estimateCostCents(completion.usage),
   };
 
-  return { result, model: completion.model, pipelineMetrics };
+  return { result, model: completion.model, pipelineMetrics, subtitleInfo };
 }
 
 // ── Public Actions ───────────────────────────────────────
@@ -856,7 +943,10 @@ export const rateTitle = action({
     const ratedTitle = await ctx.runQuery(api.titles.getTitleByTmdbId, {
       tmdbId: args.tmdbId,
     });
-    if (ratedTitle && !ratedTitle.videoAnalysis) {
+    if (
+      ratedTitle &&
+      (!ratedTitle.videoAnalysis || ratedTitle.ratings?.overstimulation === undefined)
+    ) {
       await ctx.scheduler.runAfter(0, api.healthRatings.analyzeOverstimulation, {
         titleId: ratedTitle._id,
       });
@@ -971,7 +1061,10 @@ export const rateTitleOnDemand = action({
       const ratedTitle = await ctx.runQuery(api.titles.getTitleByTmdbId, {
         tmdbId: args.tmdbId,
       });
-      if (ratedTitle && !ratedTitle.videoAnalysis) {
+      if (
+        ratedTitle &&
+        (!ratedTitle.videoAnalysis || ratedTitle.ratings?.overstimulation === undefined)
+      ) {
         await ctx.scheduler.runAfter(0, api.healthRatings.analyzeOverstimulation, {
           titleId: ratedTitle._id,
         });
@@ -1046,8 +1139,9 @@ export const rateEpisodeOnDemand = action({
         }
       }
 
-      const { result, model, pipelineMetrics } = await runEpisodeRatingPipeline(
+      const { result, model, pipelineMetrics, subtitleInfo } = await runEpisodeRatingPipeline(
         {
+          tmdbShowId: episode.tmdbShowId,
           title: title.title,
           year: title.year,
           genre: title.genre ?? undefined,
@@ -1070,6 +1164,7 @@ export const rateEpisodeOnDemand = action({
         confidence: result.confidence,
         notes: result.notes,
         model,
+        subtitleInfo,
         categoryEvidence: result.categoryEvidence as Record<string, { explanation: string; quote?: string }> | undefined,
       });
 
@@ -1086,6 +1181,11 @@ export const rateEpisodeOnDemand = action({
       // Aggregate show-level ratings from all rated episodes
       await ctx.runMutation(internal.titles.aggregateShowRatings, {
         titleId: episode.titleId,
+      });
+
+      // Queue episode-level overstimulation analysis (non-blocking).
+      await ctx.scheduler.runAfter(0, api.healthRatings.analyzeEpisodeOverstimulation, {
+        episodeId: args.episodeId,
       });
     } catch (e) {
       // Reset on failure
@@ -1124,23 +1224,24 @@ export const processQueueItem = action({
     try {
       if (item.type === "episode" && item.episodeId) {
         console.log("[processQueueItem] Rating episode:", item.title, "episodeId:", item.episodeId);
-        // Episode rating (rateEpisodeOnDemand handles queue status + metrics)
         await ctx.runAction(api.ratings.rateEpisodeOnDemand, {
           episodeId: item.episodeId,
         });
-        console.log("[processQueueItem] rateEpisodeOnDemand returned for:", item.title);
-      } else if (item.source === "user_request") {
-        // Use on-demand for user requests (faster), full for batch
+        console.log("[processQueueItem] Episode rating complete:", item.title);
+      } else if (item.source === "user_request" || item.source === "admin_rerate") {
+        console.log("[processQueueItem] On-demand rating:", item.title, "source:", item.source);
         await ctx.runAction(api.ratings.rateTitleOnDemand, {
           tmdbId: item.tmdbId,
           type: item.type as "movie" | "tv",
         });
+        console.log("[processQueueItem] On-demand rating complete:", item.title);
       } else {
-        // Batch processing (rateTitle handles queue status + metrics)
+        console.log("[processQueueItem] Batch rating:", item.title);
         await ctx.runAction(api.ratings.rateTitle, {
           tmdbId: item.tmdbId,
           type: item.type as "movie" | "tv",
         });
+        console.log("[processQueueItem] Batch rating complete:", item.title);
       }
 
       // Ensure this specific queue item is marked completed (inner actions
@@ -1283,7 +1384,7 @@ export const runNightlyBatch = action({
 
 export const searchTMDB = action({
   args: { query: v.string() },
-  handler: async (ctx, args): Promise<
+  handler: async (_ctx, args): Promise<
     {
       tmdbId: number;
       title: string;
@@ -1356,8 +1457,20 @@ export const requestOnDemandRating = mutation({
       .query("titles")
       .withIndex("by_tmdbId", (q) => q.eq("tmdbId", args.tmdbId))
       .first();
-
-    if (existing) return existing._id;
+    if (existing?.status === "rating") {
+      return existing._id;
+    }
+    // If an existing pending title already has an active queue item, don't enqueue again.
+    if (existing?.status === "pending") {
+      const queueItems = await ctx.db
+        .query("ratingQueue")
+        .withIndex("by_tmdbId", (q) => q.eq("tmdbId", args.tmdbId))
+        .collect();
+      const hasActiveQueue = queueItems.some(
+        (q) => q.status === "queued" || q.status === "processing"
+      );
+      if (hasActiveQueue) return existing._id;
+    }
 
     // Check rate limits
     const identity = await ctx.auth.getUserIdentity();
@@ -1377,26 +1490,44 @@ export const requestOnDemandRating = mutation({
         ? user?.onDemandRatingsToday ?? 0
         : 0;
 
-    if (used >= limit) {
+    const isAdmin = user?.isAdmin === true;
+    const isCompletedRating =
+      existing &&
+      (existing.status === "rated" ||
+        existing.status === "reviewed" ||
+        existing.status === "disputed");
+
+    // Re-running an already rated title is admin-only.
+    if (isCompletedRating && !isAdmin) {
+      return existing._id;
+    }
+
+    if (!isAdmin && used >= limit) {
       throw new Error("Daily on-demand rating limit reached");
     }
 
-    // Update rate limit counter
-    if (user) {
+    // Update rate limit counter (skip for admins)
+    if (user && !isAdmin) {
       await ctx.db.patch(user._id, {
         onDemandRatingsToday: used + 1,
         onDemandRatingsDate: today,
       });
     }
 
-    // Create pending title
-    const titleId = await ctx.db.insert("titles", {
-      tmdbId: args.tmdbId,
-      title: args.title,
-      type: args.type,
-      year: 0,
-      status: "pending",
-    });
+    let titleId = existing?._id;
+
+    // Create pending title if missing
+    if (!titleId) {
+      titleId = await ctx.db.insert("titles", {
+        tmdbId: args.tmdbId,
+        title: args.title,
+        type: args.type,
+        year: 0,
+        status: "pending",
+      });
+    } else if (existing && existing.status !== "pending") {
+      await ctx.db.patch(titleId, { status: "pending" });
+    }
 
     // Add to rating queue
     const queueItemId = await ctx.db.insert("ratingQueue", {
@@ -1548,6 +1679,7 @@ export const updateQueueStatus = internalMutation({
       .collect();
     const item = items.find((i) => i.status === "processing") ?? items[items.length - 1];
     if (item) {
+      console.log(`[updateQueueStatus] Patching queue item ${item._id} (status: ${item.status}) with cost=${args.estimatedCostCents} tokens=${JSON.stringify(args.tokenUsage)} duration=${args.durationMs}`);
       await ctx.db.patch(item._id, {
         status: args.status,
         lastError: args.error,
@@ -1556,6 +1688,8 @@ export const updateQueueStatus = internalMutation({
         tokenUsage: args.tokenUsage,
         estimatedCostCents: args.estimatedCostCents,
       });
+    } else {
+      console.log(`[updateQueueStatus] No queue item found for tmdbId=${args.tmdbId} (${items.length} items total)`);
     }
   },
 });
@@ -1597,7 +1731,19 @@ export const completeQueueItemById = internalMutation({
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.queueItemId);
-    if (!item || item.status === "completed") return;
+    if (!item) return;
+
+    // If updateQueueStatus already completed this item (with metrics), just
+    // ensure durationMs is set if missing. Don't overwrite existing metrics.
+    if (item.status === "completed") {
+      if (args.durationMs != null && !item.durationMs) {
+        await ctx.db.patch(args.queueItemId, { durationMs: args.durationMs });
+      }
+      return;
+    }
+
+    // If updateQueueStatus wrote metrics to a different item (tmdbId collision),
+    // this item is still "processing" — complete it with what we have.
     await ctx.db.patch(args.queueItemId, {
       status: "completed",
       completedAt: Date.now(),

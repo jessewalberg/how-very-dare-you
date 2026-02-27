@@ -29,7 +29,7 @@ export default function BrowsePage() {
   const rawResults = noFlagsOnly ? noFlagResults : browseResults;
 
   // Client-side filtering for age rating and streaming services
-  const titles = rawResults?.filter((title) => {
+  const titles = rawResults?.filter((title: NonNullable<typeof rawResults>[number]) => {
     if (
       ageFilters.length > 0 &&
       (!title.ageRating || !ageFilters.includes(title.ageRating))
@@ -38,7 +38,9 @@ export default function BrowsePage() {
     }
     if (serviceFilters.length > 0) {
       const titleServices =
-        title.streamingProviders?.map((p) => p.name) ?? [];
+        title.streamingProviders?.map(
+          (p: NonNullable<typeof title.streamingProviders>[number]) => p.name
+        ) ?? [];
       if (!serviceFilters.some((s) => titleServices.includes(s))) {
         return false;
       }

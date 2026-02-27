@@ -118,7 +118,7 @@ export interface SeverityConfig {
 
 export const SEVERITY_LEVELS: Record<SeverityLevel, SeverityConfig> = {
   0: {
-    label: "None",
+    label: "No concerns",
     color: "text-emerald-600",
     bg: "bg-emerald-50",
     border: "border-emerald-500/30",
@@ -142,7 +142,7 @@ export const SEVERITY_LEVELS: Record<SeverityLevel, SeverityConfig> = {
     border: "border-orange-500/30",
   },
   4: {
-    label: "Core Theme",
+    label: "Highest concern",
     color: "text-red-700",
     bg: "bg-red-50",
     border: "border-red-500/30",

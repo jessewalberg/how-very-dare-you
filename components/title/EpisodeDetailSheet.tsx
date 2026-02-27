@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useAction } from "convex/react";
+import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -39,14 +40,28 @@ export function EpisodeDetailSheet({
   const [reRating, setReRating] = useState(false);
 
   const hasRatings = episode?.status === "rated" && episode?.ratings;
+  const displayRatings = hasRatings
+    ? (episode.ratings as CategoryRatings)
+    : null;
+  const episodeOverstimulation = episode?.ratings?.overstimulation;
+  const overstimulationNote =
+    episodeOverstimulation === undefined
+      ? 'Episode overstimulation is being analyzed. "Pending analysis" means this episode-specific check is still running.'
+      : episodeOverstimulation === 0
+        ? 'Overstimulation is episode-specific. "None" means no overstimulation was detected for this episode.'
+        : "Overstimulation shown here is specific to this episode.";
 
   async function handleReRate() {
     if (!episodeId) return;
     setReRating(true);
     try {
       await reRateEpisode({ episodeId });
+      toast.success("Re-rating started for episode");
     } catch (e) {
       console.error("Re-rate failed:", e);
+      toast.error("Re-rate failed", {
+        description: e instanceof Error ? e.message : "Unknown error",
+      });
     } finally {
       setReRating(false);
     }
@@ -79,12 +94,17 @@ export function EpisodeDetailSheet({
             </p>
           )}
 
-          {hasRatings && (
-            <RatingBreakdown
-              ratings={episode.ratings as CategoryRatings}
-              notes={episode.ratingNotes ?? undefined}
-              categoryEvidence={episode.categoryEvidence ?? undefined}
-            />
+          {displayRatings && (
+            <>
+              <RatingBreakdown
+                ratings={displayRatings}
+                notes={episode?.ratingNotes ?? undefined}
+                categoryEvidence={episode?.categoryEvidence ?? undefined}
+              />
+              <p className="text-[11px] text-muted-foreground/60">
+                {overstimulationNote}
+              </p>
+            </>
           )}
 
           {episode?.ratedAt && (

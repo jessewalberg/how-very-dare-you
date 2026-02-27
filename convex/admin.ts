@@ -1,6 +1,7 @@
 import { query, mutation, action, internalQuery, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
 import { requireAdmin } from "./lib/adminAuth";
 
 // ── Queries ──────────────────────────────────────────────
@@ -105,6 +106,56 @@ export const listTitles = query({
   },
 });
 
+export const getEpisodesForTitle = query({
+  args: { titleId: v.id("titles") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    return await ctx.db
+      .query("episodes")
+      .withIndex("by_titleId", (q) => q.eq("titleId", args.titleId))
+      .collect();
+  },
+});
+
+export const getEpisodesForTitleInternal = internalQuery({
+  args: { titleId: v.id("titles") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("episodes")
+      .withIndex("by_titleId", (q) => q.eq("titleId", args.titleId))
+      .collect();
+  },
+});
+
+export const getTitleRatingCost = query({
+  args: { tmdbId: v.number() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    // Get the most recent completed queue item for this tmdbId
+    const queueItems = await ctx.db
+      .query("ratingQueue")
+      .withIndex("by_tmdbId", (q) => q.eq("tmdbId", args.tmdbId))
+      .collect();
+
+    // Find most recent completed item
+    const completed = queueItems
+      .filter((q) => q.status === "completed" && q.estimatedCostCents)
+      .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+
+    if (completed.length === 0) return null;
+
+    const latest = completed[0];
+    return {
+      estimatedCostCents: latest.estimatedCostCents,
+      durationMs: latest.durationMs,
+      tokenUsage: latest.tokenUsage,
+      completedAt: latest.completedAt,
+    };
+  },
+});
+
 export const getQueueItems = query({
   args: {
     status: v.optional(
@@ -178,10 +229,11 @@ export const archiveAndResetTitle = internalMutation({
         ratingModel: undefined,
         ratedAt: undefined,
         subtitleInfo: undefined,
+        videoAnalysis: undefined,
         status: "pending",
       });
     } else {
-      await ctx.db.patch(args.titleId, { status: "pending" });
+      await ctx.db.patch(args.titleId, { status: "pending", videoAnalysis: undefined });
     }
   },
 });
@@ -243,6 +295,11 @@ export const reRateTitle = action({
     await ctx.scheduler.runAfter(0, api.ratings.processQueueItem, {
       queueItemId,
     });
+    // Re-rate must refresh overstimulation even if prior analysis exists.
+    await ctx.scheduler.runAfter(0, api.healthRatings.analyzeOverstimulation, {
+      titleId: args.titleId,
+      force: true,
+    });
 
     return { success: true };
   },
@@ -286,6 +343,88 @@ export const reRateEpisode = action({
     });
 
     return { success: true };
+  },
+});
+
+export const refreshAllSeasonsForTitle = action({
+  args: { titleId: v.id("titles") },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    success: boolean;
+    seasonCount: number;
+    seasonsRefreshed: number;
+    seasonsFailed: number;
+    failedSeasons: number[];
+    episodeCount: number;
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Verify admin
+    await ctx.runQuery(internal.admin.getAdminUser, {
+      clerkId: identity.subject,
+    });
+
+    const title = await ctx.runQuery(api.titles.getTitle, { titleId: args.titleId });
+    if (!title) throw new Error("Title not found");
+    if (title.type !== "tv") throw new Error("Season refresh is only available for TV titles");
+
+    const { getTVDetails } = await import("../lib/tmdb");
+    const tmdbKey = process.env.TMDB_API_KEY!;
+    const tmdb = await getTVDetails(title.tmdbId, tmdbKey);
+
+    const seasonData = (tmdb.seasons ?? []).map((s) => ({
+      seasonNumber: s.season_number,
+      episodeCount: s.episode_count,
+      name: s.name || undefined,
+      overview: s.overview || undefined,
+      posterPath: s.poster_path || undefined,
+      airDate: s.air_date || undefined,
+    }));
+
+    await ctx.runMutation(internal.titles.patchSeasonData, {
+      titleId: args.titleId,
+      numberOfSeasons: tmdb.number_of_seasons,
+      seasonData,
+    });
+
+    let seasonsRefreshed = 0;
+    const failedSeasons: number[] = [];
+
+    for (const season of seasonData) {
+      try {
+        await ctx.runAction(api.episodes.fetchSeasonEpisodes, {
+          titleId: args.titleId,
+          tmdbShowId: title.tmdbId,
+          seasonNumber: season.seasonNumber,
+        });
+        seasonsRefreshed++;
+      } catch (e) {
+        failedSeasons.push(season.seasonNumber);
+        console.error(
+          `Failed refreshing ${title.title} season ${season.seasonNumber}:`,
+          e
+        );
+      }
+    }
+
+    const episodes: Doc<"episodes">[] = await ctx.runQuery(
+      internal.admin.getEpisodesForTitleInternal,
+      {
+      titleId: args.titleId,
+      }
+    );
+
+    return {
+      success: true,
+      seasonCount: seasonData.length,
+      seasonsRefreshed,
+      seasonsFailed: failedSeasons.length,
+      failedSeasons,
+      episodeCount: episodes.length,
+    };
   },
 });
 

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useQuery, useAction } from "convex/react";
 import Link from "next/link";
 import Image from "next/image";
-import { RefreshCw, Filter } from "lucide-react";
+import { toast } from "sonner";
+import { RefreshCw, Filter, ChevronRight, DollarSign } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -53,11 +54,34 @@ const STATUS_COLORS: Record<string, string> = {
   disputed: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
+const EPISODE_STATUS_COLORS: Record<string, string> = {
+  unrated: "bg-slate-100 text-slate-700 border-slate-200",
+  rating: "bg-blue-50 text-blue-700 border-blue-200",
+  rated: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  failed: "bg-red-50 text-red-700 border-red-200",
+};
+
+function formatCost(cents: number | undefined) {
+  if (!cents) return null;
+  return `$${(cents / 100).toFixed(3)}`;
+}
+
+function avgRating(ratings: Record<string, unknown> | undefined) {
+  if (!ratings) return null;
+  const nums = Object.values(ratings).filter(
+    (v): v is number => typeof v === "number"
+  );
+  if (nums.length === 0) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
 export default function AdminTitlesPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(undefined);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(undefined);
-  const [confirmTitle, setConfirmTitle] = useState<{
-    id: Id<"titles">;
+  const [expandedTitle, setExpandedTitle] = useState<Id<"titles"> | null>(null);
+  const [confirmReRate, setConfirmReRate] = useState<{
+    type: "title" | "episode";
+    id: Id<"titles"> | Id<"episodes">;
     name: string;
   } | null>(null);
   const [reRating, setReRating] = useState(false);
@@ -67,15 +91,24 @@ export default function AdminTitlesPage() {
     type: typeFilter,
   });
   const reRateTitle = useAction(api.admin.reRateTitle);
+  const reRateEpisode = useAction(api.admin.reRateEpisode);
 
   async function handleReRate() {
-    if (!confirmTitle) return;
+    if (!confirmReRate) return;
     setReRating(true);
     try {
-      await reRateTitle({ titleId: confirmTitle.id });
-      setConfirmTitle(null);
+      if (confirmReRate.type === "title") {
+        await reRateTitle({ titleId: confirmReRate.id as Id<"titles"> });
+      } else {
+        await reRateEpisode({ episodeId: confirmReRate.id as Id<"episodes"> });
+      }
+      toast.success(`Re-rating started for ${confirmReRate.name}`);
+      setConfirmReRate(null);
     } catch (e) {
       console.error("Re-rate failed:", e);
+      toast.error("Re-rate failed", {
+        description: e instanceof Error ? e.message : "Unknown error",
+      });
     } finally {
       setReRating(false);
     }
@@ -153,91 +186,133 @@ export default function AdminTitlesPage() {
       {/* Title list */}
       {titles && titles.length > 0 && (
         <div className="space-y-2">
-          {titles.map((title) => {
-            const ratingSummary = title.ratings
-              ? Object.values(title.ratings)
-                  .filter((v): v is number => typeof v === "number")
-                  .reduce((a, b) => a + b, 0) /
-                Object.values(title.ratings).filter(
-                  (v): v is number => typeof v === "number"
-                ).length
-              : null;
+          {titles.map((title: NonNullable<typeof titles>[number]) => {
+            const ratingSummary = avgRating(title.ratings);
+            const isExpanded = expandedTitle === title._id;
+            const isTv = title.type === "tv";
 
             return (
-              <div
-                key={title._id}
-                className="flex items-center gap-3 rounded-lg border bg-card p-3 hover:shadow-sm transition-all"
-              >
-                {/* Poster */}
-                {title.posterPath ? (
-                  <Image
-                    src={`https://image.tmdb.org/t/p/w92${title.posterPath}`}
-                    alt={title.title}
-                    width={40}
-                    height={60}
-                    className="rounded object-cover shrink-0"
-                  />
-                ) : (
-                  <div className="size-10 rounded bg-muted shrink-0" />
-                )}
+              <div key={title._id} className="space-y-0">
+                <div
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg border bg-card p-3 hover:shadow-sm transition-all",
+                    isExpanded && "rounded-b-none border-b-0"
+                  )}
+                >
+                  {/* Expand toggle for TV */}
+                  {isTv ? (
+                    <button
+                      onClick={() =>
+                        setExpandedTitle(isExpanded ? null : title._id)
+                      }
+                      className="shrink-0 p-0.5 rounded hover:bg-muted transition-colors"
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "size-4 text-muted-foreground transition-transform duration-200",
+                          isExpanded && "rotate-90"
+                        )}
+                      />
+                    </button>
+                  ) : (
+                    <div className="w-5 shrink-0" />
+                  )}
 
-                {/* Info */}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      href={`/title/${title._id}`}
-                      className="text-sm font-semibold truncate hover:underline underline-offset-2"
-                    >
-                      {title.title}
-                    </Link>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      ({title.year})
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-muted-foreground capitalize">
-                      {title.type}
-                    </span>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-[10px] px-1.5 py-0",
-                        STATUS_COLORS[title.status]
+                  {/* Poster */}
+                  {title.posterPath ? (
+                    <Image
+                      src={`https://image.tmdb.org/t/p/w92${title.posterPath}`}
+                      alt={title.title}
+                      width={40}
+                      height={60}
+                      className="rounded object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="size-10 rounded bg-muted shrink-0" />
+                  )}
+
+                  {/* Info */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/title/${title._id}`}
+                        className="text-sm font-semibold truncate hover:underline underline-offset-2"
+                      >
+                        {title.title}
+                      </Link>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        ({title.year})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs text-muted-foreground capitalize">
+                        {title.type}
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] px-1.5 py-0",
+                          STATUS_COLORS[title.status]
+                        )}
+                      >
+                        {title.status}
+                      </Badge>
+                      {ratingSummary !== null && (
+                        <span className="text-xs text-muted-foreground">
+                          Avg: {ratingSummary.toFixed(1)}
+                        </span>
                       )}
-                    >
-                      {title.status}
-                    </Badge>
-                    {ratingSummary !== null && (
-                      <span className="text-xs text-muted-foreground">
-                        Avg: {ratingSummary.toFixed(1)}
-                      </span>
-                    )}
-                    {title.ratedAt && (
-                      <span className="text-[10px] text-muted-foreground/50">
-                        Rated{" "}
-                        {new Date(title.ratedAt).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </span>
-                    )}
+                      {title.ratedAt && (
+                        <span className="text-[10px] text-muted-foreground/50">
+                          Rated{" "}
+                          {new Date(title.ratedAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Cost */}
+                  <TitleCost tmdbId={title.tmdbId} />
+
+                  {/* Re-rate button */}
+                  {(title.status === "rated" ||
+                    title.status === "reviewed" ||
+                    title.status === "disputed") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1 shrink-0"
+                      onClick={() =>
+                        setConfirmReRate({
+                          type: "title",
+                          id: title._id,
+                          name: title.title,
+                        })
+                      }
+                    >
+                      <RefreshCw className="size-3" />
+                      Re-rate
+                    </Button>
+                  )}
                 </div>
 
-                {/* Re-rate button */}
-                {(title.status === "rated" || title.status === "reviewed" || title.status === "disputed") && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs gap-1 shrink-0"
-                    onClick={() =>
-                      setConfirmTitle({ id: title._id, name: title.title })
+                {/* Episodes panel */}
+                {isTv && isExpanded && (
+                  <EpisodePanel
+                    titleId={title._id}
+                    titleName={title.title}
+                    onReRate={(episodeId, name) =>
+                      setConfirmReRate({
+                        type: "episode",
+                        id: episodeId,
+                        name,
+                      })
                     }
-                  >
-                    <RefreshCw className="size-3" />
-                    Re-rate
-                  </Button>
+                  />
                 )}
               </div>
             );
@@ -247,16 +322,18 @@ export default function AdminTitlesPage() {
 
       {/* Confirm dialog */}
       <Dialog
-        open={!!confirmTitle}
-        onOpenChange={(open) => !open && setConfirmTitle(null)}
+        open={!!confirmReRate}
+        onOpenChange={(open) => !open && setConfirmReRate(null)}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Re-rate Title</DialogTitle>
+            <DialogTitle>
+              Re-rate {confirmReRate?.type === "episode" ? "Episode" : "Title"}
+            </DialogTitle>
             <DialogDescription>
               This will archive the current ratings for{" "}
               <span className="font-medium text-foreground">
-                {confirmTitle?.name}
+                {confirmReRate?.name}
               </span>{" "}
               and send it back through the AI rating pipeline. Previous ratings
               will be preserved in the rating history.
@@ -265,7 +342,7 @@ export default function AdminTitlesPage() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setConfirmTitle(null)}
+              onClick={() => setConfirmReRate(null)}
               disabled={reRating}
             >
               Cancel
@@ -283,6 +360,161 @@ export default function AdminTitlesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function TitleCost({ tmdbId }: { tmdbId: number }) {
+  const cost = useQuery(api.admin.getTitleRatingCost, { tmdbId });
+
+  if (!cost?.estimatedCostCents) return null;
+
+  return (
+    <div className="flex items-center gap-1 shrink-0">
+      <DollarSign className="size-3 text-muted-foreground" />
+      <span className="text-xs text-muted-foreground">
+        {formatCost(cost.estimatedCostCents)}
+      </span>
+    </div>
+  );
+}
+
+function EpisodePanel({
+  titleId,
+  titleName,
+  onReRate,
+}: {
+  titleId: Id<"titles">;
+  titleName: string;
+  onReRate: (episodeId: Id<"episodes">, name: string) => void;
+}) {
+  const episodes = useQuery(api.admin.getEpisodesForTitle, { titleId });
+
+  if (episodes === undefined) {
+    return (
+      <div className="rounded-b-lg border bg-muted/30 p-3 space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full rounded" />
+        ))}
+      </div>
+    );
+  }
+
+  if (episodes.length === 0) {
+    return (
+      <div className="rounded-b-lg border bg-muted/30 p-4 text-center">
+        <p className="text-xs text-muted-foreground">
+          No episodes found. Episodes are created when users browse individual
+          seasons.
+        </p>
+      </div>
+    );
+  }
+
+  // Group by season
+  const seasons = new Map<number, typeof episodes>();
+  for (const ep of episodes) {
+    const s = seasons.get(ep.seasonNumber) ?? [];
+    s.push(ep);
+    seasons.set(ep.seasonNumber, s);
+  }
+
+  // Sort seasons and episodes
+  const sortedSeasons = Array.from(seasons.entries()).sort(
+    ([a], [b]) => a - b
+  );
+
+  return (
+    <div className="rounded-b-lg border bg-muted/20 px-3 pb-3 pt-1 space-y-3">
+      {sortedSeasons.map(([seasonNum, eps]) => {
+        const sortedEps = eps.sort(
+          (a: (typeof eps)[number], b: (typeof eps)[number]) =>
+            a.episodeNumber - b.episodeNumber
+        );
+        const ratedCount = sortedEps.filter(
+          (e: (typeof sortedEps)[number]) => e.status === "rated"
+        ).length;
+
+        return (
+          <div key={seasonNum}>
+            <div className="flex items-center gap-2 py-1.5">
+              <span className="text-xs font-semibold">
+                Season {seasonNum}
+              </span>
+              <span className="text-[10px] text-muted-foreground">
+                {ratedCount}/{sortedEps.length} rated
+              </span>
+            </div>
+            <div className="space-y-1">
+              {sortedEps.map((ep: (typeof sortedEps)[number]) => {
+                const epAvg = avgRating(ep.ratings);
+                return (
+                  <div
+                    key={ep._id}
+                    className="flex items-center gap-3 rounded-md border bg-card px-3 py-2 text-xs"
+                  >
+                    {/* Episode number */}
+                    <span className="text-muted-foreground font-mono w-6 shrink-0 text-right">
+                      {ep.episodeNumber}
+                    </span>
+
+                    {/* Name */}
+                    <span className="min-w-0 flex-1 truncate font-medium">
+                      {ep.name || `Episode ${ep.episodeNumber}`}
+                    </span>
+
+                    {/* Status */}
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[10px] px-1.5 py-0 shrink-0",
+                        EPISODE_STATUS_COLORS[ep.status]
+                      )}
+                    >
+                      {ep.status}
+                    </Badge>
+
+                    {/* Avg rating */}
+                    {epAvg !== null && (
+                      <span className="text-muted-foreground shrink-0 w-12 text-right">
+                        Avg: {epAvg.toFixed(1)}
+                      </span>
+                    )}
+
+                    {/* Rated date */}
+                    {ep.ratedAt && (
+                      <span className="text-[10px] text-muted-foreground/50 shrink-0">
+                        {new Date(ep.ratedAt).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                    )}
+
+                    {/* Re-rate button */}
+                    {(ep.status === "rated" || ep.status === "failed") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[10px] gap-1 px-2 shrink-0"
+                        onClick={() =>
+                          onReRate(
+                            ep._id,
+                            `${titleName} S${ep.seasonNumber}E${ep.episodeNumber}`
+                          )
+                        }
+                      >
+                        <RefreshCw className="size-2.5" />
+                        Re-rate
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

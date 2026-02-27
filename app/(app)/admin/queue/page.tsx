@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
+import { toast } from "sonner";
 import {
   Filter,
   ListOrdered,
@@ -55,8 +56,12 @@ export default function AdminQueuePage() {
     setActing(itemId);
     try {
       await action();
+      toast.success("Action completed");
     } catch (e) {
       console.error("Queue action failed:", e);
+      toast.error("Action failed", {
+        description: e instanceof Error ? e.message : "Unknown error",
+      });
     } finally {
       setActing(null);
     }
@@ -136,7 +141,7 @@ export default function AdminQueuePage() {
             <span>Actions</span>
           </div>
 
-          {items.map((item) => {
+          {items.map((item: NonNullable<typeof items>[number]) => {
             const isActing = acting === item._id;
             return (
             <div

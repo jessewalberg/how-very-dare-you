@@ -119,7 +119,7 @@ export default function CorrectionsPage() {
       {/* Corrections list */}
       {corrections && corrections.length > 0 && (
         <div className="space-y-3">
-          {corrections.map((correction) => {
+          {corrections.map((correction: NonNullable<typeof corrections>[number]) => {
             const config =
               STATUS_CONFIG[
                 correction.status as keyof typeof STATUS_CONFIG

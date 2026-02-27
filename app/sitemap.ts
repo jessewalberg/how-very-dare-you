@@ -35,7 +35,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       limit: 1000,
     });
 
-    titlePages = titles.map((title) => ({
+    titlePages = titles.map((title: (typeof titles)[number]) => ({
       url: `${baseUrl}/title/${title._id}`,
       lastModified: title.ratedAt ? new Date(title.ratedAt) : new Date(),
       changeFrequency: "monthly" as const,

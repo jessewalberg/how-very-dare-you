@@ -39,6 +39,23 @@ export interface OMDBResponse {
   Error?: string;
 }
 
+export interface OMDBSeasonEpisode {
+  Title: string;
+  Released: string;
+  Episode: string;
+  imdbRating: string;
+  imdbID: string;
+}
+
+export interface OMDBSeasonResponse {
+  Title: string;
+  Season: string;
+  totalSeasons: string;
+  Episodes?: OMDBSeasonEpisode[];
+  Response: "True" | "False";
+  Error?: string;
+}
+
 // ── Public API ────────────────────────────────────────────
 
 export async function getByImdbId(
@@ -56,6 +73,29 @@ export async function getByImdbId(
   }
 
   const data = (await res.json()) as OMDBResponse;
+  if (data.Response === "False") {
+    return null;
+  }
+
+  return data;
+}
+
+export async function getSeasonByImdbId(
+  imdbId: string,
+  seasonNumber: number,
+  apiKey: string
+): Promise<OMDBSeasonResponse | null> {
+  const url = new URL(BASE_URL);
+  url.searchParams.set("i", imdbId);
+  url.searchParams.set("Season", String(seasonNumber));
+  url.searchParams.set("apikey", apiKey);
+
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    throw new Error(`OMDB API error: ${res.status} ${res.statusText}`);
+  }
+
+  const data = (await res.json()) as OMDBSeasonResponse;
   if (data.Response === "False") {
     return null;
   }

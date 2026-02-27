@@ -102,6 +102,10 @@ export function RatingBreakdown({
           <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Content Advisory
           </h3>
+          <p className="mt-1 text-[11px] text-muted-foreground/75">
+            Scale: 0 = No concerns, 1 = Brief, 2 = Notable, 3 = Significant, 4 = Highest
+            concern.
+          </p>
           {noFlags && (
             <div className="mt-2">
               <NoFlagsBadge />

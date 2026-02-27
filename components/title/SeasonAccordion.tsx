@@ -82,7 +82,9 @@ export function SeasonAccordion({
     setSheetOpen(true);
   }, []);
 
-  const ratedCount = episodes?.filter((ep) => ep.status === "rated").length ?? 0;
+  const ratedCount =
+    episodes?.filter((ep: NonNullable<typeof episodes>[number]) => ep.status === "rated")
+      .length ?? 0;
 
   return (
     <>
@@ -124,8 +126,11 @@ export function SeasonAccordion({
               </div>
             )}
             {episodes
-              ?.sort((a, b) => a.episodeNumber - b.episodeNumber)
-              .map((ep) => (
+              ?.sort(
+                (a: NonNullable<typeof episodes>[number], b: NonNullable<typeof episodes>[number]) =>
+                  a.episodeNumber - b.episodeNumber
+              )
+              .map((ep: NonNullable<typeof episodes>[number]) => (
                 <EpisodeCard
                   key={ep._id}
                   episodeNumber={ep.episodeNumber}

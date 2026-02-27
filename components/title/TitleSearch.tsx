@@ -143,7 +143,7 @@ export function TitleSearch({
             </div>
           ) : (
             <div className="py-1">
-              {results.map((title) => {
+              {results.map((title: (typeof results)[number]) => {
                 const hasRatings =
                   title.ratings && title.status === "rated";
                 const noFlags =

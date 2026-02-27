@@ -61,6 +61,7 @@ export default function WatchlistPage() {
 
   const isLoading = watchlist === undefined;
   const isEmpty = watchlist && watchlist.length === 0;
+  type WatchlistItem = Exclude<NonNullable<typeof watchlist>[number], null>;
 
   return (
     <div className="space-y-6">
@@ -95,8 +96,11 @@ export default function WatchlistPage() {
       <TitleGrid
         titles={
           watchlist
-            ?.filter((t): t is NonNullable<typeof t> => t !== null)
-            .map((t) => ({
+            ?.filter(
+              (t: NonNullable<typeof watchlist>[number]): t is WatchlistItem =>
+                t !== null
+            )
+            .map((t: WatchlistItem) => ({
               ...t,
               ratings: t.ratings as CategoryRatings | undefined,
             }))

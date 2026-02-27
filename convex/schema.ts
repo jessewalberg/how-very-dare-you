@@ -12,6 +12,23 @@ const categoryEvidenceValidator = v.optional(v.object({
   sexuality: v.optional(v.object({ explanation: v.string(), quote: v.optional(v.string()) })),
 }));
 
+const transcriptStorageValidator = v.optional(v.object({
+  provider: v.literal("r2"),
+  bucket: v.string(),
+  key: v.string(),
+  bytes: v.number(),
+  sha256: v.string(),
+  uploadedAt: v.number(),
+}));
+
+const subtitleInfoValidator = v.optional(v.object({
+  status: v.union(v.literal("success"), v.literal("failed"), v.literal("skipped"), v.literal("timeout")),
+  source: v.optional(v.string()),
+  language: v.optional(v.string()),
+  dialogueLines: v.optional(v.number()),
+  transcriptStorage: transcriptStorageValidator,
+}));
+
 export default defineSchema({
   titles: defineTable({
     // External IDs
@@ -67,6 +84,30 @@ export default defineSchema({
         brightnessVariance: v.number(),
         flashCount: v.number(),
         trailerBiasCorrected: v.boolean(),
+        derivation: v.optional(v.object({
+          methodVersion: v.string(),
+          sourceType: v.union(
+            v.literal("movie_trailer"),
+            v.literal("tv_weighted"),
+            v.literal("tv_trailer_fallback")
+          ),
+          formula: v.string(),
+          computedScore: v.number(),
+          trailer: v.object({
+            videoId: v.string(),
+            severity: v.number(),
+            confidence: v.number(),
+            note: v.string(),
+            model: v.string(),
+          }),
+          episodeSamples: v.optional(v.object({
+            requestedCount: v.number(),
+            analyzedCount: v.number(),
+            videoIds: v.array(v.string()),
+            severities: v.array(v.number()),
+            averageSeverity: v.optional(v.number()),
+          })),
+        })),
       })
     ),
 
@@ -78,12 +119,7 @@ export default defineSchema({
     ratedAt: v.optional(v.number()),
 
     // Subtitle fetch tracking
-    subtitleInfo: v.optional(v.object({
-      status: v.union(v.literal("success"), v.literal("failed"), v.literal("skipped"), v.literal("timeout")),
-      source: v.optional(v.string()),
-      language: v.optional(v.string()),
-      dialogueLines: v.optional(v.number()),
-    })),
+    subtitleInfo: subtitleInfoValidator,
 
     // Episode flags (TV shows only — legacy holistic ratings)
     episodeFlags: v.optional(
@@ -270,6 +306,7 @@ export default defineSchema({
         religious: v.number(),
         political: v.number(),
         sexuality: v.number(),
+        overstimulation: v.optional(v.number()),
       })
     ),
     ratingConfidence: v.optional(v.number()),
@@ -277,14 +314,28 @@ export default defineSchema({
     categoryEvidence: categoryEvidenceValidator,
     ratingModel: v.optional(v.string()),
     ratedAt: v.optional(v.number()),
+    overstimulationAnalysis: v.optional(v.object({
+      methodVersion: v.string(),
+      videoId: v.string(),
+      analyzedAt: v.number(),
+      metrics: v.object({
+        cutsPerMinute: v.number(),
+        avgCutDuration: v.number(),
+        avgSaturation: v.number(),
+        avgBrightness: v.number(),
+        brightnessVariance: v.number(),
+        flashCount: v.number(),
+      }),
+      ai: v.object({
+        severity: v.number(),
+        confidence: v.number(),
+        note: v.string(),
+        model: v.string(),
+      }),
+    })),
 
     // Subtitle fetch tracking
-    subtitleInfo: v.optional(v.object({
-      status: v.union(v.literal("success"), v.literal("failed"), v.literal("skipped"), v.literal("timeout")),
-      source: v.optional(v.string()),
-      language: v.optional(v.string()),
-      dialogueLines: v.optional(v.number()),
-    })),
+    subtitleInfo: subtitleInfoValidator,
 
     // Status
     status: v.union(

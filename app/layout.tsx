@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 import { ConvexClientProvider } from "@/components/layout/ConvexClientProvider";
 
@@ -53,6 +54,7 @@ export default function RootLayout({
       </head>
       <body className={`${plusJakartaSans.variable} antialiased`}>
         <ConvexClientProvider>{children}</ConvexClientProvider>
+        <Toaster richColors position="bottom-right" />
       </body>
     </html>
   );

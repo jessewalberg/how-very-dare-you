@@ -27,6 +27,7 @@ export function CompositeScore({
   const config = SEVERITY_LEVELS[clamped];
   const label = getSeverityLabel(score);
   const displayScore = score.toFixed(1);
+  const scoreOutOfFour = `${displayScore}/4`;
 
   if (compact) {
     return (
@@ -44,7 +45,7 @@ export function CompositeScore({
             config.color
           )}
         >
-          {displayScore}
+          {scoreOutOfFour}
         </span>
         <span
           className={cn(
@@ -59,7 +60,11 @@ export function CompositeScore({
   }
 
   return (
-    <div className="flex flex-col items-center gap-1" role="status" aria-label={`Composite score: ${displayScore} out of 4, rated ${label}`}>
+    <div
+      className="flex flex-col items-center gap-1"
+      role="status"
+      aria-label={`Overall score: ${displayScore} out of 4 on a 0 to 4 scale, rated ${label}`}
+    >
       <div
         className={cn(
           "relative flex flex-col items-center justify-center",
@@ -77,7 +82,7 @@ export function CompositeScore({
             config.color
           )}
         >
-          {displayScore}
+          {scoreOutOfFour}
         </span>
         <span
           className={cn(
@@ -90,7 +95,10 @@ export function CompositeScore({
         </span>
       </div>
       <span className="text-[10px] font-medium text-muted-foreground tracking-wide uppercase">
-        Composite
+        Overall Score (0-4)
+      </span>
+      <span className="text-[10px] text-muted-foreground/70">
+        0 = no concerns, 4 = highest concern
       </span>
     </div>
   );
