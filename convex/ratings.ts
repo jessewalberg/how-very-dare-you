@@ -1006,7 +1006,11 @@ export const rateEpisodeOnDemand = action({
       episodeId: args.episodeId,
     });
     if (!episode) throw new Error("Episode not found");
-    if (episode.status === "rated") return;
+    console.log("[rateEpisodeOnDemand] Episode status:", episode.status, "for episodeId:", args.episodeId);
+    if (episode.status === "rated") {
+      console.log("[rateEpisodeOnDemand] SKIPPING - episode already rated");
+      return;
+    }
 
     const title = await ctx.runQuery(api.titles.getTitle, {
       titleId: episode.titleId,
@@ -1102,19 +1106,29 @@ export const processQueueItem = action({
       queueItemId: args.queueItemId,
     });
 
-    if (!item || item.status !== "queued") return;
+    if (!item) {
+      console.log("[processQueueItem] Item not found:", args.queueItemId);
+      return;
+    }
+    if (item.status !== "queued") {
+      console.log("[processQueueItem] Skipping, status is:", item.status, "for", item.title);
+      return;
+    }
 
     // Mark as processing
     await ctx.runMutation(internal.ratings.setQueueProcessing, {
       queueItemId: args.queueItemId,
     });
 
+    const startTime = Date.now();
     try {
       if (item.type === "episode" && item.episodeId) {
+        console.log("[processQueueItem] Rating episode:", item.title, "episodeId:", item.episodeId);
         // Episode rating (rateEpisodeOnDemand handles queue status + metrics)
         await ctx.runAction(api.ratings.rateEpisodeOnDemand, {
           episodeId: item.episodeId,
         });
+        console.log("[processQueueItem] rateEpisodeOnDemand returned for:", item.title);
       } else if (item.source === "user_request") {
         // Use on-demand for user requests (faster), full for batch
         await ctx.runAction(api.ratings.rateTitleOnDemand, {
@@ -1128,6 +1142,13 @@ export const processQueueItem = action({
           type: item.type as "movie" | "tv",
         });
       }
+
+      // Ensure this specific queue item is marked completed (inner actions
+      // use tmdbId-based lookup which can hit the wrong item for TV shows)
+      await ctx.runMutation(internal.ratings.completeQueueItemById, {
+        queueItemId: args.queueItemId,
+        durationMs: Date.now() - startTime,
+      });
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
       const attempts = (item.attempts ?? 0) + 1;
@@ -1519,10 +1540,13 @@ export const updateQueueStatus = internalMutation({
     estimatedCostCents: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const item = await ctx.db
+    // Find the most recent processing item for this tmdbId (not just .first()
+    // which could hit an older completed item for the same show)
+    const items = await ctx.db
       .query("ratingQueue")
       .withIndex("by_tmdbId", (q) => q.eq("tmdbId", args.tmdbId))
-      .first();
+      .collect();
+    const item = items.find((i) => i.status === "processing") ?? items[items.length - 1];
     if (item) {
       await ctx.db.patch(item._id, {
         status: args.status,
@@ -1562,6 +1586,22 @@ export const retryQueueItem = internalMutation({
       status: "queued",
       lastError: args.error,
       attempts: args.attempts,
+    });
+  },
+});
+
+export const completeQueueItemById = internalMutation({
+  args: {
+    queueItemId: v.id("ratingQueue"),
+    durationMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const item = await ctx.db.get(args.queueItemId);
+    if (!item || item.status === "completed") return;
+    await ctx.db.patch(args.queueItemId, {
+      status: "completed",
+      completedAt: Date.now(),
+      ...(args.durationMs != null ? { durationMs: args.durationMs } : {}),
     });
   },
 });

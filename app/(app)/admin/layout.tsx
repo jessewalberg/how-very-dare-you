@@ -1,7 +1,7 @@
 "use client";
 
+import { useConvexAuth } from "convex/react";
 import { useQuery } from "convex/react";
-import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { api } from "@/convex/_generated/api";
@@ -12,19 +12,21 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isLoaded: clerkLoaded, isSignedIn } = useUser();
-  const isAdmin = useQuery(api.admin.isCurrentUserAdmin);
+  const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
+  const isAdmin = useQuery(
+    api.admin.isCurrentUserAdmin,
+    isAuthenticated ? {} : "skip"
+  );
   const router = useRouter();
 
-  // undefined = query still loading, null = no auth token yet, false = not admin, true = admin
-  const loading = !clerkLoaded || isAdmin === undefined || (isSignedIn && isAdmin === null);
+  const loading = authLoading || (isAuthenticated && isAdmin === undefined);
 
   useEffect(() => {
     if (loading) return;
-    if (!isSignedIn || isAdmin === false) {
+    if (!isAuthenticated || !isAdmin) {
       router.replace("/");
     }
-  }, [loading, isSignedIn, isAdmin, router]);
+  }, [loading, isAuthenticated, isAdmin, router]);
 
   if (loading) {
     return (

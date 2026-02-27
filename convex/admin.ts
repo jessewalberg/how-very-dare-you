@@ -8,7 +8,7 @@ import { requireAdmin } from "./lib/adminAuth";
 export const isCurrentUserAdmin = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
+    if (!identity) return false;
 
     const user = await ctx.db
       .query("users")
@@ -84,8 +84,6 @@ export const listTitles = query({
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
-    let q = ctx.db.query("titles");
-
     if (args.status) {
       const results = await ctx.db
         .query("titles")
@@ -99,7 +97,7 @@ export const listTitles = query({
       return results;
     }
 
-    const results = await q.order("desc").take(200);
+    const results = await ctx.db.query("titles").order("desc").take(200);
     if (args.type) {
       return results.filter((t) => t.type === args.type);
     }
@@ -324,6 +322,63 @@ export const insertQueueItem = internalMutation({
       episodeId: args.episodeId,
       seasonNumber: args.seasonNumber,
       episodeNumber: args.episodeNumber,
+    });
+  },
+});
+
+// ── Queue management mutations ──────────────────────────
+
+export const forceCompleteQueueItem = mutation({
+  args: { queueItemId: v.id("ratingQueue") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const item = await ctx.db.get(args.queueItemId);
+    if (!item) throw new Error("Queue item not found");
+    await ctx.db.patch(args.queueItemId, {
+      status: "completed",
+      completedAt: Date.now(),
+    });
+  },
+});
+
+export const retryQueueItem = action({
+  args: { queueItemId: v.id("ratingQueue") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    await ctx.runQuery(internal.admin.getAdminUser, { clerkId: identity.subject });
+
+    // Reset to queued
+    await ctx.runMutation(internal.admin.resetQueueItemToQueued, {
+      queueItemId: args.queueItemId,
+    });
+
+    // Schedule processing
+    await ctx.scheduler.runAfter(0, api.ratings.processQueueItem, {
+      queueItemId: args.queueItemId,
+    });
+
+    return { success: true };
+  },
+});
+
+export const deleteQueueItem = mutation({
+  args: { queueItemId: v.id("ratingQueue") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const item = await ctx.db.get(args.queueItemId);
+    if (!item) throw new Error("Queue item not found");
+    await ctx.db.delete(args.queueItemId);
+  },
+});
+
+export const resetQueueItemToQueued = internalMutation({
+  args: { queueItemId: v.id("ratingQueue") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.queueItemId, {
+      status: "queued",
+      lastError: undefined,
+      attempts: 0,
     });
   },
 });

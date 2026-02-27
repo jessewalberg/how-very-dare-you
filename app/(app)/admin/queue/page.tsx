@@ -1,10 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "convex/react";
-import { Filter, ListOrdered, AlertCircle } from "lucide-react";
+import { useQuery, useMutation, useAction } from "convex/react";
+import {
+  Filter,
+  ListOrdered,
+  AlertCircle,
+  CheckCircle2,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +42,25 @@ const SOURCE_LABELS: Record<string, string> = {
 
 export default function AdminQueuePage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(undefined);
+  const [acting, setActing] = useState<string | null>(null);
   const items = useQuery(api.admin.getQueueItems, { status: statusFilter });
+  const forceComplete = useMutation(api.admin.forceCompleteQueueItem);
+  const retryItem = useAction(api.admin.retryQueueItem);
+  const deleteItem = useMutation(api.admin.deleteQueueItem);
+
+  async function handleAction(
+    action: () => Promise<unknown>,
+    itemId: string
+  ) {
+    setActing(itemId);
+    try {
+      await action();
+    } catch (e) {
+      console.error("Queue action failed:", e);
+    } finally {
+      setActing(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -98,7 +125,7 @@ export default function AdminQueuePage() {
       {items && items.length > 0 && (
         <div className="space-y-2">
           {/* Header */}
-          <div className="hidden sm:grid grid-cols-[1fr_80px_100px_80px_80px_80px_120px] gap-3 px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+          <div className="hidden sm:grid grid-cols-[1fr_80px_100px_80px_80px_80px_120px_auto] gap-3 px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
             <span>Title</span>
             <span>Type</span>
             <span>Source</span>
@@ -106,14 +133,17 @@ export default function AdminQueuePage() {
             <span>Attempts</span>
             <span>Cost</span>
             <span>Created</span>
+            <span>Actions</span>
           </div>
 
-          {items.map((item) => (
+          {items.map((item) => {
+            const isActing = acting === item._id;
+            return (
             <div
               key={item._id}
               className={cn(
                 "rounded-lg border bg-card p-3 transition-all hover:shadow-sm",
-                "sm:grid sm:grid-cols-[1fr_80px_100px_80px_80px_80px_120px] sm:items-center sm:gap-3"
+                "sm:grid sm:grid-cols-[1fr_80px_100px_80px_80px_80px_120px_auto] sm:items-center sm:gap-3"
               )}
             >
               {/* Title */}
@@ -171,8 +201,62 @@ export default function AdminQueuePage() {
                   minute: "2-digit",
                 })}
               </span>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1">
+                {(item.status === "processing" || item.status === "failed") && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    title="Force complete"
+                    disabled={isActing}
+                    onClick={() =>
+                      handleAction(
+                        () => forceComplete({ queueItemId: item._id as Id<"ratingQueue"> }),
+                        item._id
+                      )
+                    }
+                  >
+                    <CheckCircle2 className="size-3.5 text-emerald-600" />
+                  </Button>
+                )}
+                {(item.status === "processing" || item.status === "failed") && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    title="Retry"
+                    disabled={isActing}
+                    onClick={() =>
+                      handleAction(
+                        () => retryItem({ queueItemId: item._id as Id<"ratingQueue"> }),
+                        item._id
+                      )
+                    }
+                  >
+                    <RefreshCw className={cn("size-3.5", isActing && "animate-spin")} />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  title="Delete"
+                  disabled={isActing}
+                  onClick={() =>
+                    handleAction(
+                      () => deleteItem({ queueItemId: item._id as Id<"ratingQueue"> }),
+                      item._id
+                    )
+                  }
+                >
+                  <Trash2 className="size-3.5 text-red-500" />
+                </Button>
+              </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
