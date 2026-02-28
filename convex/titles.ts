@@ -1,4 +1,4 @@
-import { query, mutation, internalMutation, internalQuery, action } from "./_generated/server";
+import { query, internalMutation, internalQuery, action } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import {
@@ -12,6 +12,7 @@ import {
   sanitizeCategoryEvidence,
   sanitizeEpisodeFlags,
 } from "./lib/ratingValidation";
+import { isSeedTitle } from "./lib/seedData";
 
 export const getTitle = query({
   args: { titleId: v.id("titles") },
@@ -52,6 +53,7 @@ export const browse = query({
 
     return results
       .filter((title) => {
+        if (isSeedTitle(title)) return false;
         if (args.type && title.type !== args.type) return false;
         if (args.ageRating && title.ageRating !== args.ageRating) return false;
         if (args.noFlagsOnly) {
@@ -79,6 +81,7 @@ export const browseNoFlags = query({
 
     return results
       .filter((title) => {
+        if (isSeedTitle(title)) return false;
         if (!title.ratings) return false;
         if (args.type && title.type !== args.type) return false;
         return Object.values(title.ratings).every((v) => v === 0);
@@ -87,7 +90,41 @@ export const browseNoFlags = query({
   },
 });
 
-export const saveRating = mutation({
+export const getFeaturedRatedTitles = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const results = await ctx.db
+      .query("titles")
+      .withIndex("by_status", (q) => q.eq("status", "rated"))
+      .collect();
+
+    return results
+      .filter((title) => !isSeedTitle(title) && !!title.ratings && !!title.ratingNotes)
+      .sort((a, b) => (b.ratedAt ?? b._creationTime) - (a.ratedAt ?? a._creationTime))
+      .slice(0, args.limit ?? 3);
+  },
+});
+
+export const getNoFlagsPreview = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const results = await ctx.db
+      .query("titles")
+      .withIndex("by_status", (q) => q.eq("status", "rated"))
+      .collect();
+
+    return results
+      .filter((title) => {
+        if (isSeedTitle(title)) return false;
+        if (!title.ratings) return false;
+        return Object.values(title.ratings).every((value) => value === 0);
+      })
+      .sort((a, b) => (b.ratedAt ?? b._creationTime) - (a.ratedAt ?? a._creationTime))
+      .slice(0, args.limit ?? 4);
+  },
+});
+
+export const saveRating = internalMutation({
   args: {
     tmdbId: v.number(),
     ratings: v.object({
@@ -171,7 +208,7 @@ export const saveRating = mutation({
   },
 });
 
-export const updateStatus = mutation({
+export const updateStatus = internalMutation({
   args: {
     titleId: v.id("titles"),
     status: v.union(

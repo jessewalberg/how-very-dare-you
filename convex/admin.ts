@@ -3,6 +3,18 @@ import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { requireAdmin } from "./lib/adminAuth";
+import { extractSupportedCatalogModels } from "../lib/openrouterModels";
+
+const DEFAULT_OPENROUTER_RATING_MODEL = "anthropic/claude-sonnet-4";
+const RATING_MODEL_CONFIG_KEY = "openrouter_rating_model";
+
+function resolveFallbackRatingModel(): string {
+  return (
+    process.env.OPENROUTER_RATING_MODEL ??
+    process.env.OPENROUTER_MODEL ??
+    DEFAULT_OPENROUTER_RATING_MODEL
+  );
+}
 
 // ── Queries ──────────────────────────────────────────────
 
@@ -156,6 +168,71 @@ export const getTitleRatingCost = query({
   },
 });
 
+export const getEpisodeRatingCostsForTitle = query({
+  args: { titleId: v.id("titles") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const episodes = await ctx.db
+      .query("episodes")
+      .withIndex("by_titleId", (q) => q.eq("titleId", args.titleId))
+      .collect();
+    const episodeIds = new Set(episodes.map((ep) => ep._id));
+
+    if (episodes.length === 0) {
+      return {
+        totalCostCents: 0,
+        episodesWithCost: 0,
+        episodeLatestCostCents: {} as Record<string, number>,
+      };
+    }
+
+    const tmdbIds = new Set(episodes.map((ep) => ep.tmdbShowId));
+    const queueItems: Doc<"ratingQueue">[] = [];
+    for (const tmdbId of tmdbIds) {
+      const items = await ctx.db
+        .query("ratingQueue")
+        .withIndex("by_tmdbId", (q) => q.eq("tmdbId", tmdbId))
+        .collect();
+      queueItems.push(...items);
+    }
+
+    const latestByEpisode = new Map<string, Doc<"ratingQueue">>();
+    for (const item of queueItems) {
+      if (
+        item.type !== "episode" ||
+        item.status !== "completed" ||
+        !item.episodeId ||
+        !episodeIds.has(item.episodeId) ||
+        item.estimatedCostCents == null
+      ) {
+        continue;
+      }
+      const key = item.episodeId;
+      const existing = latestByEpisode.get(key);
+      const itemCompletedAt = item.completedAt ?? 0;
+      const existingCompletedAt = existing?.completedAt ?? 0;
+      if (!existing || itemCompletedAt >= existingCompletedAt) {
+        latestByEpisode.set(key, item);
+      }
+    }
+
+    const episodeLatestCostCents: Record<string, number> = {};
+    let totalCostCents = 0;
+    for (const [episodeId, item] of latestByEpisode.entries()) {
+      const cents = item.estimatedCostCents ?? 0;
+      episodeLatestCostCents[episodeId] = cents;
+      totalCostCents += cents;
+    }
+
+    return {
+      totalCostCents,
+      episodesWithCost: Object.keys(episodeLatestCostCents).length,
+      episodeLatestCostCents,
+    };
+  },
+});
+
 export const getQueueItems = query({
   args: {
     status: v.optional(
@@ -182,7 +259,128 @@ export const getQueueItems = query({
   },
 });
 
+export const listOpenRouterModels = action({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    await ctx.runQuery(internal.admin.getAdminUser, {
+      clerkId: identity.subject,
+    });
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    if (openRouterKey) {
+      headers.Authorization = `Bearer ${openRouterKey}`;
+    }
+
+    const res = await fetch("https://openrouter.ai/api/v1/models", {
+      method: "GET",
+      headers,
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `Failed to load OpenRouter models (${res.status}): ${body || res.statusText}`
+      );
+    }
+
+    const payload = (await res.json()) as unknown;
+    return {
+      models: extractSupportedCatalogModels(payload),
+      fetchedAt: Date.now(),
+    };
+  },
+});
+
+export const getRatingModelConfig = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+
+    const configured = await ctx.db
+      .query("adminConfig")
+      .withIndex("by_key", (q) => q.eq("key", RATING_MODEL_CONFIG_KEY))
+      .first();
+
+    if (configured) {
+      return {
+        model: configured.value,
+        source: "admin" as const,
+        updatedAt: configured.updatedAt,
+        updatedBy: configured.updatedBy,
+        fallbackModel: resolveFallbackRatingModel(),
+      };
+    }
+
+    const envModel =
+      process.env.OPENROUTER_RATING_MODEL ?? process.env.OPENROUTER_MODEL;
+
+    return {
+      model: resolveFallbackRatingModel(),
+      source: (envModel ? "env" : "default") as "env" | "default",
+      updatedAt: undefined,
+      updatedBy: undefined,
+      fallbackModel: resolveFallbackRatingModel(),
+    };
+  },
+});
+
+export const setRatingModelConfig = mutation({
+  args: { model: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const identity = await ctx.auth.getUserIdentity();
+    const model = args.model.trim();
+    if (!model) throw new Error("Model cannot be empty");
+    if (model.length > 120) throw new Error("Model is too long");
+    if (!/^[a-zA-Z0-9._:/-]+$/.test(model)) {
+      throw new Error(
+        "Invalid model format. Use provider/model style, e.g. anthropic/claude-sonnet-4"
+      );
+    }
+
+    const existing = await ctx.db
+      .query("adminConfig")
+      .withIndex("by_key", (q) => q.eq("key", RATING_MODEL_CONFIG_KEY))
+      .first();
+
+    const now = Date.now();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        value: model,
+        updatedAt: now,
+        updatedBy: identity?.subject,
+      });
+    } else {
+      await ctx.db.insert("adminConfig", {
+        key: RATING_MODEL_CONFIG_KEY,
+        value: model,
+        updatedAt: now,
+        updatedBy: identity?.subject,
+      });
+    }
+
+    return { success: true, model };
+  },
+});
+
 // ── Internal helpers ────────────────────────────────────
+
+export const getConfiguredRatingModelInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const configured = await ctx.db
+      .query("adminConfig")
+      .withIndex("by_key", (q) => q.eq("key", RATING_MODEL_CONFIG_KEY))
+      .first();
+    return configured?.value ?? resolveFallbackRatingModel();
+  },
+});
 
 export const getAdminUser = internalQuery({
   args: { clerkId: v.string() },

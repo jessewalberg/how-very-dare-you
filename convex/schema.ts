@@ -282,6 +282,13 @@ export default defineSchema({
     .index("by_status_priority", ["status", "priority"])
     .index("by_tmdbId", ["tmdbId"]),
 
+  adminConfig: defineTable({
+    key: v.string(),
+    value: v.string(),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.string()),
+  }).index("by_key", ["key"]),
+
   episodes: defineTable({
     titleId: v.id("titles"),
     tmdbShowId: v.number(),

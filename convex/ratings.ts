@@ -1,4 +1,5 @@
 import { action, mutation, internalMutation, internalQuery } from "./_generated/server";
+import type { ActionCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import {
@@ -567,11 +568,16 @@ interface PipelineMetrics {
 }
 
 async function runRatingPipeline(
+  ctx: ActionCtx,
   tmdbId: number,
   type: "movie" | "tv",
   options: { includeSubtitles: boolean } = { includeSubtitles: true }
 ): Promise<{ data: GatheredData; result: RatingResult; model: string; pipelineMetrics: PipelineMetrics }> {
   const openRouterKey = process.env.OPENROUTER_API_KEY!;
+  const configuredModel = await ctx.runQuery(
+    internal.admin.getConfiguredRatingModelInternal,
+    {}
+  );
   const startTime = Date.now();
 
   // 1. Gather data
@@ -617,7 +623,7 @@ async function runRatingPipeline(
     RATING_SYSTEM_PROMPT,
     userMessage,
     openRouterKey,
-    { temperature: 0.3, maxTokens: 6144 }
+    { model: configuredModel, temperature: 0.3, maxTokens: 6144 }
   );
 
   // 4. Parse and validate
@@ -634,7 +640,12 @@ async function runRatingPipeline(
     estimatedCostCents: estimateCostCents(completion.usage),
   };
 
-  return { data, result, model: completion.model, pipelineMetrics };
+  return {
+    data,
+    result,
+    model: completion.model || configuredModel,
+    pipelineMetrics,
+  };
 }
 
 // ── Episode Rating ────────────────────────────────────────
@@ -752,6 +763,7 @@ function parseEpisodeRatingResponse(responseText: string): EpisodeRatingResult {
 }
 
 async function runEpisodeRatingPipeline(
+  ctx: ActionCtx,
   showContext: {
     tmdbShowId: number;
     title: string;
@@ -774,6 +786,10 @@ async function runEpisodeRatingPipeline(
   subtitleInfo?: SubtitleInfo;
 }> {
   const openRouterKey = process.env.OPENROUTER_API_KEY!;
+  const configuredModel = await ctx.runQuery(
+    internal.admin.getConfiguredRatingModelInternal,
+    {}
+  );
   const subtitlesKey = process.env.OPENSUBTITLES_API_KEY;
   const startTime = Date.now();
 
@@ -849,7 +865,7 @@ async function runEpisodeRatingPipeline(
     EPISODE_RATING_SYSTEM_PROMPT,
     userMessage,
     openRouterKey,
-    { temperature: 0.3, maxTokens: 3072 }
+    { model: configuredModel, temperature: 0.3, maxTokens: 3072 }
   );
 
   const result = parseEpisodeRatingResponse(completion.content);
@@ -865,7 +881,12 @@ async function runEpisodeRatingPipeline(
     estimatedCostCents: estimateCostCents(completion.usage),
   };
 
-  return { result, model: completion.model, pipelineMetrics, subtitleInfo };
+  return {
+    result,
+    model: completion.model || configuredModel,
+    pipelineMetrics,
+    subtitleInfo,
+  };
 }
 
 // ── Public Actions ───────────────────────────────────────
@@ -878,6 +899,7 @@ export const rateTitle = action({
   },
   handler: async (ctx, args): Promise<void> => {
     const { data, result, model, pipelineMetrics } = await runRatingPipeline(
+      ctx,
       args.tmdbId,
       args.type,
       { includeSubtitles: true }
@@ -911,7 +933,7 @@ export const rateTitle = action({
     }
 
     // Save rating
-    await ctx.runMutation(api.titles.saveRating, {
+    await ctx.runMutation(internal.titles.saveRating, {
       tmdbId: args.tmdbId,
       ratings: result.ratings,
       confidence: result.confidence,
@@ -955,7 +977,7 @@ export const rateTitle = action({
     // If low confidence, mark as disputed for manual review
     if (result.confidence < 0.5) {
       if (ratedTitle) {
-        await ctx.runMutation(api.titles.updateStatus, {
+        await ctx.runMutation(internal.titles.updateStatus, {
           titleId: ratedTitle._id,
           status: "disputed",
         });
@@ -981,7 +1003,7 @@ export const rateTitleOnDemand = action({
 
     // Update status to "rating" so UI shows loading state
     if (existing) {
-      await ctx.runMutation(api.titles.updateStatus, {
+      await ctx.runMutation(internal.titles.updateStatus, {
         titleId: existing._id,
         status: "rating",
       });
@@ -990,6 +1012,7 @@ export const rateTitleOnDemand = action({
     try {
       // Run pipeline with subtitles (timeout-protected so they don't block)
       const { data, result, model, pipelineMetrics } = await runRatingPipeline(
+        ctx,
         args.tmdbId,
         args.type,
         { includeSubtitles: true }
@@ -1016,7 +1039,7 @@ export const rateTitleOnDemand = action({
       }
 
       // Save rating
-      await ctx.runMutation(api.titles.saveRating, {
+      await ctx.runMutation(internal.titles.saveRating, {
         tmdbId: args.tmdbId,
         ratings: result.ratings,
         confidence: result.confidence,
@@ -1040,7 +1063,7 @@ export const rateTitleOnDemand = action({
           tmdbId: args.tmdbId,
         });
         if (title) {
-          await ctx.runMutation(api.titles.updateStatus, {
+          await ctx.runMutation(internal.titles.updateStatus, {
             titleId: title._id,
             status: "disputed",
           });
@@ -1080,7 +1103,7 @@ export const rateTitleOnDemand = action({
 
       // Reset title to pending so it can be retried
       if (existing) {
-        await ctx.runMutation(api.titles.updateStatus, {
+        await ctx.runMutation(internal.titles.updateStatus, {
           titleId: existing._id,
           status: "pending",
         });
@@ -1140,6 +1163,7 @@ export const rateEpisodeOnDemand = action({
       }
 
       const { result, model, pipelineMetrics, subtitleInfo } = await runEpisodeRatingPipeline(
+        ctx,
         {
           tmdbShowId: episode.tmdbShowId,
           title: title.title,
@@ -1394,12 +1418,18 @@ export const searchTMDB = action({
       overview: string;
     }[]
   > => {
+    const query = args.query.trim();
+    if (query.length < 2) return [];
+    if (query.length > 120) {
+      throw new Error("Search query too long");
+    }
+
     const tmdbKey = process.env.TMDB_API_KEY!;
     const { searchMovies, searchTV } = await import("../lib/tmdb");
 
     const [movies, tv] = await Promise.all([
-      searchMovies(args.query, tmdbKey).catch(() => ({ results: [] })),
-      searchTV(args.query, tmdbKey).catch(() => ({ results: [] })),
+      searchMovies(query, tmdbKey).catch(() => ({ results: [] })),
+      searchTV(query, tmdbKey).catch(() => ({ results: [] })),
     ]);
 
     const results: {
@@ -1452,6 +1482,9 @@ export const requestOnDemandRating = mutation({
     type: v.union(v.literal("movie"), v.literal("tv")),
   },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Sign in required");
+
     // Check if title already exists
     const existing = await ctx.db
       .query("titles")
@@ -1473,14 +1506,11 @@ export const requestOnDemandRating = mutation({
     }
 
     // Check rate limits
-    const identity = await ctx.auth.getUserIdentity();
-    let user = null;
-    if (identity) {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-        .first();
-    }
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
 
     const today = new Date().toISOString().split("T")[0];
     const tier = user?.tier ?? "free";
@@ -1507,7 +1537,7 @@ export const requestOnDemandRating = mutation({
     }
 
     // Update rate limit counter (skip for admins)
-    if (user && !isAdmin) {
+    if (!isAdmin) {
       await ctx.db.patch(user._id, {
         onDemandRatingsToday: used + 1,
         onDemandRatingsDate: today,

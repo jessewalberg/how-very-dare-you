@@ -13,7 +13,20 @@ export default function SettingsPage() {
   const { isSignedIn, isLoaded } = useUser();
   const profile = useQuery(api.users.getMyProfile);
 
-  if (isLoaded && !isSignedIn) {
+  if (!isLoaded) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-8">
+        <div>
+          <Skeleton className="h-7 w-32" />
+          <Skeleton className="mt-1 h-4 w-64" />
+        </div>
+        <Skeleton className="h-64 w-full rounded-2xl" />
+        <Skeleton className="h-48 w-full rounded-2xl" />
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
     return <RedirectToSignIn />;
   }
 

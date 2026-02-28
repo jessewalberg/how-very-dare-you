@@ -52,6 +52,7 @@ Content advisory platform built with Next.js 16 (App Router), Convex, Clerk, Str
 ## Package Manager
 
 Use `bun` for everything. `bun add` for installs, `bunx` for CLI tools, `bunx --bun` for shadcn. Never use npm, npx, or yarn.
+If docs/examples show npm/npx/yarn/pnpm commands, convert them to Bun equivalents before running.
 
 ## Project Docs
 

@@ -5,7 +5,7 @@ import { useQuery, useAction } from "convex/react";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { RefreshCw, Filter, ChevronRight, DollarSign } from "lucide-react";
+import { RefreshCw, Filter, ChevronRight, DollarSign, ExternalLink } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { RatingBreakdown } from "@/components/rating/RatingBreakdown";
+import { EpisodeDetailSheet } from "@/components/title/EpisodeDetailSheet";
 import { cn } from "@/lib/utils";
+import type { CategoryRatings } from "@/lib/scoring";
 
 type StatusFilter =
   | "pending"
@@ -79,6 +89,12 @@ export default function AdminTitlesPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(undefined);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(undefined);
   const [expandedTitle, setExpandedTitle] = useState<Id<"titles"> | null>(null);
+  const [selectedEpisode, setSelectedEpisode] = useState<{
+    episodeId: Id<"episodes">;
+    showTitle: string;
+  } | null>(null);
+  const [selectedStandaloneTitleId, setSelectedStandaloneTitleId] =
+    useState<Id<"titles"> | null>(null);
   const [confirmReRate, setConfirmReRate] = useState<{
     type: "title" | "episode";
     id: Id<"titles"> | Id<"episodes">;
@@ -190,14 +206,33 @@ export default function AdminTitlesPage() {
             const ratingSummary = avgRating(title.ratings);
             const isExpanded = expandedTitle === title._id;
             const isTv = title.type === "tv";
+            const isStandalone = !isTv;
 
             return (
               <div key={title._id} className="space-y-0">
                 <div
                   className={cn(
                     "flex items-center gap-3 rounded-lg border bg-card p-3 hover:shadow-sm transition-all",
-                    isExpanded && "rounded-b-none border-b-0"
+                    isExpanded && "rounded-b-none border-b-0",
+                    isStandalone && "cursor-pointer hover:border-foreground/20"
                   )}
+                  role={isStandalone ? "button" : undefined}
+                  tabIndex={isStandalone ? 0 : undefined}
+                  onClick={
+                    isStandalone
+                      ? () => setSelectedStandaloneTitleId(title._id)
+                      : undefined
+                  }
+                  onKeyDown={
+                    isStandalone
+                      ? (event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedStandaloneTitleId(title._id);
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   {/* Expand toggle for TV */}
                   {isTv ? (
@@ -234,12 +269,19 @@ export default function AdminTitlesPage() {
                   {/* Info */}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <Link
-                        href={`/title/${title._id}`}
-                        className="text-sm font-semibold truncate hover:underline underline-offset-2"
-                      >
-                        {title.title}
-                      </Link>
+                      {isTv ? (
+                        <Link
+                          href={`/title/${title._id}`}
+                          className="text-sm font-semibold truncate hover:underline underline-offset-2"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {title.title}
+                        </Link>
+                      ) : (
+                        <span className="text-sm font-semibold truncate">
+                          {title.title}
+                        </span>
+                      )}
                       <span className="text-xs text-muted-foreground shrink-0">
                         ({title.year})
                       </span>
@@ -276,7 +318,11 @@ export default function AdminTitlesPage() {
                   </div>
 
                   {/* Cost */}
-                  <TitleCost tmdbId={title.tmdbId} />
+                  <TitleCost
+                    titleId={title._id}
+                    tmdbId={title.tmdbId}
+                    type={title.type}
+                  />
 
                   {/* Re-rate button */}
                   {(title.status === "rated" ||
@@ -286,13 +332,14 @@ export default function AdminTitlesPage() {
                       variant="outline"
                       size="sm"
                       className="h-7 text-xs gap-1 shrink-0"
-                      onClick={() =>
+                      onClick={(event) => {
+                        event.stopPropagation();
                         setConfirmReRate({
                           type: "title",
                           id: title._id,
                           name: title.title,
-                        })
-                      }
+                        });
+                      }}
                     >
                       <RefreshCw className="size-3" />
                       Re-rate
@@ -305,6 +352,9 @@ export default function AdminTitlesPage() {
                   <EpisodePanel
                     titleId={title._id}
                     titleName={title.title}
+                    onEpisodeOpen={(episodeId, showTitle) =>
+                      setSelectedEpisode({ episodeId, showTitle })
+                    }
                     onReRate={(episodeId, name) =>
                       setConfirmReRate({
                         type: "episode",
@@ -360,21 +410,56 @@ export default function AdminTitlesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EpisodeDetailSheet
+        episodeId={selectedEpisode?.episodeId ?? null}
+        open={selectedEpisode !== null}
+        onOpenChange={(open) => !open && setSelectedEpisode(null)}
+        showTitle={selectedEpisode?.showTitle ?? "Episode"}
+      />
+
+      <StandaloneTitleSheet
+        titleId={selectedStandaloneTitleId}
+        open={selectedStandaloneTitleId !== null}
+        onOpenChange={(open) => !open && setSelectedStandaloneTitleId(null)}
+      />
     </div>
   );
 }
 
-function TitleCost({ tmdbId }: { tmdbId: number }) {
-  const cost = useQuery(api.admin.getTitleRatingCost, { tmdbId });
+function TitleCost({
+  titleId,
+  tmdbId,
+  type,
+}: {
+  titleId: Id<"titles">;
+  tmdbId: number;
+  type: "movie" | "tv" | "youtube";
+}) {
+  const titleCost = useQuery(api.admin.getTitleRatingCost, { tmdbId });
+  const episodeCosts = useQuery(
+    api.admin.getEpisodeRatingCostsForTitle,
+    type === "tv" ? { titleId } : "skip"
+  );
 
-  if (!cost?.estimatedCostCents) return null;
+  const episodeRollup = episodeCosts?.totalCostCents ?? 0;
+  const latestTitleCost = titleCost?.estimatedCostCents ?? 0;
+  const displayCost =
+    type === "tv" ? (episodeRollup > 0 ? episodeRollup : latestTitleCost) : latestTitleCost;
+
+  if (!displayCost) return null;
 
   return (
-    <div className="flex items-center gap-1 shrink-0">
+    <div className="flex items-center gap-1.5 shrink-0">
       <DollarSign className="size-3 text-muted-foreground" />
       <span className="text-xs text-muted-foreground">
-        {formatCost(cost.estimatedCostCents)}
+        {formatCost(displayCost)}
       </span>
+      {type === "tv" && episodeRollup > 0 && (
+        <span className="text-[10px] text-muted-foreground/70">
+          ({episodeCosts?.episodesWithCost ?? 0} eps)
+        </span>
+      )}
     </div>
   );
 }
@@ -382,13 +467,18 @@ function TitleCost({ tmdbId }: { tmdbId: number }) {
 function EpisodePanel({
   titleId,
   titleName,
+  onEpisodeOpen,
   onReRate,
 }: {
   titleId: Id<"titles">;
   titleName: string;
+  onEpisodeOpen: (episodeId: Id<"episodes">, showTitle: string) => void;
   onReRate: (episodeId: Id<"episodes">, name: string) => void;
 }) {
   const episodes = useQuery(api.admin.getEpisodesForTitle, { titleId });
+  const episodeCosts = useQuery(api.admin.getEpisodeRatingCostsForTitle, {
+    titleId,
+  });
 
   if (episodes === undefined) {
     return (
@@ -448,10 +538,21 @@ function EpisodePanel({
             <div className="space-y-1">
               {sortedEps.map((ep: (typeof sortedEps)[number]) => {
                 const epAvg = avgRating(ep.ratings);
+                const episodeCostCents =
+                  episodeCosts?.episodeLatestCostCents[ep._id];
                 return (
                   <div
                     key={ep._id}
-                    className="flex items-center gap-3 rounded-md border bg-card px-3 py-2 text-xs"
+                    className="flex items-center gap-3 rounded-md border bg-card px-3 py-2 text-xs transition-colors hover:bg-muted/40 cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onEpisodeOpen(ep._id, titleName)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onEpisodeOpen(ep._id, titleName);
+                      }
+                    }}
                   >
                     {/* Episode number */}
                     <span className="text-muted-foreground font-mono w-6 shrink-0 text-right">
@@ -481,6 +582,13 @@ function EpisodePanel({
                       </span>
                     )}
 
+                    {/* Episode cost */}
+                    {episodeCostCents != null && episodeCostCents > 0 && (
+                      <span className="text-muted-foreground shrink-0">
+                        {formatCost(episodeCostCents)}
+                      </span>
+                    )}
+
                     {/* Rated date */}
                     {ep.ratedAt && (
                       <span className="text-[10px] text-muted-foreground/50 shrink-0">
@@ -497,12 +605,13 @@ function EpisodePanel({
                         variant="ghost"
                         size="sm"
                         className="h-6 text-[10px] gap-1 px-2 shrink-0"
-                        onClick={() =>
+                        onClick={(event) => {
+                          event.stopPropagation();
                           onReRate(
                             ep._id,
                             `${titleName} S${ep.seasonNumber}E${ep.episodeNumber}`
-                          )
-                        }
+                          );
+                        }}
                       >
                         <RefreshCw className="size-2.5" />
                         Re-rate
@@ -516,5 +625,91 @@ function EpisodePanel({
         );
       })}
     </div>
+  );
+}
+
+function StandaloneTitleSheet({
+  titleId,
+  open,
+  onOpenChange,
+}: {
+  titleId: Id<"titles"> | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const title = useQuery(api.titles.getTitle, titleId ? { titleId } : "skip");
+  const ratings = title?.ratings as CategoryRatings | undefined;
+  const hasRatings =
+    !!ratings &&
+    (title?.status === "rated" ||
+      title?.status === "reviewed" ||
+      title?.status === "disputed");
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>
+            {title ? `${title.title} (${title.year})` : "Title Details"}
+          </SheetTitle>
+          <SheetDescription>
+            {title?.type === "movie" ? "Movie" : "Standalone title"}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="px-4 pb-8 space-y-4">
+          {!title && (
+            <div className="space-y-3 pt-4">
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-28 w-full" />
+            </div>
+          )}
+
+          {title?.overview && (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {title.overview}
+            </p>
+          )}
+
+          {hasRatings && ratings && (
+            <RatingBreakdown
+              ratings={ratings}
+              notes={title?.ratingNotes ?? undefined}
+              categoryEvidence={title?.categoryEvidence ?? undefined}
+            />
+          )}
+
+          {title && !hasRatings && (
+            <p className="text-sm text-muted-foreground">
+              This title has no saved ratings yet.
+            </p>
+          )}
+
+          {title?.ratedAt && (
+            <p className="text-[11px] text-muted-foreground/50">
+              Rated{" "}
+              {new Date(title.ratedAt).toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+              {title.ratingModel && ` · Model: ${title.ratingModel}`}
+              {title.ratingConfidence != null &&
+                ` · Confidence: ${Math.round(title.ratingConfidence * 100)}%`}
+            </p>
+          )}
+
+          {title && (
+            <Button asChild variant="outline" size="sm" className="w-full gap-1.5">
+              <Link href={`/title/${title._id}`}>
+                Open full title page
+                <ExternalLink className="size-3" />
+              </Link>
+            </Button>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

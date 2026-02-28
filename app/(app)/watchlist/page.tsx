@@ -19,8 +19,20 @@ export default function WatchlistPage() {
   const profile = useQuery(api.users.getMyProfile);
   const watchlist = useQuery(api.users.getWatchlist);
 
+  if (!isLoaded) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <div className="h-8 w-40 animate-pulse rounded bg-muted" />
+          <div className="mt-2 h-4 w-48 animate-pulse rounded bg-muted" />
+        </div>
+        <div className="h-64 w-full animate-pulse rounded-2xl bg-muted" />
+      </div>
+    );
+  }
+
   // Not signed in
-  if (isLoaded && !isSignedIn) {
+  if (!isSignedIn) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">

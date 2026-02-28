@@ -1,82 +1,46 @@
 "use client";
 
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { RatingBreakdown } from "@/components/rating/RatingBreakdown";
 import type { CategoryRatings } from "@/lib/scoring";
 
-const SAMPLE_TITLES: {
-  title: string;
-  year: number;
-  type: string;
-  ageRating: string;
-  genre: string;
-  ratings: CategoryRatings;
-  notes: string;
-}[] = [
-  {
-    title: "Elemental",
-    year: 2023,
-    type: "Movie",
-    ageRating: "PG",
-    genre: "Animation · Family",
-    ratings: {
-      lgbtq: 0,
-      climate: 1,
-      racialIdentity: 3,
-      genderRoles: 1,
-      antiAuthority: 1,
-      religious: 0,
-      political: 2,
-      sexuality: 0,
-    },
-    notes:
-      "Racial identity / social justice is the strongest theme — the film is an extended allegory about immigration, assimilation, and prejudice between communities. Political messaging is woven into the same narrative. Other categories are minimal.",
-  },
-  {
-    title: "Lightyear",
-    year: 2022,
-    type: "Movie",
-    ageRating: "PG",
-    genre: "Animation · Sci-Fi",
-    ratings: {
-      lgbtq: 2,
-      climate: 0,
-      racialIdentity: 0,
-      genderRoles: 2,
-      antiAuthority: 1,
-      religious: 0,
-      political: 0,
-      sexuality: 0,
-    },
-    notes:
-      'LGBT themes are notable — a same-sex couple with a kiss is part of the supporting story. Gender role commentary appears through the competent female commander trope. Anti-authority is brief with a "don\'t follow orders" subplot.',
-  },
-  {
-    title: "Paw Patrol: The Movie",
-    year: 2021,
-    type: "Movie",
-    ageRating: "G",
-    genre: "Animation · Family",
-    ratings: {
-      lgbtq: 0,
-      climate: 0,
-      racialIdentity: 0,
-      genderRoles: 0,
-      antiAuthority: 1,
-      religious: 0,
-      political: 0,
-      sexuality: 0,
-    },
-    notes:
-      "Very clean content overall. The only minor flag is a brief anti-authority moment where the pups defy the mayor, played for light comedy. All other categories score zero.",
-  },
-];
-
 export function LandingSampleCards() {
+  const browseResults = useQuery(api.titles.browse, { status: "rated", limit: 50 });
+  const featured = (browseResults ?? [])
+    .filter((title) => !!title.ratings && !!title.ratingNotes)
+    .slice(0, 3);
+
+  if (browseResults === undefined) {
+    return (
+      <div className="grid gap-6 md:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div
+            key={index}
+            className="rounded-2xl border bg-card p-5 space-y-4"
+          >
+            <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+            <div className="h-28 animate-pulse rounded-xl bg-muted" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (featured.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+        No rated titles yet. Rate a title from search and it will appear here.
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-6 md:grid-cols-3">
-      {SAMPLE_TITLES.map((sample) => (
+      {featured.map((sample) => (
         <div
-          key={sample.title}
+          key={sample._id}
           className="rounded-2xl border bg-card p-5 space-y-4 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
         >
           {/* Title header */}
@@ -88,12 +52,17 @@ export function LandingSampleCards() {
               </span>
             </h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {sample.type} · {sample.ageRating} · {sample.genre}
+              {sample.type === "tv" ? "TV Show" : "Movie"}
+              {sample.ageRating ? ` · ${sample.ageRating}` : ""}
+              {sample.genre ? ` · ${sample.genre.split(",").slice(0, 2).join(" · ")}` : ""}
             </p>
           </div>
 
           {/* Rating breakdown */}
-          <RatingBreakdown ratings={sample.ratings} notes={sample.notes} />
+          <RatingBreakdown
+            ratings={sample.ratings as CategoryRatings}
+            notes={sample.ratingNotes ?? ""}
+          />
         </div>
       ))}
     </div>

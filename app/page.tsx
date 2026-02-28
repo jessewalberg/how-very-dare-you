@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LandingSampleCards } from "@/components/landing/LandingSampleCards";
+import { LandingNoFlagsPreview } from "@/components/landing/LandingNoFlagsPreview";
 import { LandingSearch } from "@/components/landing/LandingSearch";
 import { LandingAuthButtons, LandingNavAuth } from "@/components/landing/LandingAuthButtons";
 
@@ -217,58 +218,7 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                title: "Paddington 2",
-                year: 2017,
-                type: "Movie",
-                ageRating: "PG",
-                genre: "Family · Comedy",
-              },
-              {
-                title: "Bluey",
-                year: 2018,
-                type: "TV Show",
-                ageRating: "TV-Y",
-                genre: "Animation · Family",
-              },
-              {
-                title: "The Mitchells vs the Machines",
-                year: 2021,
-                type: "Movie",
-                ageRating: "PG",
-                genre: "Animation · Comedy",
-              },
-              {
-                title: "Shaun the Sheep",
-                year: 2007,
-                type: "TV Show",
-                ageRating: "TV-Y",
-                genre: "Animation · Comedy",
-              },
-            ].map((item) => (
-              <div
-                key={item.title}
-                className="group flex items-center gap-3 rounded-xl border border-emerald-200/60 bg-emerald-50/30 p-3 transition-all duration-200 hover:border-emerald-300/80 hover:shadow-sm"
-              >
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
-                  <CheckCircle2 className="size-5" strokeWidth={2} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold leading-tight truncate">
-                    {item.title}
-                    <span className="ml-1 font-normal text-muted-foreground">
-                      ({item.year})
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.type} · {item.ageRating} · {item.genre}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <LandingNoFlagsPreview />
 
           <div className="mt-8 text-center">
             <Button variant="outline" asChild>
