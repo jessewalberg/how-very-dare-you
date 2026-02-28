@@ -21,15 +21,38 @@ interface UploadTextToR2Args {
   contentType?: string;
 }
 
-function getR2Config(): R2Config | null {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const bucket = process.env.R2_BUCKET;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+const REQUIRED_R2_ENV_KEYS = [
+  "R2_ACCOUNT_ID",
+  "R2_BUCKET",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+] as const;
 
-  if (!accountId || !bucket || !accessKeyId || !secretAccessKey) {
+let missingConfigLogged = false;
+
+function getMissingR2EnvVars(): string[] {
+  return REQUIRED_R2_ENV_KEYS.filter((key) => {
+    const value = process.env[key];
+    return !value || value.trim().length === 0;
+  });
+}
+
+function getR2Config(): R2Config | null {
+  const missingKeys = getMissingR2EnvVars();
+  if (missingKeys.length > 0) {
+    if (!missingConfigLogged) {
+      console.error(
+        `[R2] Transcript archival disabled: missing env vars: ${missingKeys.join(", ")}`
+      );
+      missingConfigLogged = true;
+    }
     return null;
   }
+
+  const accountId = process.env.R2_ACCOUNT_ID!;
+  const bucket = process.env.R2_BUCKET!;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
 
   const endpoint =
     process.env.R2_ENDPOINT?.replace(/\/+$/, "") ??

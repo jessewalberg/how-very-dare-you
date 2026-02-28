@@ -361,6 +361,11 @@ async function maybeArchiveTranscript(
 ): Promise<R2TranscriptStorage | undefined> {
   try {
     const stored = await uploadTextToR2({ key, text });
+    if (!stored) {
+      console.error(
+        `[R2] Transcript archival skipped for key=${key}. Check R2 env configuration.`
+      );
+    }
     return stored ?? undefined;
   } catch (e) {
     console.error("Transcript upload to R2 failed (non-fatal):", e);
