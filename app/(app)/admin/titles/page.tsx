@@ -19,7 +19,6 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -529,8 +528,11 @@ export default function AdminTitlesPage() {
           if (!open) setSubtitleViewer(null);
         }}
       >
-        <DialogContent className="max-w-3xl" data-testid="admin-subtitle-viewer-dialog">
-          <DialogHeader>
+        <DialogContent
+          className="w-[95vw] max-w-6xl h-[90vh] p-0 flex flex-col overflow-hidden"
+          data-testid="admin-subtitle-viewer-dialog"
+        >
+          <DialogHeader className="px-6 pt-6 pb-3 border-b">
             <DialogTitle>Archived Subtitles</DialogTitle>
             <DialogDescription>
               {subtitleViewer?.label
@@ -539,90 +541,105 @@ export default function AdminTitlesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {subtitleViewer?.loading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-1/3" />
-              <Skeleton className="h-44 w-full" />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="grid gap-1 text-[11px] text-muted-foreground">
-                <p>
-                  Status:{" "}
-                  <span className="text-foreground">
-                    {subtitleViewer?.subtitleStatus ?? "unknown"}
-                  </span>
-                </p>
-                {subtitleViewer?.source && (
-                  <p>
-                    Source:{" "}
-                    <span className="text-foreground">{subtitleViewer.source}</span>
-                  </p>
-                )}
-                {subtitleViewer?.language && (
-                  <p>
-                    Language:{" "}
-                    <span className="text-foreground">{subtitleViewer.language}</span>
-                  </p>
-                )}
-                {subtitleViewer?.dialogueLines != null && (
-                  <p>
-                    Dialogue lines:{" "}
-                    <span className="text-foreground">
-                      {subtitleViewer.dialogueLines}
-                    </span>
-                  </p>
-                )}
-                {subtitleViewer?.storageKey && (
-                  <p className="break-all">
-                    R2 key:{" "}
-                    <span className="text-foreground">{subtitleViewer.storageKey}</span>
-                  </p>
-                )}
-                {subtitleViewer?.storageBucket && (
-                  <p>
-                    Bucket:{" "}
-                    <span className="text-foreground">{subtitleViewer.storageBucket}</span>
-                  </p>
-                )}
-                {subtitleViewer?.storageBytes != null && (
-                  <p>
-                    Bytes:{" "}
-                    <span className="text-foreground">
-                      {subtitleViewer.storageBytes.toLocaleString()}
-                    </span>
-                  </p>
-                )}
-                {subtitleViewer?.uploadedAt && (
-                  <p>
-                    Uploaded:{" "}
-                    <span className="text-foreground">
-                      {new Date(subtitleViewer.uploadedAt).toLocaleString("en-US")}
-                    </span>
-                  </p>
-                )}
+          <div className="min-h-0 flex-1 overflow-hidden px-6 py-4">
+            {subtitleViewer?.loading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-full min-h-40 w-full" />
               </div>
+            ) : (
+              <div className="min-h-0 h-full flex flex-col gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                  <p className="rounded-md border bg-muted/20 px-2.5 py-1.5 text-muted-foreground">
+                    Status:{" "}
+                    <span className="text-foreground font-medium">
+                      {subtitleViewer?.subtitleStatus ?? "unknown"}
+                    </span>
+                  </p>
+                  {subtitleViewer?.source && (
+                    <p className="rounded-md border bg-muted/20 px-2.5 py-1.5 text-muted-foreground">
+                      Source:{" "}
+                      <span className="text-foreground font-medium">
+                        {subtitleViewer.source}
+                      </span>
+                    </p>
+                  )}
+                  {subtitleViewer?.language && (
+                    <p className="rounded-md border bg-muted/20 px-2.5 py-1.5 text-muted-foreground">
+                      Language:{" "}
+                      <span className="text-foreground font-medium">
+                        {subtitleViewer.language}
+                      </span>
+                    </p>
+                  )}
+                  {subtitleViewer?.dialogueLines != null && (
+                    <p className="rounded-md border bg-muted/20 px-2.5 py-1.5 text-muted-foreground">
+                      Dialogue lines:{" "}
+                      <span className="text-foreground font-medium">
+                        {subtitleViewer.dialogueLines}
+                      </span>
+                    </p>
+                  )}
+                  {subtitleViewer?.storageBucket && (
+                    <p className="rounded-md border bg-muted/20 px-2.5 py-1.5 text-muted-foreground">
+                      Bucket:{" "}
+                      <span className="text-foreground font-medium">
+                        {subtitleViewer.storageBucket}
+                      </span>
+                    </p>
+                  )}
+                  {subtitleViewer?.storageBytes != null && (
+                    <p className="rounded-md border bg-muted/20 px-2.5 py-1.5 text-muted-foreground">
+                      Size:{" "}
+                      <span className="text-foreground font-medium">
+                        {subtitleViewer.storageBytes.toLocaleString()} bytes
+                      </span>
+                    </p>
+                  )}
+                  {subtitleViewer?.uploadedAt && (
+                    <p className="rounded-md border bg-muted/20 px-2.5 py-1.5 text-muted-foreground md:col-span-2">
+                      Uploaded:{" "}
+                      <span className="text-foreground font-medium">
+                        {new Date(subtitleViewer.uploadedAt).toLocaleString("en-US")}
+                      </span>
+                    </p>
+                  )}
+                  {subtitleViewer?.storageKey && (
+                    <p className="rounded-md border bg-muted/20 px-2.5 py-1.5 text-muted-foreground break-all md:col-span-2">
+                      R2 key:{" "}
+                      <span className="text-foreground font-medium">
+                        {subtitleViewer.storageKey}
+                      </span>
+                    </p>
+                  )}
+                </div>
 
-              {subtitleViewer?.found && subtitleViewer.transcript ? (
-                <>
-                  <Textarea
-                    readOnly
-                    value={subtitleViewer.transcript}
-                    className="min-h-[360px] text-xs font-mono"
-                  />
+                {subtitleViewer?.found && subtitleViewer.transcript ? (
+                  <div className="min-h-0 flex-1 rounded-md border bg-muted/10">
+                    <div className="h-full overflow-y-auto p-3">
+                      <pre className="whitespace-pre-wrap break-words text-xs leading-5 font-mono">
+                        {subtitleViewer.transcript}
+                      </pre>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                    {subtitleViewer?.message ??
+                      "No archived subtitle transcript is available for this record."}
+                  </p>
+                )}
+
+                {subtitleViewer?.found && subtitleViewer.transcript && (
                   <p className="text-[11px] text-muted-foreground">
                     {subtitleViewer.transcript.length.toLocaleString()} characters
                   </p>
-                </>
-              ) : (
-                <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  {subtitleViewer?.message ??
-                    "No archived subtitle transcript is available for this record."}
-                </p>
-              )}
-            </div>
-          )}
-          <DialogFooter>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="px-6 py-3 border-t">
             <Button variant="outline" onClick={() => setSubtitleViewer(null)}>
               Close
             </Button>
