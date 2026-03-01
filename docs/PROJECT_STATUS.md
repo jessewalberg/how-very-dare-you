@@ -13,7 +13,7 @@
 | 2. UI Components | ✅ Done | Rating components, title cards, layout |
 | 3. Pages | ✅ Done | Landing, browse, search, detail, settings, corrections |
 | 4. Backend | ✅ Done | Convex functions, API clients, AI pipeline, Stripe, Clerk webhooks |
-| 5. Integration & Polish | 🔶 Partial | Real data in DB, core flows working. SEO pass complete; polish pass remains |
+| 5. Integration & Polish | ✅ Done | Real data in DB, core flows working, SEO + full Prompt 5.3 polish complete |
 | 6. Deployment | ⬜ Not started | Env vars, Vercel, production verification |
 | 7. V2 Overstimulation | ✅ Done | Video analysis working |
 
@@ -41,16 +41,16 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 
 ### 🟡 P2 — Polish & Responsive (Prompt 5.3)
 
-- [ ] Responsive audit: 375px, 768px, 1024px, 1440px
-- [ ] Loading states: verify every data-fetching component has skeleton/loading UI
-- [ ] Empty states: browse with no results, empty watchlist, no corrections
-- [ ] Error states: API failures, rate limit exceeded, subscription required
-- [ ] Rating badge staggered animations on detail page
-- [ ] Typography audit: Plus Jakarta Sans loading, correct font sizes/weights
-- [ ] Severity color consistency across all components
-- [ ] Dark mode (if straightforward with current shadcn/Tailwind setup)
-- [ ] Accessibility: keyboard navigation, screen reader labels, focus indicators
-- [ ] Performance: check for unnecessary re-renders, Convex query efficiency
+- [x] Responsive audit: 375px, 768px, 1024px, 1440px
+- [x] Loading states: verify every data-fetching component has skeleton/loading UI
+- [x] Empty states: browse with no results, empty watchlist, no corrections
+- [x] Error states: API failures, rate limit exceeded, subscription required
+- [x] Rating badge staggered animations on detail page
+- [x] Typography audit: Plus Jakarta Sans loading, correct font sizes/weights
+- [x] Severity color consistency across all components
+- [x] Dark mode (preserved existing theme toggle support)
+- [x] Accessibility: keyboard navigation, screen reader labels, focus indicators
+- [x] Performance: quick wins (lazy poster loading, dynamic import for settings sliders, stable keys/skeletons)
 
 ### 🟢 P3 — Deployment (Prompt 6.1)
 
@@ -93,6 +93,9 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 - [x] Search with TMDB fallback + on-demand rating flow
 - [x] Corrections system (user submission + admin review)
 - [x] Subtitle archival to R2
+- [x] Prompt 5.3 polish pass: responsive layout fixes, full skeleton coverage, empty/error states, route error boundaries, rating/no-flags animations, accessibility labels/focus states, Convex reconnect banner, and performance quick wins
+- [x] QA sweep: `bun run lint`, `bun run typecheck`, `bun run test:unit`, `bun run test:e2e` (63 passed, 6 skipped)
+- [x] Build verification note: `bun run build` fails in sandbox due blocked Google Fonts fetch for Plus Jakarta Sans; expected to pass in networked CI/deploy environment
 
 ---
 
@@ -112,3 +115,4 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 | 2026-03-01 | Initial status doc created. Phases 1-4 + V2 confirmed complete. |
 | 2026-03-01 | P0 resolved: name is "How Very Dare You", domain is howverydareyou.com. |
 | 2026-03-01 | P1 SEO & metadata pass completed: dynamic title metadata + JSON-LD, homepage/browse/search metadata, robots/sitemap verification, heading and alt-text audits, static OG fallback, SEO unit/e2e coverage. |
+| 2026-03-01 | P2 polish & responsive pass completed (Prompt 5.3): responsive fixes, loading/empty/error states, accessibility/performance improvements, animation refinements, and full lint/typecheck/unit/e2e verification. |

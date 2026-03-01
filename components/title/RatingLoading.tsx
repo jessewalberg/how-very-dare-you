@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CATEGORIES } from "@/lib/constants";
 import { Sparkles } from "lucide-react";
+import { CompositeScoreSkeleton } from "@/components/rating/CompositeScoreSkeleton";
 
 interface RatingLoadingProps {
   title: string;
@@ -38,6 +39,7 @@ export function RatingLoading({
               fill
               className="object-cover"
               sizes="128px"
+              priority
             />
           ) : (
             <div className="flex h-full items-center justify-center">
@@ -81,8 +83,7 @@ export function RatingLoading({
           <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Content Advisory
           </h3>
-          {/* Composite score skeleton */}
-          <Skeleton className="size-20 rounded-2xl" />
+          <CompositeScoreSkeleton />
         </div>
 
         {/* Animated progress bar */}

@@ -79,7 +79,10 @@ function CategoryRow({
           Pending analysis
         </span>
       ) : (
-        <RatingBadge severity={severity} />
+        <RatingBadge
+          severity={severity}
+          ariaLabel={`${category.label}: rated ${severityLabel}`}
+        />
       )}
     </div>
   );

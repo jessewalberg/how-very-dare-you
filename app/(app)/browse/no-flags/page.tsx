@@ -34,7 +34,17 @@ export default function NoFlagsPage() {
         )}
       </div>
 
-      <TitleGrid titles={results} isLoading={results === undefined} />
+      <TitleGrid
+        titles={results}
+        isLoading={results === undefined}
+        emptyState={{
+          title: "No no-flags titles yet",
+          description:
+            "No titles currently meet zero-flag criteria. Check back after more ratings are processed.",
+          ctaLabel: "Browse all titles",
+          ctaHref: "/browse",
+        }}
+      />
     </div>
   );
 }

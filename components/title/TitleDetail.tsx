@@ -145,8 +145,8 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           type: title.type as "movie" | "tv",
         });
       }
-    } catch (e) {
-      setRequestError(e instanceof Error ? e.message : "Failed to request rating");
+    } catch {
+      setRequestError("Something went wrong. Please try again.");
     } finally {
       setRequestingRating(false);
     }
@@ -168,10 +168,8 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
       setSeasonRefreshMessage(
         `Refreshed ${result.seasonsRefreshed}/${result.seasonCount} seasons. ${result.episodeCount} episodes indexed.${failed}`
       );
-    } catch (e) {
-      setSeasonRefreshError(
-        e instanceof Error ? e.message : "Failed to refresh season data"
-      );
+    } catch {
+      setSeasonRefreshError("Something went wrong. Please try again.");
     } finally {
       setRefreshingSeasons(false);
     }
@@ -228,11 +226,11 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
 
       <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
         {/* Left column — Poster */}
-        <div className="shrink-0">
+        <div className="w-full shrink-0 lg:w-auto">
           <div
             className={cn(
-              "relative mx-auto w-44 max-w-full overflow-hidden rounded-2xl bg-muted shadow-lg",
-              "sm:w-60 lg:w-64"
+              "relative mx-auto w-full max-w-sm overflow-hidden rounded-2xl bg-muted shadow-lg",
+              "sm:max-w-xs lg:w-64"
             )}
           >
             <div className="aspect-[2/3]">
@@ -288,7 +286,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               )}
             </div>
 
-            <h1 className="text-3xl font-extrabold tracking-tight lg:text-4xl">
+            <h1 className="break-words text-3xl font-extrabold tracking-tight lg:text-4xl">
               {title.title}
               <span className="ml-2 text-2xl font-normal text-muted-foreground lg:text-3xl">
                 ({title.year})

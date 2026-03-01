@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import Link from "next/link";
 import {
   Sheet,
   SheetContent,
@@ -146,6 +147,7 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
               onClick={() => updateParam("type", type.value)}
               className={cn(
                 "rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 currentType === type.value
                   ? "bg-foreground text-background"
                   : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -171,6 +173,7 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
               onClick={() => toggleArrayParam("age", age)}
               className={cn(
                 "rounded-md px-2 py-1 text-[11px] font-medium transition-all duration-150",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 currentAgeRatings.includes(age)
                   ? "bg-foreground text-background"
                   : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -198,6 +201,7 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
                 onClick={() => toggleArrayParam("service", service)}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-150",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   active
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -238,6 +242,18 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
             </Badge>
           )}
         </div>
+        {!isPaid && (
+          <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Lock className="size-3" />
+            Premium feature — $4.99/mo.
+            <Link
+              href="/settings#subscription"
+              className="font-medium underline underline-offset-2"
+            >
+              Upgrade
+            </Link>
+          </p>
+        )}
 
         {/* Cultural Themes */}
         <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/60 pt-1">
@@ -264,7 +280,7 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
                   disabled={!isPaid}
                   className={cn(
                     "h-7 rounded-md border bg-transparent px-2 text-[11px] font-medium text-muted-foreground",
-                    "focus:outline-none focus:ring-1 focus:ring-ring",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     "disabled:cursor-not-allowed"
                   )}
                 >
@@ -304,7 +320,7 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
                   disabled={!isPaid}
                   className={cn(
                     "h-7 rounded-md border bg-transparent px-2 text-[11px] font-medium text-muted-foreground",
-                    "focus:outline-none focus:ring-1 focus:ring-ring",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     "disabled:cursor-not-allowed"
                   )}
                 >
@@ -329,6 +345,7 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
         }
         className={cn(
           "flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           noFlagsOnly
             ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
             : "bg-muted/60 text-muted-foreground border border-transparent hover:bg-muted hover:text-foreground"
@@ -355,7 +372,12 @@ export function FilterSidebar({ isPaid = false }: FilterSidebarProps) {
       <div className="lg:hidden">
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              aria-label="Open filters"
+            >
               <Filter className="size-3.5" />
               Filters
             </Button>

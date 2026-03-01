@@ -96,7 +96,7 @@ export default function WatchlistPage() {
           </div>
           <h2 className="mt-4 text-base font-semibold">No titles saved yet</h2>
           <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-            Browse titles and click the bookmark icon to add them here.
+            Your watchlist is empty. Browse titles and tap the bookmark icon to save them here.
           </p>
           <Button variant="outline" className="mt-6" asChild>
             <Link href="/browse">Browse Titles</Link>

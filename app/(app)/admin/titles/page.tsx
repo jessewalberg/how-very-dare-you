@@ -336,6 +336,7 @@ export default function AdminTitlesPage() {
                       width={40}
                       height={60}
                       className="rounded object-cover shrink-0"
+                      loading="lazy"
                     />
                   ) : (
                     <div className="size-10 rounded bg-muted shrink-0" />

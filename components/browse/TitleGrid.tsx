@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { TitleCard } from "@/components/title/TitleCard";
 import { TitleCardSkeleton } from "@/components/title/TitleCardSkeleton";
 import { SearchX } from "lucide-react";
 import type { CategoryRatings } from "@/lib/scoring";
 import type { Id } from "@/convex/_generated/dataModel";
+import { Button } from "@/components/ui/button";
 
 interface TitleData {
   _id: Id<"titles">;
@@ -27,12 +29,19 @@ interface TitleData {
 interface TitleGridProps {
   titles?: TitleData[];
   isLoading?: boolean;
+  emptyState?: {
+    title?: string;
+    description?: string;
+    ctaLabel?: string;
+    ctaHref?: string;
+  };
 }
 
-export function TitleGrid({ titles, isLoading }: TitleGridProps) {
+export function TitleGrid({ titles, isLoading, emptyState }: TitleGridProps) {
   if (isLoading || titles === undefined) {
     return (
       <div
+        aria-live="polite"
         className={cn(
           "grid gap-4",
           "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
@@ -51,11 +60,18 @@ export function TitleGrid({ titles, isLoading }: TitleGridProps) {
         <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">
           <SearchX className="size-7 text-muted-foreground/50" />
         </div>
-        <h2 className="mt-4 text-base font-semibold">No titles found</h2>
-        <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-          Try adjusting your filters or search for a specific title to rate it
-          on demand.
+        <h2 className="mt-4 text-base font-semibold">
+          {emptyState?.title ?? "No titles found"}
+        </h2>
+        <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
+          {emptyState?.description ??
+            "Try adjusting your filters or search for a specific title to rate it on demand."}
         </p>
+        {emptyState?.ctaLabel && emptyState.ctaHref && (
+          <Button variant="outline" className="mt-6" asChild>
+            <Link href={emptyState.ctaHref}>{emptyState.ctaLabel}</Link>
+          </Button>
+        )}
       </div>
     );
   }

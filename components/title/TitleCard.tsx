@@ -62,6 +62,7 @@ export function TitleCard({
         "group relative flex gap-3 rounded-xl border bg-card p-3",
         "transition-all duration-200 ease-out",
         "hover:shadow-md hover:-translate-y-0.5 hover:border-border/80",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         "sm:flex-col sm:gap-0 sm:p-0 sm:overflow-hidden"
       )}
     >
@@ -80,6 +81,7 @@ export function TitleCard({
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             sizes="(max-width: 640px) 80px, (max-width: 1024px) 200px, 240px"
+            loading="lazy"
           />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground/40">
@@ -174,6 +176,7 @@ export function TitleCard({
                     width={14}
                     height={14}
                     className="rounded-sm"
+                    loading="lazy"
                   />
                 ) : (
                   provider.name

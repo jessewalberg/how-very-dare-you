@@ -47,8 +47,10 @@ export default function SearchPageClient() {
     }[]
   >([]);
   const [tmdbLoading, setTmdbLoading] = useState(false);
+  const [tmdbError, setTmdbError] = useState(false);
   const [requestingId, setRequestingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tmdbRetryNonce, setTmdbRetryNonce] = useState(0);
 
   const isLoading = dbResults === undefined && q.length >= 2;
   const hasDbResults = dbResults && dbResults.length > 0;
@@ -61,12 +63,15 @@ export default function SearchPageClient() {
     if (q.length >= 2) {
       let cancelled = false;
       setTmdbLoading(true);
+      setTmdbError(false);
       setTmdbResults([]);
       searchTMDB({ query: q })
         .then((results) => {
           if (!cancelled) setTmdbResults(results);
         })
-        .catch(() => {})
+        .catch(() => {
+          if (!cancelled) setTmdbError(true);
+        })
         .finally(() => {
           if (!cancelled) setTmdbLoading(false);
         });
@@ -76,8 +81,9 @@ export default function SearchPageClient() {
     } else {
       setTmdbResults([]);
       setTmdbLoading(false);
+      setTmdbError(false);
     }
-  }, [dbResults, q, searchTMDB]);
+  }, [q, searchTMDB, tmdbRetryNonce]);
 
   const dbKeys = new Set(
     (dbResults ?? []).map(
@@ -98,10 +104,8 @@ export default function SearchPageClient() {
     try {
       const titleId = await requestRating({ tmdbId, title, type });
       router.push(`/title/${titleId}`);
-    } catch (e: unknown) {
-      setError(
-        e instanceof Error ? e.message : "Failed to request rating"
-      );
+    } catch {
+      setError("Something went wrong. Please try again.");
     } finally {
       setRequestingId(null);
     }
@@ -127,7 +131,7 @@ export default function SearchPageClient() {
       {rateLimit && (
         <div
           className={cn(
-            "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs",
+            "inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs",
             !canAdminAdd && remaining === 0
               ? "border-red-200 bg-red-50 text-red-700"
               : "border-border/50 bg-muted/30 text-muted-foreground"
@@ -138,10 +142,7 @@ export default function SearchPageClient() {
             {canAdminAdd ? (
               "Admin mode: add/rerate requests from search are always enabled"
             ) : (
-              <>
-                <span className="font-semibold tabular-nums">{remaining}</span> of{" "}
-                {rateLimit.limit} on-demand lookups remaining today
-              </>
+              `${remaining} of ${rateLimit.limit} on-demand lookups remaining today`
             )}
           </span>
           {!canAdminAdd && rateLimit.tier === "free" && (
@@ -158,11 +159,44 @@ export default function SearchPageClient() {
         </div>
       )}
 
+      {!canAdminAdd && rateLimit && remaining === 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <Crown className="size-4 shrink-0" />
+          {rateLimit.tier === "free" ? (
+            <p>
+              You&apos;ve used {rateLimit.used}/{rateLimit.limit} free lookups
+              today. Resets at midnight.
+              <Button
+                variant="link"
+                className="h-auto p-0 pl-1 text-amber-900 underline-offset-2"
+                onClick={() => router.push("/settings")}
+              >
+                Upgrade to Premium
+              </Button>{" "}
+              for 10 lookups per day.
+            </p>
+          ) : (
+            <p>
+              You&apos;ve used {rateLimit.used}/{rateLimit.limit} lookups today.
+              Resets at midnight.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Error */}
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <AlertCircle className="size-4 shrink-0" />
-          {error}
+          <span>{error}</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto h-7 text-xs"
+            onClick={() => router.refresh()}
+          >
+            Retry
+          </Button>
         </div>
       )}
 
@@ -191,6 +225,15 @@ export default function SearchPageClient() {
             }))
           }
           isLoading={isLoading}
+          emptyState={
+            q
+              ? {
+                  title: `No results for "${q}"`,
+                  description:
+                    "Check your spelling or try a different title.",
+                }
+              : undefined
+          }
         />
       )}
 
@@ -221,10 +264,29 @@ export default function SearchPageClient() {
               </div>
             )}
 
-            {!tmdbLoading && dbResults.length === 0 && tmdbAdditionalResults.length === 0 && (
+            {!tmdbLoading &&
+              !tmdbError &&
+              dbResults.length === 0 &&
+              tmdbAdditionalResults.length === 0 && (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                No titles found on TMDB for &ldquo;{q}&rdquo;
+                No results for &ldquo;{q}&rdquo;. Check your spelling or try a different title.
               </p>
+            )}
+
+            {!tmdbLoading && tmdbError && (
+              <div className="py-6 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Something went wrong. Please try again.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setTmdbRetryNonce((value) => value + 1)}
+                >
+                  Retry
+                </Button>
+              </div>
             )}
 
             {!tmdbLoading && tmdbAdditionalResults.length > 0 && (
@@ -236,7 +298,7 @@ export default function SearchPageClient() {
                   return (
                     <div
                       key={`${result.type}-${result.tmdbId}`}
-                      className="flex items-center gap-3 rounded-xl border bg-background p-3 transition-colors hover:bg-muted/40"
+                      className="flex flex-wrap items-center gap-3 rounded-xl border bg-background p-3 transition-colors hover:bg-muted/40 sm:flex-nowrap"
                     >
                       {/* Poster thumbnail */}
                       <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-muted">
@@ -247,6 +309,7 @@ export default function SearchPageClient() {
                             fill
                             className="object-cover"
                             sizes="56px"
+                            loading="lazy"
                           />
                         ) : (
                           <div className="flex h-full items-center justify-center text-muted-foreground/30">
@@ -256,7 +319,7 @@ export default function SearchPageClient() {
                       </div>
 
                       {/* Info */}
-                      <div className="flex-1 min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="truncate text-sm font-semibold">
                             {result.title}
@@ -286,7 +349,7 @@ export default function SearchPageClient() {
                               result.type
                             )
                           }
-                          className="shrink-0 gap-1.5"
+                          className="w-full shrink-0 gap-1.5 sm:ml-auto sm:w-auto"
                         >
                           {isRequesting ? (
                             <>
@@ -304,7 +367,7 @@ export default function SearchPageClient() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="shrink-0 gap-1 text-xs"
+                          className="w-full shrink-0 gap-1 text-xs sm:ml-auto sm:w-auto"
                           onClick={() => router.push("/settings")}
                         >
                           <Crown className="size-3" />

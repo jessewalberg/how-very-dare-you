@@ -102,6 +102,7 @@ export function Navbar() {
             size="icon"
             className="md:hidden size-9"
             onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+            aria-label={mobileSearchOpen ? "Close search" : "Open search"}
           >
             {mobileSearchOpen ? (
               <X className="size-4" />
@@ -142,6 +143,7 @@ export function Navbar() {
             size="icon"
             className="md:hidden size-9"
             onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open navigation menu"
           >
             <Menu className="size-4" />
             <span className="sr-only">Open menu</span>

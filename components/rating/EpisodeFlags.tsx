@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, Tv } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CATEGORIES, type SeverityLevel } from "@/lib/constants";
+import { CATEGORIES, SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
 import { RatingBadge } from "./RatingBadge";
 import {
   Collapsible,
@@ -97,6 +97,7 @@ export function EpisodeFlags({ flags }: EpisodeFlagsProps) {
                   <RatingBadge
                     severity={flag.severity as SeverityLevel}
                     compact
+                    ariaLabel={`${getCategoryLabel(flag.category)}: rated ${SEVERITY_LEVELS[flag.severity as SeverityLevel].label}`}
                   />
                 </div>
               </div>

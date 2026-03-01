@@ -60,8 +60,8 @@ export function CorrectionForm({
       });
       setSubmitted(true);
       onSuccess?.();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to submit");
+    } catch {
+      setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }

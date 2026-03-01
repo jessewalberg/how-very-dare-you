@@ -7,16 +7,21 @@ import { SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
 interface RatingBadgeProps {
   severity: SeverityLevel;
   compact?: boolean;
+  ariaLabel?: string;
 }
 
-export function RatingBadge({ severity, compact = false }: RatingBadgeProps) {
+export function RatingBadge({
+  severity,
+  compact = false,
+  ariaLabel,
+}: RatingBadgeProps) {
   const config = SEVERITY_LEVELS[severity];
 
   return (
     <Badge
       variant="outline"
       role="status"
-      aria-label={`Severity: ${config.label}`}
+      aria-label={ariaLabel ?? `Severity: ${config.label}`}
       className={cn(
         config.border,
         config.color,

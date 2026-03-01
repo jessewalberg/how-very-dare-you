@@ -2,12 +2,21 @@
 
 import { useQuery } from "convex/react";
 import { useUser, RedirectToSignIn } from "@clerk/nextjs";
+import dynamic from "next/dynamic";
 import { api } from "@/convex/_generated/api";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { WeightSliders } from "@/components/settings/WeightSliders";
+import { WeightSlidersSkeleton } from "@/components/settings/WeightSlidersSkeleton";
 import { SubscriptionCard } from "@/components/settings/SubscriptionCard";
 import type { CategoryKey } from "@/lib/constants";
+
+const WeightSliders = dynamic(
+  () =>
+    import("@/components/settings/WeightSliders").then((mod) => mod.WeightSliders),
+  {
+    loading: () => <WeightSlidersSkeleton />,
+  }
+);
 
 export default function SettingsPage() {
   const { isSignedIn, isLoaded } = useUser();
@@ -20,7 +29,7 @@ export default function SettingsPage() {
           <Skeleton className="h-7 w-32" />
           <Skeleton className="mt-1 h-4 w-64" />
         </div>
-        <Skeleton className="h-64 w-full rounded-2xl" />
+        <WeightSlidersSkeleton />
         <Skeleton className="h-48 w-full rounded-2xl" />
       </div>
     );
@@ -37,7 +46,7 @@ export default function SettingsPage() {
           <Skeleton className="h-7 w-32" />
           <Skeleton className="mt-1 h-4 w-64" />
         </div>
-        <Skeleton className="h-64 w-full rounded-2xl" />
+        <WeightSlidersSkeleton />
         <Skeleton className="h-48 w-full rounded-2xl" />
       </div>
     );

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { fetchQuery, preloadQuery } from "convex/nextjs";
+import { Suspense } from "react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { calculateCompositeScore, getSeverityLabel, isNoFlags } from "@/lib/scoring";
 import { CATEGORIES, DEFAULT_WEIGHTS } from "@/lib/constants";
 import { TitleDetail } from "@/components/title/TitleDetail";
+import { TitleDetailSkeleton } from "@/components/title/TitleDetailSkeleton";
 import { TitleJsonLd } from "@/components/seo/TitleJsonLd";
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
@@ -141,7 +143,9 @@ export default async function TitlePage(props: {
   return (
     <>
       {titleData && <TitleJsonLd title={titleData} />}
-      <TitleDetail preloadedTitle={preloadedTitle} />
+      <Suspense fallback={<TitleDetailSkeleton />}>
+        <TitleDetail preloadedTitle={preloadedTitle} />
+      </Suspense>
     </>
   );
 }

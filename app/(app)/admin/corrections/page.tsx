@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RatingBadge } from "@/components/rating/RatingBadge";
-import { CATEGORIES, type SeverityLevel } from "@/lib/constants";
+import { CATEGORIES, SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
 
 type StatusFilter = "pending" | "accepted" | "rejected" | undefined;
 
@@ -71,6 +71,7 @@ export default function AdminCorrectionsPage() {
               onClick={() => setStatusFilter(opt.value)}
               className={cn(
                 "rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 statusFilter === opt.value
                   ? "bg-foreground text-background"
                   : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -102,11 +103,9 @@ export default function AdminCorrectionsPage() {
           <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
             <MessageSquare className="size-6 text-muted-foreground/50" />
           </div>
-          <h3 className="mt-4 text-base font-semibold">No corrections</h3>
+          <h3 className="mt-4 text-base font-semibold">No pending corrections</h3>
           <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-            {statusFilter
-              ? `No ${statusFilter} corrections found.`
-              : "No corrections have been submitted yet."}
+            Check back later.
           </p>
         </div>
       )}
@@ -142,6 +141,7 @@ export default function AdminCorrectionsPage() {
                             correction.currentSeverity as SeverityLevel
                           }
                           compact
+                          ariaLabel={`${getCategoryLabel(correction.category)}: current rating ${SEVERITY_LEVELS[correction.currentSeverity as SeverityLevel].label}`}
                         />
                         <span className="text-[10px] text-muted-foreground">
                           →
@@ -151,6 +151,7 @@ export default function AdminCorrectionsPage() {
                             correction.suggestedSeverity as SeverityLevel
                           }
                           compact
+                          ariaLabel={`${getCategoryLabel(correction.category)}: suggested rating ${SEVERITY_LEVELS[correction.suggestedSeverity as SeverityLevel].label}`}
                         />
                       </div>
                     </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
 import { getSeverityLabel } from "@/lib/scoring";
@@ -21,12 +22,44 @@ export function CompositeScore({
   score,
   compact = false,
 }: CompositeScoreProps) {
+  const [animatedScore, setAnimatedScore] = useState(0);
+
+  useEffect(() => {
+    if (compact) {
+      return;
+    }
+
+    if (typeof window === "undefined" || score <= 0) {
+      return;
+    }
+
+    const start = performance.now();
+    const durationMs = 500;
+    const startScore = 0;
+    const delta = score - startScore;
+    let raf = 0;
+
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - start) / durationMs);
+      setAnimatedScore(startScore + delta * progress);
+      if (progress < 1) {
+        raf = window.requestAnimationFrame(tick);
+      }
+    };
+
+    raf = window.requestAnimationFrame(tick);
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [compact, score]);
+
   const clamped = Math.round(
     Math.min(4, Math.max(0, score))
   ) as SeverityLevel;
   const config = SEVERITY_LEVELS[clamped];
   const label = getSeverityLabel(score);
-  const displayScore = score.toFixed(1);
+  const renderScore = compact ? score : score <= 0 ? 0 : animatedScore;
+  const displayScore = renderScore.toFixed(1);
   const scoreOutOfFour = `${displayScore}/4`;
 
   if (compact) {
@@ -63,7 +96,7 @@ export function CompositeScore({
     <div
       className="flex flex-col items-center gap-1"
       role="status"
-      aria-label={`Overall score: ${displayScore} out of 4 on a 0 to 4 scale, rated ${label}`}
+      aria-label={`Overall content advisory score: ${score.toFixed(1)} out of 4, ${label}`}
     >
       <div
         className={cn(

@@ -11,6 +11,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Skeleton } from "@/components/ui/skeleton";
 import { EpisodeCard } from "./EpisodeCard";
 import { EpisodeDetailSheet } from "./EpisodeDetailSheet";
 import type { CategoryRatings } from "@/lib/scoring";
@@ -121,8 +122,20 @@ export function SeasonAccordion({
         <CollapsibleContent>
           <div className="mt-2 space-y-1.5">
             {!episodes && fetching && (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              <div className="space-y-2 py-2" aria-live="polite">
+                {Array.from({ length: 3 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="flex gap-3 rounded-lg border border-border/40 bg-card p-2.5"
+                  >
+                    <Skeleton className="h-14 w-24 rounded-md" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-3.5 w-32" />
+                      <Skeleton className="h-3 w-48 max-w-[80%]" />
+                      <Skeleton className="h-5 w-20 rounded-full" />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
             {episodes

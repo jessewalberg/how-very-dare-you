@@ -6,8 +6,9 @@ import { cn } from "@/lib/utils";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { RatingBadge } from "@/components/rating/RatingBadge";
-import { CATEGORIES, type SeverityLevel } from "@/lib/constants";
+import { CATEGORIES, SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
 import type { Id } from "@/convex/_generated/dataModel";
 
 interface CorrectionsListProps {
@@ -44,7 +45,22 @@ export function CorrectionsList({
   const corrections = useQuery(api.corrections.listForTitle, { titleId });
   const updateStatus = useMutation(api.corrections.updateStatus);
 
-  if (corrections === undefined) return null;
+  if (corrections === undefined) {
+    return (
+      <div className="space-y-2" aria-live="polite">
+        {Array.from({ length: 3 }).map((_, idx) => (
+          <div
+            key={idx}
+            className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2"
+          >
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-4/5" />
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (corrections.length === 0) return null;
 
   return (
@@ -79,15 +95,17 @@ export function CorrectionsList({
                     {getCategoryLabel(correction.category)}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <RatingBadge
-                      severity={correction.currentSeverity as SeverityLevel}
-                      compact
-                    />
-                    <span className="text-[10px] text-muted-foreground">→</span>
-                    <RatingBadge
-                      severity={correction.suggestedSeverity as SeverityLevel}
-                      compact
-                    />
+                        <RatingBadge
+                          severity={correction.currentSeverity as SeverityLevel}
+                          compact
+                          ariaLabel={`${getCategoryLabel(correction.category)}: current rating ${SEVERITY_LEVELS[correction.currentSeverity as SeverityLevel].label}`}
+                        />
+                        <span className="text-[10px] text-muted-foreground">→</span>
+                        <RatingBadge
+                          severity={correction.suggestedSeverity as SeverityLevel}
+                          compact
+                          ariaLabel={`${getCategoryLabel(correction.category)}: suggested rating ${SEVERITY_LEVELS[correction.suggestedSeverity as SeverityLevel].label}`}
+                        />
                   </div>
                 </div>
                 <Badge

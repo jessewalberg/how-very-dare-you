@@ -7,6 +7,7 @@ import { ConvexClientProvider } from "@/components/layout/ConvexClientProvider";
 const plusJakartaSans = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";

@@ -12,9 +12,11 @@ export function NoFlagsBadge({ compact = false }: NoFlagsBadgeProps) {
   return (
     <Badge
       variant="outline"
+      aria-label="No content flags — suitable for all audiences"
       className={cn(
         "border-emerald-300 bg-emerald-100 text-emerald-800",
         "font-semibold tracking-tight",
+        "animate-no-flags-shimmer",
         "hover:bg-emerald-100 hover:shadow-sm hover:shadow-emerald-200/50",
         "transition-all duration-200",
         compact

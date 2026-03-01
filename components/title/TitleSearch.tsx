@@ -161,7 +161,8 @@ export function TitleSearch({
                     className={cn(
                       "flex w-full items-center gap-3 px-3 py-2.5",
                       "text-left transition-colors duration-100",
-                      "hover:bg-muted/50 focus:bg-muted/50 outline-none"
+                      "hover:bg-muted/50 focus:bg-muted/50 outline-none",
+                      "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                     )}
                   >
                     {/* Poster thumbnail */}
@@ -173,6 +174,7 @@ export function TitleSearch({
                           fill
                           className="object-cover"
                           sizes="48px"
+                          loading="lazy"
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center">

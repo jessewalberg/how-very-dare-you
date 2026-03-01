@@ -49,7 +49,7 @@ export default function BrowsePage() {
   });
 
   return (
-    <div className="flex gap-8">
+    <div className="flex flex-col gap-4 lg:flex-row lg:gap-8">
       <FilterSidebar />
 
       <div className="flex-1 min-w-0 space-y-4">
@@ -68,7 +68,17 @@ export default function BrowsePage() {
           {/* Mobile filter button is inside FilterSidebar */}
         </div>
 
-        <TitleGrid titles={titles} isLoading={rawResults === undefined} />
+        <TitleGrid
+          titles={titles}
+          isLoading={rawResults === undefined}
+          emptyState={{
+            title: "No titles match your filters",
+            description:
+              "Try adjusting your criteria or browse all titles to see more options.",
+            ctaLabel: "Browse all titles",
+            ctaHref: "/browse",
+          }}
+        />
       </div>
     </div>
   );

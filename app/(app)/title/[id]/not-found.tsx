@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TitleSearch } from "@/components/title/TitleSearch";
 
 export default function TitleNotFound() {
   return (
@@ -13,6 +14,9 @@ export default function TitleNotFound() {
         This title doesn&apos;t exist or may have been removed from our
         database.
       </p>
+      <div className="mt-6 w-full max-w-md">
+        <TitleSearch placeholder="Search for another title..." />
+      </div>
       <Button variant="outline" className="mt-6" asChild>
         <Link href="/browse">
           <ArrowLeft className="mr-1.5 size-4" />
