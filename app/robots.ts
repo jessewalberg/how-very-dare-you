@@ -8,7 +8,18 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/api/", "/settings", "/corrections"],
+        disallow: [
+          "/api/",
+          "/settings",
+          "/corrections",
+          "/admin/",
+          "/search",
+          "/_next/",
+        ],
+      },
+      {
+        userAgent: "GPTBot",
+        disallow: ["/"],
       },
     ],
     sitemap: `${baseUrl}/sitemap.xml`,

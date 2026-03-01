@@ -169,7 +169,7 @@ export function TitleSearch({
                       {title.posterPath ? (
                         <Image
                           src={`https://image.tmdb.org/t/p/w92${title.posterPath}`}
-                          alt={title.title}
+                          alt={`${title.title} (${title.year}) ${title.type === "tv" ? "TV show" : "movie"} poster`}
                           fill
                           className="object-cover"
                           sizes="48px"

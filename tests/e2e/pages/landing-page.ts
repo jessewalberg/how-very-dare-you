@@ -28,4 +28,15 @@ export class LandingPage {
   async openBrowse() {
     await this.page.getByRole("link", { name: "Browse Titles" }).first().click();
   }
+
+  async expectSeoBasics() {
+    const h1Count = await this.page.locator("h1").count();
+    expect(h1Count).toBe(1);
+
+    const metaDesc = this.page.locator('meta[name="description"]');
+    await expect(metaDesc).toHaveAttribute("content", /.+/);
+
+    const canonical = this.page.locator('link[rel="canonical"]');
+    await expect(canonical).toBeAttached();
+  }
 }

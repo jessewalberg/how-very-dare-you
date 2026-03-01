@@ -239,7 +239,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               {title.posterPath ? (
                 <Image
                   src={`https://image.tmdb.org/t/p/w500${title.posterPath}`}
-                  alt={title.title}
+                  alt={`${title.title} (${title.year}) ${title.type === "tv" ? "TV show" : "movie"} poster`}
                   fill
                   className="object-cover"
                   sizes="(max-width: 640px) 208px, (max-width: 1024px) 240px, 256px"

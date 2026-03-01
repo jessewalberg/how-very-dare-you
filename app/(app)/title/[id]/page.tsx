@@ -3,14 +3,10 @@ import { notFound } from "next/navigation";
 import { fetchQuery, preloadQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import {
-  calculateCompositeScore,
-  getSeverityLabel,
-  isNoFlags,
-  type CategoryRatings,
-} from "@/lib/scoring";
-import { CATEGORIES, DEFAULT_WEIGHTS, SEVERITY_LEVELS } from "@/lib/constants";
+import { calculateCompositeScore, getSeverityLabel, isNoFlags } from "@/lib/scoring";
+import { CATEGORIES, DEFAULT_WEIGHTS } from "@/lib/constants";
 import { TitleDetail } from "@/components/title/TitleDetail";
+import { TitleJsonLd } from "@/components/seo/TitleJsonLd";
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
 
@@ -25,101 +21,96 @@ export async function generateMetadata(props: {
       titleId: id as Id<"titles">,
     });
   } catch {
-    return { title: "Title Not Found" };
+    return {
+      title: {
+        absolute: "Title Not Found | How Very Dare You",
+      },
+    };
   }
 
-  if (!title) return { title: "Title Not Found" };
+  if (!title) {
+    return {
+      title: {
+        absolute: "Title Not Found | How Very Dare You",
+      },
+    };
+  }
 
-  const hasRatings = title.ratings && title.status === "rated";
-  const ratings = title.ratings as CategoryRatings | undefined;
-  const composite = hasRatings
-    ? calculateCompositeScore(ratings!, DEFAULT_WEIGHTS)
-    : null;
-  const severity = composite !== null ? getSeverityLabel(composite) : "Pending";
-  const noFlags = ratings ? isNoFlags(ratings) : false;
+  const ratings = title.status === "rated" ? title.ratings : undefined;
+  const typeLabel = title.type === "tv" ? "TV Show" : "Movie";
 
-  const description = noFlags
-    ? `${title.title} (${title.year}) has no cultural or ideological flags. Safe for all ages according to our content advisory analysis.`
-    : `Content advisory for ${title.title} (${title.year}): ${severity} overall. See detailed breakdown of 8 cultural and ideological theme categories for parents.`;
+  let description: string;
+  if (ratings) {
+    const composite = calculateCompositeScore(ratings, DEFAULT_WEIGHTS);
+    const severityLabel = getSeverityLabel(Math.round(composite));
+    const noFlags = isNoFlags(ratings);
+
+    if (noFlags) {
+      description = `${title.title} (${title.year}) has no cultural or ideological content flags. Safe for all audiences. AI-powered content advisory from How Very Dare You.`;
+    } else {
+      const flaggedCategories = CATEGORIES
+        .filter((category) => (ratings[category.key] ?? 0) >= 2)
+        .sort(
+          (a, b) =>
+            (ratings[b.key] ?? 0) - (ratings[a.key] ?? 0)
+        )
+        .slice(0, 3)
+        .map((category) => category.label);
+
+      const flagSummary =
+        flaggedCategories.length > 0
+          ? ` Notable themes: ${flaggedCategories.join(", ")}.`
+          : "";
+
+      description = `Content advisory for ${title.title} (${title.year}): ${severityLabel} overall.${flagSummary} AI-powered cultural and ideological theme ratings for parents.`;
+    }
+  } else {
+    description = `Content advisory and parental guide for ${title.title} (${title.year}). AI-powered cultural and ideological theme ratings from How Very Dare You.`;
+  }
+
+  const ogImage = title.posterPath
+    ? `https://image.tmdb.org/t/p/w780${title.posterPath}`
+    : `${baseUrl}/og-default.png`;
 
   return {
-    title: `${title.title} (${title.year}) Content Advisory`,
+    title: {
+      absolute: `${title.title} (${title.year}) Content Advisory — Is It Appropriate for Kids? | How Very Dare You`,
+    },
     description,
+    keywords: [
+      `${title.title} content advisory`,
+      `${title.title} parental guide`,
+      `is ${title.title} appropriate for kids`,
+      `${title.title} age rating`,
+      `${title.title} themes`,
+      `${typeLabel.toLowerCase()} content advisory`,
+      "parental guide",
+      "content ratings",
+    ],
+    alternates: {
+      canonical: `/title/${id}`,
+    },
     openGraph: {
-      title: `Is ${title.title} appropriate for kids? Content Advisory`,
-      description: title.ratingNotes || title.overview || description,
-      type: "article",
-      images: title.posterPath
-        ? [`https://image.tmdb.org/t/p/w500${title.posterPath}`]
-        : [],
+      title: `${title.title} (${title.year}) — Content Advisory | How Very Dare You`,
+      description,
       url: `${baseUrl}/title/${id}`,
+      siteName: "How Very Dare You",
+      images: [
+        {
+          url: ogImage,
+          width: 780,
+          height: 1170,
+          alt: `${title.title} (${title.year}) poster`,
+        },
+      ],
+      type: title.type === "tv" ? "video.tv_show" : "video.movie",
     },
     twitter: {
       card: "summary_large_image",
       title: `${title.title} (${title.year}) — Content Advisory`,
       description,
+      images: [ogImage],
     },
-    alternates: {
-      canonical: `${baseUrl}/title/${id}`,
-    },
-  };
-}
-
-function buildJsonLd(title: NonNullable<Awaited<ReturnType<typeof fetchQuery<typeof api.titles.getTitle>>>>) {
-  const ratings = title.ratings as CategoryRatings | undefined;
-  const composite = ratings
-    ? calculateCompositeScore(ratings, DEFAULT_WEIGHTS)
-    : null;
-  const noFlags = ratings ? isNoFlags(ratings) : false;
-
-  // Build the review body from category ratings
-  let reviewBody = "";
-  if (ratings) {
-    const lines = CATEGORIES.map((cat) => {
-      const val = ratings[cat.key as keyof CategoryRatings];
-      const label = SEVERITY_LEVELS[val as keyof typeof SEVERITY_LEVELS]?.label ?? "Unknown";
-      return `${cat.label}: ${label}`;
-    });
-    reviewBody = lines.join(". ") + ".";
-    if (title.ratingNotes) {
-      reviewBody += " " + title.ratingNotes;
-    }
-  }
-
-  const isMovie = title.type === "movie";
-
-  return {
-    "@context": "https://schema.org",
-    "@type": isMovie ? "Movie" : "TVSeries",
-    name: title.title,
-    datePublished: title.year ? `${title.year}` : undefined,
-    image: title.posterPath
-      ? `https://image.tmdb.org/t/p/w500${title.posterPath}`
-      : undefined,
-    description: title.overview,
-    genre: title.genre?.split(", "),
-    contentRating: title.ageRating,
-    ...(title.runtime && isMovie ? { duration: `PT${title.runtime}M` } : {}),
-    review: ratings
-      ? {
-          "@type": "Review",
-          author: {
-            "@type": "Organization",
-            name: "How Very Dare You",
-            url: baseUrl,
-          },
-          reviewRating: {
-            "@type": "Rating",
-            ratingValue: composite?.toFixed(1),
-            bestRating: "4",
-            worstRating: "0",
-            ratingExplanation: noFlags
-              ? "No cultural or ideological flags detected"
-              : `Composite content advisory score: ${getSeverityLabel(composite!)}`,
-          },
-          reviewBody,
-        }
-      : undefined,
   };
 }
 
@@ -129,30 +120,27 @@ export default async function TitlePage(props: {
   const { id } = await props.params;
 
   let preloadedTitle;
-  let titleData;
+  let titleData: Awaited<ReturnType<typeof fetchQuery<typeof api.titles.getTitle>>> = null;
+
   try {
-    [preloadedTitle, titleData] = await Promise.all([
-      preloadQuery(api.titles.getTitle, {
-        titleId: id as Id<"titles">,
-      }),
-      fetchQuery(api.titles.getTitle, {
-        titleId: id as Id<"titles">,
-      }),
-    ]);
+    preloadedTitle = await preloadQuery(api.titles.getTitle, {
+      titleId: id as Id<"titles">,
+    });
   } catch {
     notFound();
   }
 
-  const jsonLd = titleData ? buildJsonLd(titleData) : null;
+  try {
+    titleData = await fetchQuery(api.titles.getTitle, {
+      titleId: id as Id<"titles">,
+    });
+  } catch {
+    // Allow page render without JSON-LD if title query fails on this pass.
+  }
 
   return (
     <>
-      {jsonLd && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
-      )}
+      {titleData && <TitleJsonLd title={titleData} />}
       <TitleDetail preloadedTitle={preloadedTitle} />
     </>
   );

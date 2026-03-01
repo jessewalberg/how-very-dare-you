@@ -51,7 +51,7 @@ export function TitleGrid({ titles, isLoading }: TitleGridProps) {
         <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">
           <SearchX className="size-7 text-muted-foreground/50" />
         </div>
-        <h3 className="mt-4 text-base font-semibold">No titles found</h3>
+        <h2 className="mt-4 text-base font-semibold">No titles found</h2>
         <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
           Try adjusting your filters or search for a specific title to rate it
           on demand.

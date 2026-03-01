@@ -332,7 +332,7 @@ export default function AdminTitlesPage() {
                   {title.posterPath ? (
                     <Image
                       src={`https://image.tmdb.org/t/p/w92${title.posterPath}`}
-                      alt={title.title}
+                      alt={`${title.title} (${title.year}) ${title.type === "tv" ? "TV show" : "movie"} poster`}
                       width={40}
                       height={60}
                       className="rounded object-cover shrink-0"

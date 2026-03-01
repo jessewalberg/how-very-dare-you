@@ -13,7 +13,7 @@
 | 2. UI Components | ✅ Done | Rating components, title cards, layout |
 | 3. Pages | ✅ Done | Landing, browse, search, detail, settings, corrections |
 | 4. Backend | ✅ Done | Convex functions, API clients, AI pipeline, Stripe, Clerk webhooks |
-| 5. Integration & Polish | 🔶 Partial | Real data in DB, core flows working. SEO and polish pass remaining |
+| 5. Integration & Polish | 🔶 Partial | Real data in DB, core flows working. SEO pass complete; polish pass remains |
 | 6. Deployment | ⬜ Not started | Env vars, Vercel, production verification |
 | 7. V2 Overstimulation | ✅ Done | Video analysis working |
 
@@ -29,15 +29,15 @@
 
 Critical for organic discovery ("is [movie] appropriate for kids" searches).
 
-- [ ] Dynamic metadata on title detail pages (title, description, OG image via `generateMetadata`)
-- [ ] Structured data (JSON-LD) on title pages using schema.org `Movie` / `TVSeries`
-- [ ] Home page metadata and structured data
-- [ ] Canonical URLs on browse pages
-- [ ] `robots.txt`
-- [ ] Dynamic `sitemap.xml` generated from rated titles
-- [ ] Proper heading hierarchy (h1/h2) audit across all pages
-- [ ] Image alt text on all TMDB poster images
-- [ ] OG image generation (or static fallback)
+- [x] Dynamic metadata on title detail pages (title, description, OG image via `generateMetadata`)
+- [x] Structured data (JSON-LD) on title pages using schema.org `Movie` / `TVSeries`
+- [x] Home page metadata and structured data
+- [x] Canonical URLs on browse pages
+- [x] `robots.txt`
+- [x] Dynamic `sitemap.xml` generated from rated titles
+- [x] Proper heading hierarchy (h1/h2) audit across all pages
+- [x] Image alt text on all TMDB poster images
+- [x] OG image generation (static fallback added at `public/og-default.png`)
 
 ### 🟡 P2 — Polish & Responsive (Prompt 5.3)
 
@@ -111,3 +111,4 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 |------|--------|
 | 2026-03-01 | Initial status doc created. Phases 1-4 + V2 confirmed complete. |
 | 2026-03-01 | P0 resolved: name is "How Very Dare You", domain is howverydareyou.com. |
+| 2026-03-01 | P1 SEO & metadata pass completed: dynamic title metadata + JSON-LD, homepage/browse/search metadata, robots/sitemap verification, heading and alt-text audits, static OG fallback, SEO unit/e2e coverage. |

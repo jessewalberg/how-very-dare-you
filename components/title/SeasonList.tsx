@@ -58,9 +58,9 @@ export function SeasonList({ titleId, tmdbShowId, showTitle }: SeasonListProps) 
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <Tv className="size-4 text-muted-foreground" strokeWidth={1.8} />
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Episodes
-        </h3>
+        </h2>
         {seasonInfo.ratedEpisodeCount != null && seasonInfo.ratedEpisodeCount > 0 && (
           <span className="text-xs text-muted-foreground">
             · {seasonInfo.ratedEpisodeCount} rated

@@ -16,8 +16,48 @@ import { LandingNoFlagsPreview } from "@/components/landing/LandingNoFlagsPrevie
 import { LandingSearch } from "@/components/landing/LandingSearch";
 import { LandingAuthButtons, LandingNavAuth } from "@/components/landing/LandingAuthButtons";
 
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
+
 export const metadata: Metadata = {
+  title: {
+    absolute: "How Very Dare You — AI Content Advisories for Movies & TV Shows",
+  },
+  description:
+    "Know what your kids are watching before they watch it. AI-powered cultural and ideological theme ratings across 8 categories. Free content advisories for parents.",
+  keywords: [
+    "content advisory",
+    "parental guide",
+    "movie ratings for parents",
+    "TV show content warnings",
+    "is it appropriate for kids",
+    "cultural themes in movies",
+    "ideological content ratings",
+    "family movie guide",
+  ],
   alternates: { canonical: "/" },
+  openGraph: {
+    title: "How Very Dare You — Know What Your Kids Are Watching",
+    description:
+      "AI-powered content advisories for movies and TV shows. Cultural and ideological theme ratings across 8 categories.",
+    url: BASE_URL,
+    siteName: "How Very Dare You",
+    images: [
+      {
+        url: `${BASE_URL}/og-default.png`,
+        width: 1200,
+        height: 630,
+        alt: "How Very Dare You — AI Content Advisories",
+      },
+    ],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "How Very Dare You — AI Content Advisories for Parents",
+    description:
+      "Know what your kids are watching. AI-powered cultural and ideological theme ratings for movies and TV shows.",
+    images: [`${BASE_URL}/og-default.png`],
+  },
 };
 
 const HOME_JSON_LD = {
@@ -26,14 +66,14 @@ const HOME_JSON_LD = {
     {
       "@type": "WebSite",
       name: "How Very Dare You",
-      url: process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com",
+      url: BASE_URL,
       description:
         "AI-powered content advisory ratings for movies and TV shows. Cultural and ideological theme breakdowns for parents.",
       potentialAction: {
         "@type": "SearchAction",
         target: {
           "@type": "EntryPoint",
-          urlTemplate: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com"}/search?q={search_term_string}`,
+          urlTemplate: `${BASE_URL}/search?q={search_term_string}`,
         },
         "query-input": "required name=search_term_string",
       },
@@ -41,7 +81,7 @@ const HOME_JSON_LD = {
     {
       "@type": "Organization",
       name: "How Very Dare You",
-      url: process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com",
+      url: BASE_URL,
       description:
         "Parental content advisory platform providing AI-powered cultural and ideological theme ratings for movies and TV shows.",
     },

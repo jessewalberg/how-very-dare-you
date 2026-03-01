@@ -28,4 +28,9 @@ test.describe("Landing page", () => {
       page.getByRole("heading", { name: "Browse Titles" })
     ).toBeVisible();
   });
+
+  test("has proper SEO meta tags", async ({ landingPage }) => {
+    await landingPage.goto();
+    await landingPage.expectSeoBasics();
+  });
 });

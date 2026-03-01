@@ -99,9 +99,9 @@ export function RatingBreakdown({
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Content Advisory
-          </h3>
+          </h2>
           <p className="mt-1 text-[11px] text-muted-foreground/75">
             Scale: 0 = No concerns, 1 = Brief, 2 = Notable, 3 = Significant, 4 = Highest
             concern.

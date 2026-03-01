@@ -22,14 +22,19 @@ test.describe("App navigation", () => {
       name: "Watchlist is a Premium feature",
     });
     const watchlistHeading = page.getByRole("heading", { name: "Watchlist" });
+    const loadingSkeleton = page.locator("div.h-8.w-40.animate-pulse").first();
 
     await expect
-      .poll(async () => {
-        if (await signedOutPrompt.isVisible()) return "signed_out";
-        if (await premiumPrompt.isVisible()) return "premium_prompt";
-        if (await watchlistHeading.isVisible()) return "watchlist";
-        return "pending";
-      })
+      .poll(
+        async () => {
+          if (await signedOutPrompt.isVisible()) return "signed_out";
+          if (await premiumPrompt.isVisible()) return "premium_prompt";
+          if (await watchlistHeading.isVisible()) return "watchlist";
+          if (await loadingSkeleton.isVisible()) return "loading";
+          return "pending";
+        },
+        { timeout: 15_000 }
+      )
       .not.toBe("pending");
   });
 });

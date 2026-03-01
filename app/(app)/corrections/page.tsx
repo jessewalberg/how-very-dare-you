@@ -107,7 +107,7 @@ export default function CorrectionsPage() {
           <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
             <MessageSquare className="size-6 text-muted-foreground/50" />
           </div>
-          <h3 className="mt-4 text-base font-semibold">No corrections</h3>
+          <h2 className="mt-4 text-base font-semibold">No corrections</h2>
           <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
             {statusFilter
               ? `No ${statusFilter} corrections found.`

@@ -76,7 +76,7 @@ export function TitleCard({
         {posterPath ? (
           <Image
             src={`https://image.tmdb.org/t/p/w342${posterPath}`}
-            alt={title}
+            alt={`${title} (${year}) ${type === "tv" ? "TV show" : "movie"} poster`}
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             sizes="(max-width: 640px) 80px, (max-width: 1024px) 200px, 240px"

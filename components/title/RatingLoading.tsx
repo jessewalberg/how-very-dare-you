@@ -34,7 +34,7 @@ export function RatingLoading({
           {posterPath ? (
             <Image
               src={`https://image.tmdb.org/t/p/w342${posterPath}`}
-              alt={title}
+              alt={`${title} (${year}) ${type === "tv" ? "TV show" : "movie"} poster`}
               fill
               className="object-cover"
               sizes="128px"
