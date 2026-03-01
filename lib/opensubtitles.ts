@@ -1,7 +1,9 @@
 // OpenSubtitles API client
-// Docs: https://opensubtitles.stoplight.io/docs/opensubtitles-api
+// Docs: https://ai.opensubtitles.com/docs
 
 const BASE_URL = "https://api.opensubtitles.com/api/v1";
+const DEFAULT_USER_AGENT = "HowVeryDareYou v1";
+const AUTH_TOKEN_TTL_MS = 50 * 60 * 1000;
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -53,6 +55,68 @@ export interface OpenSubtitlesDownload {
   message: string;
 }
 
+interface OpenSubtitlesLoginResponse {
+  token?: string;
+}
+
+interface OpenSubtitlesErrorPayload {
+  message?: string;
+  request_id?: string;
+  requests?: number;
+  remaining?: number;
+  reset_time?: string;
+}
+
+type SubtitleCandidate = {
+  fileId: number;
+  release: string;
+  language: string;
+};
+
+type TokenCache = { token: string; expiresAtMs: number };
+
+let tokenCache: TokenCache | null = null;
+
+export class OpenSubtitlesApiError extends Error {
+  readonly status: number;
+  readonly statusText: string;
+  readonly payload?: OpenSubtitlesErrorPayload | string;
+
+  constructor(args: {
+    prefix: string;
+    status: number;
+    statusText: string;
+    payload?: OpenSubtitlesErrorPayload | string;
+  }) {
+    const detail =
+      typeof args.payload === "string"
+        ? args.payload
+        : args.payload?.message;
+    const requestId =
+      typeof args.payload === "string" ? undefined : args.payload?.request_id;
+    const suffix = detail
+      ? `: ${detail}${requestId ? ` (request_id=${requestId})` : ""}`
+      : "";
+    super(`${args.prefix}: ${args.status} ${args.statusText}${suffix}`);
+    this.name = "OpenSubtitlesApiError";
+    this.status = args.status;
+    this.statusText = args.statusText;
+    this.payload = args.payload;
+  }
+
+  get isQuotaExceeded(): boolean {
+    const detail =
+      typeof this.payload === "string"
+        ? this.payload
+        : this.payload?.message;
+    if (!detail) return false;
+    return (
+      this.status === 406 &&
+      /allowed .*subtitles|quota|remaining/i.test(detail)
+    );
+  }
+}
+
 // ── Public API ────────────────────────────────────────────
 
 export async function searchSubtitles(
@@ -77,16 +141,11 @@ export async function searchSubtitles(
   }
 
   const res = await fetch(url.toString(), {
-    headers: {
-      "Api-Key": apiKey,
-      "Content-Type": "application/json",
-    },
+    headers: await buildRequestHeaders(apiKey, true),
   });
 
   if (!res.ok) {
-    throw new Error(
-      `OpenSubtitles API error: ${res.status} ${res.statusText}`
-    );
+    throw await buildApiError("OpenSubtitles API error", res);
   }
 
   return res.json() as Promise<OpenSubtitlesSearchResult>;
@@ -114,16 +173,21 @@ export async function gatherTVEpisodeDialogue(
         seasonNumber: ep.season,
         episodeNumber: ep.episode,
       });
-      const best = pickBestSubtitle(results);
-      if (best) {
-        const srtText = await downloadSubtitle(best.fileId, apiKey);
-        const dialogue = extractDialogue(srtText, linesPerEpisode);
-        if (dialogue) {
-          dialogueParts.push(`[S${String(ep.season).padStart(2, "0")}E${String(ep.episode).padStart(2, "0")}]\n${dialogue}`);
-        }
+      const srtText = await downloadBestSubtitle(results, apiKey);
+      if (!srtText) continue;
+      const dialogue = extractDialogue(srtText, linesPerEpisode);
+      if (dialogue) {
+        dialogueParts.push(
+          `[S${String(ep.season).padStart(2, "0")}E${String(ep.episode).padStart(2, "0")}]\n${dialogue}`
+        );
       }
     } catch (e) {
-      console.error(`Subtitle fetch failed for S${ep.season}E${ep.episode} (non-fatal):`, e);
+      // Quota exhaustion is terminal for the current run; bubble up to caller.
+      if (isOpenSubtitlesQuotaError(e)) throw e;
+      console.error(
+        `Subtitle fetch failed for S${ep.season}E${ep.episode} (non-fatal):`,
+        e
+      );
     }
   }
 
@@ -146,13 +210,11 @@ export async function gatherSingleEpisodeDialogue(
       seasonNumber: season,
       episodeNumber: episode,
     });
-    const best = pickBestSubtitle(results);
-    if (best) {
-      const srtText = await downloadSubtitle(best.fileId, apiKey);
-      return extractDialogue(srtText, maxLines);
-    }
-    return null;
+    const srtText = await downloadBestSubtitle(results, apiKey);
+    if (!srtText) return null;
+    return extractDialogue(srtText, maxLines);
   } catch (e) {
+    if (isOpenSubtitlesQuotaError(e)) throw e;
     console.error(
       `Subtitle fetch failed for S${season}E${episode} (non-fatal):`,
       e
@@ -168,17 +230,12 @@ export async function downloadSubtitle(
   // Step 1: Get download link
   const linkRes = await fetch(`${BASE_URL}/download`, {
     method: "POST",
-    headers: {
-      "Api-Key": apiKey,
-      "Content-Type": "application/json",
-    },
+    headers: await buildRequestHeaders(apiKey, true),
     body: JSON.stringify({ file_id: fileId }),
   });
 
   if (!linkRes.ok) {
-    throw new Error(
-      `OpenSubtitles download error: ${linkRes.status} ${linkRes.statusText}`
-    );
+    throw await buildApiError("OpenSubtitles download error", linkRes);
   }
 
   const linkData = (await linkRes.json()) as OpenSubtitlesDownload;
@@ -186,10 +243,18 @@ export async function downloadSubtitle(
   // Step 2: Fetch the actual subtitle file
   const subtitleRes = await fetch(linkData.link);
   if (!subtitleRes.ok) {
-    throw new Error("Failed to download subtitle file");
+    throw new Error(
+      `Failed to download subtitle file: ${subtitleRes.status} ${subtitleRes.statusText}`
+    );
   }
 
   return subtitleRes.text();
+}
+
+export function isOpenSubtitlesQuotaError(error: unknown): boolean {
+  if (error instanceof OpenSubtitlesApiError) return error.isQuotaExceeded;
+  if (!(error instanceof Error)) return false;
+  return /allowed .*subtitles|quota|remaining/i.test(error.message);
 }
 
 // ── Utility ───────────────────────────────────────────────
@@ -225,27 +290,158 @@ export function extractDialogue(
   return dialogueLines.join("\n");
 }
 
-/** Find the best subtitle file from search results. Prefers non-AI, high downloads. */
-export function pickBestSubtitle(
-  results: OpenSubtitlesSearchResult
-): { fileId: number; release: string; language: string } | null {
-  const candidates = results.data
+export function pickSubtitleCandidates(
+  results: OpenSubtitlesSearchResult,
+  maxCandidates = 5
+): SubtitleCandidate[] {
+  return results.data
     .filter(
       (d) =>
         !d.attributes.ai_translated &&
         !d.attributes.machine_translated &&
         d.attributes.files.length > 0
     )
-    .sort(
-      (a, b) => b.attributes.download_count - a.attributes.download_count
-    );
+    .sort((a, b) => {
+      const trustedFirst =
+        Number(b.attributes.from_trusted) - Number(a.attributes.from_trusted);
+      if (trustedFirst !== 0) return trustedFirst;
+      return b.attributes.download_count - a.attributes.download_count;
+    })
+    .slice(0, maxCandidates)
+    .map((d) => ({
+      fileId: d.attributes.files[0].file_id,
+      release: d.attributes.release,
+      language: d.attributes.language,
+    }));
+}
 
+/** Find the best subtitle file from search results. */
+export function pickBestSubtitle(
+  results: OpenSubtitlesSearchResult
+): { fileId: number; release: string; language: string } | null {
+  const candidates = pickSubtitleCandidates(results, 1);
+  return candidates[0] ?? null;
+}
+
+async function downloadBestSubtitle(
+  results: OpenSubtitlesSearchResult,
+  apiKey: string
+): Promise<string | null> {
+  const candidates = pickSubtitleCandidates(results, 5);
   if (candidates.length === 0) return null;
 
-  const best = candidates[0];
-  return {
-    fileId: best.attributes.files[0].file_id,
-    release: best.attributes.release,
-    language: best.attributes.language,
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      return await downloadSubtitle(candidate.fileId, apiKey);
+    } catch (e) {
+      lastError = e;
+      if (isOpenSubtitlesQuotaError(e)) throw e;
+      console.warn(
+        `[OpenSubtitles] Candidate download failed for file_id=${candidate.fileId} (continuing)`,
+        e
+      );
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+}
+
+function getEnvTrimmed(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+
+function resolveUserAgent(): string {
+  return getEnvTrimmed("OPENSUBTITLES_USER_AGENT") ?? DEFAULT_USER_AGENT;
+}
+
+async function buildRequestHeaders(
+  apiKey: string,
+  includeAuthToken: boolean
+): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    "Api-Key": apiKey,
+    "Content-Type": "application/json",
+    "User-Agent": resolveUserAgent(),
   };
+
+  if (!includeAuthToken) return headers;
+
+  try {
+    const token = await getAuthToken(apiKey);
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  } catch (e) {
+    // Non-fatal: key-only mode still works with lower quotas.
+    console.warn(
+      "[OpenSubtitles] Auth token login failed; continuing with Api-Key only mode.",
+      e
+    );
+  }
+
+  return headers;
+}
+
+async function getAuthToken(apiKey: string): Promise<string | undefined> {
+  const username = getEnvTrimmed("OPENSUBTITLES_USERNAME");
+  const password = getEnvTrimmed("OPENSUBTITLES_PASSWORD");
+  if (!username || !password) return undefined;
+
+  if (tokenCache && Date.now() < tokenCache.expiresAtMs) {
+    return tokenCache.token;
+  }
+
+  const res = await fetch(`${BASE_URL}/login`, {
+    method: "POST",
+    headers: {
+      "Api-Key": apiKey,
+      "Content-Type": "application/json",
+      "User-Agent": resolveUserAgent(),
+    },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!res.ok) {
+    throw await buildApiError("OpenSubtitles login error", res);
+  }
+
+  const data = (await res.json()) as OpenSubtitlesLoginResponse;
+  if (!data.token) {
+    throw new Error("OpenSubtitles login error: missing token in response");
+  }
+
+  tokenCache = {
+    token: data.token,
+    expiresAtMs: Date.now() + AUTH_TOKEN_TTL_MS,
+  };
+  return data.token;
+}
+
+async function buildApiError(
+  prefix: string,
+  response: Response
+): Promise<OpenSubtitlesApiError> {
+  const payload = await readErrorPayload(response);
+  return new OpenSubtitlesApiError({
+    prefix,
+    status: response.status,
+    statusText: response.statusText,
+    payload,
+  });
+}
+
+async function readErrorPayload(
+  response: Response
+): Promise<OpenSubtitlesErrorPayload | string | undefined> {
+  const body = await response.text();
+  if (!body) return undefined;
+
+  try {
+    return JSON.parse(body) as OpenSubtitlesErrorPayload;
+  } catch {
+    return body;
+  }
 }

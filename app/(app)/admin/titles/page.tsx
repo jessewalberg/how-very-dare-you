@@ -5,12 +5,21 @@ import { useQuery, useAction } from "convex/react";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { RefreshCw, Filter, ChevronRight, DollarSign, ExternalLink } from "lucide-react";
+import {
+  RefreshCw,
+  Filter,
+  ChevronRight,
+  DollarSign,
+  ExternalLink,
+  AlertTriangle,
+  FileText,
+} from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +39,13 @@ import { RatingBreakdown } from "@/components/rating/RatingBreakdown";
 import { EpisodeDetailSheet } from "@/components/title/EpisodeDetailSheet";
 import { cn } from "@/lib/utils";
 import type { CategoryRatings } from "@/lib/scoring";
+import { assessRatingQuality } from "@/lib/ratingQuality";
+import { canOpenAdminTitleSidebar } from "@/lib/sidebarBehavior";
+import {
+  toSubtitleViewerErrorState,
+  toSubtitleViewerState,
+  type SubtitleViewerState,
+} from "@/lib/adminSubtitleViewer";
 
 type StatusFilter =
   | "pending"
@@ -85,9 +101,16 @@ function avgRating(ratings: Record<string, unknown> | undefined) {
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
+function qualityBadgeClass(severity: "none" | "warning" | "critical") {
+  if (severity === "critical") return "bg-red-50 text-red-700 border-red-200";
+  if (severity === "warning") return "bg-amber-50 text-amber-700 border-amber-200";
+  return "bg-slate-100 text-slate-700 border-slate-200";
+}
+
 export default function AdminTitlesPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(undefined);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(undefined);
+  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
   const [expandedTitle, setExpandedTitle] = useState<Id<"titles"> | null>(null);
   const [selectedEpisode, setSelectedEpisode] = useState<{
     episodeId: Id<"episodes">;
@@ -101,6 +124,8 @@ export default function AdminTitlesPage() {
     name: string;
   } | null>(null);
   const [reRating, setReRating] = useState(false);
+  const [subtitleViewer, setSubtitleViewer] =
+    useState<SubtitleViewerState | null>(null);
 
   const titles = useQuery(api.admin.listTitles, {
     status: statusFilter,
@@ -108,6 +133,15 @@ export default function AdminTitlesPage() {
   });
   const reRateTitle = useAction(api.admin.reRateTitle);
   const reRateEpisode = useAction(api.admin.reRateEpisode);
+  const getSubtitleArchive = useAction(api.admin.getSubtitleArchive);
+  const visibleTitles = titles?.filter((title) => {
+    if (!needsReviewOnly) return true;
+    const quality = assessRatingQuality({
+      confidence: title.ratingConfidence,
+      subtitleInfo: title.subtitleInfo,
+    });
+    return quality.needsReview;
+  });
 
   async function handleReRate() {
     if (!confirmReRate) return;
@@ -127,6 +161,28 @@ export default function AdminTitlesPage() {
       });
     } finally {
       setReRating(false);
+    }
+  }
+
+  async function handleViewSubtitles(
+    target:
+      | { scope: "title"; titleId: Id<"titles"> }
+      | { scope: "episode"; episodeId: Id<"episodes"> },
+    label: string
+  ) {
+    setSubtitleViewer({
+      label,
+      loading: true,
+    });
+    try {
+      const result = await getSubtitleArchive({ target });
+      setSubtitleViewer(toSubtitleViewerState(label, result));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unknown error";
+      setSubtitleViewer(toSubtitleViewerErrorState(label, message));
+      toast.error("Failed to load subtitles", {
+        description: message,
+      });
     }
   }
 
@@ -178,9 +234,22 @@ export default function AdminTitlesPage() {
         </div>
         {titles !== undefined && (
           <span className="text-xs text-muted-foreground">
-            {titles.length} result{titles.length !== 1 ? "s" : ""}
+            {(visibleTitles ?? titles).length} result
+            {(visibleTitles ?? titles).length !== 1 ? "s" : ""}
           </span>
         )}
+        <button
+          onClick={() => setNeedsReviewOnly((v) => !v)}
+          className={cn(
+            "rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 flex items-center gap-1.5",
+            needsReviewOnly
+              ? "bg-amber-100 text-amber-800"
+              : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+        >
+          <AlertTriangle className="size-3.5" />
+          Needs Review Only
+        </button>
       </div>
 
       {/* Loading */}
@@ -193,20 +262,26 @@ export default function AdminTitlesPage() {
       )}
 
       {/* Empty */}
-      {titles && titles.length === 0 && (
+      {visibleTitles && visibleTitles.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-sm text-muted-foreground">No titles found.</p>
+          <p className="text-sm text-muted-foreground">
+            {needsReviewOnly ? "No flagged titles found." : "No titles found."}
+          </p>
         </div>
       )}
 
       {/* Title list */}
-      {titles && titles.length > 0 && (
+      {visibleTitles && visibleTitles.length > 0 && (
         <div className="space-y-2">
-          {titles.map((title: NonNullable<typeof titles>[number]) => {
+          {visibleTitles.map((title: NonNullable<typeof visibleTitles>[number]) => {
             const ratingSummary = avgRating(title.ratings);
             const isExpanded = expandedTitle === title._id;
             const isTv = title.type === "tv";
-            const isStandalone = !isTv;
+            const isStandalone = canOpenAdminTitleSidebar(title.type);
+            const quality = assessRatingQuality({
+              confidence: title.ratingConfidence,
+              subtitleInfo: title.subtitleInfo,
+            });
 
             return (
               <div key={title._id} className="space-y-0">
@@ -214,7 +289,8 @@ export default function AdminTitlesPage() {
                   className={cn(
                     "flex items-center gap-3 rounded-lg border bg-card p-3 hover:shadow-sm transition-all",
                     isExpanded && "rounded-b-none border-b-0",
-                    isStandalone && "cursor-pointer hover:border-foreground/20"
+                    isStandalone && "cursor-pointer hover:border-foreground/20",
+                    quality.severity === "critical" && "border-red-200/80"
                   )}
                   role={isStandalone ? "button" : undefined}
                   tabIndex={isStandalone ? 0 : undefined}
@@ -299,6 +375,18 @@ export default function AdminTitlesPage() {
                       >
                         {title.status}
                       </Badge>
+                      {quality.needsReview && (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[10px] px-1.5 py-0",
+                            qualityBadgeClass(quality.severity)
+                          )}
+                          title={quality.reasons.join(" ")}
+                        >
+                          Needs review
+                        </Badge>
+                      )}
                       {ratingSummary !== null && (
                         <span className="text-xs text-muted-foreground">
                           Avg: {ratingSummary.toFixed(1)}
@@ -323,6 +411,23 @@ export default function AdminTitlesPage() {
                     tmdbId={title.tmdbId}
                     type={title.type}
                   />
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs gap-1 shrink-0"
+                    data-testid="admin-title-view-subtitles"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleViewSubtitles(
+                        { scope: "title", titleId: title._id },
+                        title.title
+                      );
+                    }}
+                  >
+                    <FileText className="size-3" />
+                    View subtitles
+                  </Button>
 
                   {/* Re-rate button */}
                   {(title.status === "rated" ||
@@ -362,6 +467,13 @@ export default function AdminTitlesPage() {
                         name,
                       })
                     }
+                    onViewSubtitles={(episodeId, name) =>
+                      void handleViewSubtitles(
+                        { scope: "episode", episodeId },
+                        name
+                      )
+                    }
+                    needsReviewOnly={needsReviewOnly}
                   />
                 )}
               </div>
@@ -411,6 +523,113 @@ export default function AdminTitlesPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={subtitleViewer !== null}
+        onOpenChange={(open) => {
+          if (!open) setSubtitleViewer(null);
+        }}
+      >
+        <DialogContent className="max-w-3xl" data-testid="admin-subtitle-viewer-dialog">
+          <DialogHeader>
+            <DialogTitle>Archived Subtitles</DialogTitle>
+            <DialogDescription>
+              {subtitleViewer?.label
+                ? `Transcript archive for ${subtitleViewer.label}`
+                : "Transcript archive"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {subtitleViewer?.loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-44 w-full" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid gap-1 text-[11px] text-muted-foreground">
+                <p>
+                  Status:{" "}
+                  <span className="text-foreground">
+                    {subtitleViewer?.subtitleStatus ?? "unknown"}
+                  </span>
+                </p>
+                {subtitleViewer?.source && (
+                  <p>
+                    Source:{" "}
+                    <span className="text-foreground">{subtitleViewer.source}</span>
+                  </p>
+                )}
+                {subtitleViewer?.language && (
+                  <p>
+                    Language:{" "}
+                    <span className="text-foreground">{subtitleViewer.language}</span>
+                  </p>
+                )}
+                {subtitleViewer?.dialogueLines != null && (
+                  <p>
+                    Dialogue lines:{" "}
+                    <span className="text-foreground">
+                      {subtitleViewer.dialogueLines}
+                    </span>
+                  </p>
+                )}
+                {subtitleViewer?.storageKey && (
+                  <p className="break-all">
+                    R2 key:{" "}
+                    <span className="text-foreground">{subtitleViewer.storageKey}</span>
+                  </p>
+                )}
+                {subtitleViewer?.storageBucket && (
+                  <p>
+                    Bucket:{" "}
+                    <span className="text-foreground">{subtitleViewer.storageBucket}</span>
+                  </p>
+                )}
+                {subtitleViewer?.storageBytes != null && (
+                  <p>
+                    Bytes:{" "}
+                    <span className="text-foreground">
+                      {subtitleViewer.storageBytes.toLocaleString()}
+                    </span>
+                  </p>
+                )}
+                {subtitleViewer?.uploadedAt && (
+                  <p>
+                    Uploaded:{" "}
+                    <span className="text-foreground">
+                      {new Date(subtitleViewer.uploadedAt).toLocaleString("en-US")}
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              {subtitleViewer?.found && subtitleViewer.transcript ? (
+                <>
+                  <Textarea
+                    readOnly
+                    value={subtitleViewer.transcript}
+                    className="min-h-[360px] text-xs font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    {subtitleViewer.transcript.length.toLocaleString()} characters
+                  </p>
+                </>
+              ) : (
+                <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  {subtitleViewer?.message ??
+                    "No archived subtitle transcript is available for this record."}
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubtitleViewer(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <EpisodeDetailSheet
         episodeId={selectedEpisode?.episodeId ?? null}
         open={selectedEpisode !== null}
@@ -422,6 +641,9 @@ export default function AdminTitlesPage() {
         titleId={selectedStandaloneTitleId}
         open={selectedStandaloneTitleId !== null}
         onOpenChange={(open) => !open && setSelectedStandaloneTitleId(null)}
+        onViewSubtitles={(titleId, label) =>
+          void handleViewSubtitles({ scope: "title", titleId }, label)
+        }
       />
     </div>
   );
@@ -469,11 +691,15 @@ function EpisodePanel({
   titleName,
   onEpisodeOpen,
   onReRate,
+  onViewSubtitles,
+  needsReviewOnly,
 }: {
   titleId: Id<"titles">;
   titleName: string;
   onEpisodeOpen: (episodeId: Id<"episodes">, showTitle: string) => void;
   onReRate: (episodeId: Id<"episodes">, name: string) => void;
+  onViewSubtitles: (episodeId: Id<"episodes">, name: string) => void;
+  needsReviewOnly: boolean;
 }) {
   const episodes = useQuery(api.admin.getEpisodesForTitle, { titleId });
   const episodeCosts = useQuery(api.admin.getEpisodeRatingCostsForTitle, {
@@ -501,9 +727,28 @@ function EpisodePanel({
     );
   }
 
+  const visibleEpisodes = needsReviewOnly
+    ? episodes.filter((episode) =>
+        assessRatingQuality({
+          confidence: episode.ratingConfidence,
+          subtitleInfo: episode.subtitleInfo,
+        }).needsReview
+      )
+    : episodes;
+
+  if (visibleEpisodes.length === 0) {
+    return (
+      <div className="rounded-b-lg border bg-muted/30 p-4 text-center">
+        <p className="text-xs text-muted-foreground">
+          No flagged episodes found for this title.
+        </p>
+      </div>
+    );
+  }
+
   // Group by season
-  const seasons = new Map<number, typeof episodes>();
-  for (const ep of episodes) {
+  const seasons = new Map<number, typeof visibleEpisodes>();
+  for (const ep of visibleEpisodes) {
     const s = seasons.get(ep.seasonNumber) ?? [];
     s.push(ep);
     seasons.set(ep.seasonNumber, s);
@@ -540,10 +785,17 @@ function EpisodePanel({
                 const epAvg = avgRating(ep.ratings);
                 const episodeCostCents =
                   episodeCosts?.episodeLatestCostCents[ep._id];
+                const quality = assessRatingQuality({
+                  confidence: ep.ratingConfidence,
+                  subtitleInfo: ep.subtitleInfo,
+                });
                 return (
                   <div
                     key={ep._id}
-                    className="flex items-center gap-3 rounded-md border bg-card px-3 py-2 text-xs transition-colors hover:bg-muted/40 cursor-pointer"
+                    className={cn(
+                      "flex items-center gap-3 rounded-md border bg-card px-3 py-2 text-xs transition-colors hover:bg-muted/40 cursor-pointer",
+                      quality.severity === "critical" && "border-red-200/80"
+                    )}
                     role="button"
                     tabIndex={0}
                     onClick={() => onEpisodeOpen(ep._id, titleName)}
@@ -574,6 +826,18 @@ function EpisodePanel({
                     >
                       {ep.status}
                     </Badge>
+                    {quality.needsReview && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] px-1.5 py-0 shrink-0",
+                          qualityBadgeClass(quality.severity)
+                        )}
+                        title={quality.reasons.join(" ")}
+                      >
+                        Review
+                      </Badge>
+                    )}
 
                     {/* Avg rating */}
                     {epAvg !== null && (
@@ -598,6 +862,23 @@ function EpisodePanel({
                         })}
                       </span>
                     )}
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[10px] gap-1 px-2 shrink-0"
+                      data-testid="admin-episode-view-subtitles"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onViewSubtitles(
+                          ep._id,
+                          `${titleName} S${ep.seasonNumber}E${ep.episodeNumber}`
+                        );
+                      }}
+                    >
+                      <FileText className="size-2.5" />
+                      Subtitles
+                    </Button>
 
                     {/* Re-rate button */}
                     {(ep.status === "rated" || ep.status === "failed") && (
@@ -632,13 +913,19 @@ function StandaloneTitleSheet({
   titleId,
   open,
   onOpenChange,
+  onViewSubtitles,
 }: {
   titleId: Id<"titles"> | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onViewSubtitles: (titleId: Id<"titles">, label: string) => void;
 }) {
   const title = useQuery(api.titles.getTitle, titleId ? { titleId } : "skip");
   const ratings = title?.ratings as CategoryRatings | undefined;
+  const quality = assessRatingQuality({
+    confidence: title?.ratingConfidence,
+    subtitleInfo: title?.subtitleInfo,
+  });
   const hasRatings =
     !!ratings &&
     (title?.status === "rated" ||
@@ -672,6 +959,18 @@ function StandaloneTitleSheet({
             </p>
           )}
 
+          {title && title.ratings && quality.needsReview && (
+            <div
+              className={cn(
+                "rounded-lg border px-3 py-2 text-xs",
+                qualityBadgeClass(quality.severity)
+              )}
+            >
+              <p className="font-semibold">Needs review</p>
+              <p className="mt-0.5">{quality.reasons.join(" ")}</p>
+            </div>
+          )}
+
           {hasRatings && ratings && (
             <RatingBreakdown
               ratings={ratings}
@@ -698,6 +997,19 @@ function StandaloneTitleSheet({
               {title.ratingConfidence != null &&
                 ` · Confidence: ${Math.round(title.ratingConfidence * 100)}%`}
             </p>
+          )}
+
+          {title && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-1.5"
+              data-testid="admin-standalone-view-subtitles"
+              onClick={() => onViewSubtitles(title._id, title.title)}
+            >
+              <FileText className="size-3" />
+              View archived subtitles
+            </Button>
           )}
 
           {title && (

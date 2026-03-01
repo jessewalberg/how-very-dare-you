@@ -4,9 +4,40 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { requireAdmin } from "./lib/adminAuth";
 import { extractSupportedCatalogModels } from "../lib/openrouterModels";
+import { assessRatingQuality, type QualitySeverity } from "../lib/ratingQuality";
+import { downloadTextFromR2, isR2Configured, uploadTextToR2 } from "../lib/r2";
 
 const DEFAULT_OPENROUTER_RATING_MODEL = "anthropic/claude-sonnet-4";
 const RATING_MODEL_CONFIG_KEY = "openrouter_rating_model";
+
+function slugForKey(input: string): string {
+  const slug = input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const capped = slug.slice(0, 80);
+  return capped || "untitled";
+}
+
+function buildManualTitleTranscriptKey(args: {
+  tmdbId: number;
+  type: "movie" | "tv" | "youtube";
+  title: string;
+}): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `manual/titles/${args.type}/${args.tmdbId}/${stamp}-${slugForKey(args.title)}.txt`;
+}
+
+function buildManualEpisodeTranscriptKey(args: {
+  tmdbShowId: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  showTitle: string;
+}): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const code = `s${String(args.seasonNumber).padStart(2, "0")}e${String(args.episodeNumber).padStart(2, "0")}`;
+  return `manual/episodes/${args.tmdbShowId}/${code}/${stamp}-${slugForKey(args.showTitle)}.txt`;
+}
 
 function resolveFallbackRatingModel(): string {
   return (
@@ -75,7 +106,140 @@ export const getDashboardStats = query({
       failed: allQueue.filter((q) => q.status === "failed").length,
     };
 
-    return { titleStats, userStats, correctionStats, queueStats };
+    const titleQuality = allTitles.reduce(
+      (acc, title) => {
+        if (!title.ratings) return acc;
+        const assessment = assessRatingQuality({
+          confidence: title.ratingConfidence,
+          subtitleInfo: title.subtitleInfo,
+        });
+        if (!assessment.needsReview) return acc;
+        acc.needsReview += 1;
+        if (assessment.severity === "critical") acc.critical += 1;
+        return acc;
+      },
+      { needsReview: 0, critical: 0 }
+    );
+
+    const allEpisodes = await ctx.db.query("episodes").collect();
+    const episodeQuality = allEpisodes.reduce(
+      (acc, episode) => {
+        if (!episode.ratings) return acc;
+        const assessment = assessRatingQuality({
+          confidence: episode.ratingConfidence,
+          subtitleInfo: episode.subtitleInfo,
+        });
+        if (!assessment.needsReview) return acc;
+        acc.needsReview += 1;
+        if (assessment.severity === "critical") acc.critical += 1;
+        return acc;
+      },
+      { needsReview: 0, critical: 0 }
+    );
+
+    return {
+      titleStats,
+      userStats,
+      correctionStats,
+      queueStats,
+      qualityStats: {
+        titleNeedsReview: titleQuality.needsReview,
+        titleCritical: titleQuality.critical,
+        episodeNeedsReview: episodeQuality.needsReview,
+        episodeCritical: episodeQuality.critical,
+      },
+    };
+  },
+});
+
+export const getQualityReviewItems = query({
+  args: {
+    severity: v.optional(v.union(v.literal("warning"), v.literal("critical"))),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const titles = await ctx.db.query("titles").collect();
+    const episodes = await ctx.db.query("episodes").collect();
+    const titleById = new Map(titles.map((title) => [title._id, title] as const));
+
+    const items: {
+      key: string;
+      scope: "title" | "episode";
+      severity: Exclude<QualitySeverity, "none">;
+      reasons: string[];
+      confidence?: number;
+      subtitleStatus?: string;
+      ratedAt?: number;
+      titleId?: string;
+      episodeId?: string;
+      tmdbId?: number;
+      displayTitle: string;
+    }[] = [];
+
+    for (const title of titles) {
+      if (!title.ratings) continue;
+      const assessment = assessRatingQuality({
+        confidence: title.ratingConfidence,
+        subtitleInfo: title.subtitleInfo,
+      });
+      if (!assessment.needsReview) continue;
+      if (args.severity && assessment.severity !== args.severity) continue;
+      const severity = assessment.severity === "critical" ? "critical" : "warning";
+
+      items.push({
+        key: `title:${title._id}`,
+        scope: "title",
+        severity,
+        reasons: assessment.reasons,
+        confidence: title.ratingConfidence,
+        subtitleStatus: title.subtitleInfo?.status,
+        ratedAt: title.ratedAt,
+        titleId: title._id,
+        tmdbId: title.tmdbId,
+        displayTitle: `${title.title}${title.year > 0 ? ` (${title.year})` : ""}`,
+      });
+    }
+
+    for (const episode of episodes) {
+      if (!episode.ratings) continue;
+      const assessment = assessRatingQuality({
+        confidence: episode.ratingConfidence,
+        subtitleInfo: episode.subtitleInfo,
+      });
+      if (!assessment.needsReview) continue;
+      if (args.severity && assessment.severity !== args.severity) continue;
+      const severity = assessment.severity === "critical" ? "critical" : "warning";
+
+      const parentTitle = titleById.get(episode.titleId);
+      const showName = parentTitle?.title ?? "Unknown Show";
+      const label =
+        episode.name?.trim() || `Episode ${episode.episodeNumber}`;
+      const displayTitle = `${showName} S${episode.seasonNumber}E${episode.episodeNumber}: ${label}`;
+
+      items.push({
+        key: `episode:${episode._id}`,
+        scope: "episode",
+        severity,
+        reasons: assessment.reasons,
+        confidence: episode.ratingConfidence,
+        subtitleStatus: episode.subtitleInfo?.status,
+        ratedAt: episode.ratedAt,
+        titleId: episode.titleId,
+        episodeId: episode._id,
+        tmdbId: parentTitle?.tmdbId,
+        displayTitle,
+      });
+    }
+
+    const severityRank = { critical: 2, warning: 1 };
+    items.sort((a, b) => {
+      const severityDelta = severityRank[b.severity] - severityRank[a.severity];
+      if (severityDelta !== 0) return severityDelta;
+      return (b.ratedAt ?? 0) - (a.ratedAt ?? 0);
+    });
+
+    return items.slice(0, 200);
   },
 });
 
@@ -247,15 +411,53 @@ export const getQueueItems = query({
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
-    if (args.status) {
-      return await ctx.db
+    const queueItems = args.status
+      ? await ctx.db
         .query("ratingQueue")
         .withIndex("by_status_priority", (q) => q.eq("status", args.status!))
         .order("desc")
-        .take(200);
+        .take(200)
+      : await ctx.db.query("ratingQueue").order("desc").take(200);
+
+    const titleByTmdbType = new Map<string, Doc<"titles"> | null>();
+    const episodeTitleIdByEpisodeId = new Map<string, Doc<"titles">["_id"] | null>();
+    const enriched: Array<(typeof queueItems)[number] & { titleId?: Doc<"titles">["_id"] }> = [];
+
+    for (const item of queueItems) {
+      let resolvedTitleId = item.titleId;
+
+      // Episode rows should always open the parent title. Resolve through episodeId first.
+      if (!resolvedTitleId && item.type === "episode" && item.episodeId) {
+        const cacheKey = String(item.episodeId);
+        if (!episodeTitleIdByEpisodeId.has(cacheKey)) {
+          const episode = await ctx.db.get(item.episodeId);
+          episodeTitleIdByEpisodeId.set(cacheKey, episode?.titleId ?? null);
+        }
+        resolvedTitleId = episodeTitleIdByEpisodeId.get(cacheKey) ?? undefined;
+      }
+
+      // Backfill for legacy queue rows without titleId by matching tmdbId + type.
+      if (!resolvedTitleId) {
+        const matchType = item.type === "episode" ? "tv" : item.type;
+        const cacheKey = `${matchType}:${item.tmdbId}`;
+        if (!titleByTmdbType.has(cacheKey)) {
+          const candidates = await ctx.db
+            .query("titles")
+            .withIndex("by_tmdbId", (q) => q.eq("tmdbId", item.tmdbId))
+            .collect();
+          const exact = candidates.find((candidate) => candidate.type === matchType) ?? null;
+          titleByTmdbType.set(cacheKey, exact);
+        }
+        resolvedTitleId = titleByTmdbType.get(cacheKey)?._id;
+      }
+
+      enriched.push({
+        ...item,
+        titleId: resolvedTitleId,
+      });
     }
 
-    return await ctx.db.query("ratingQueue").order("desc").take(200);
+    return enriched;
   },
 });
 
@@ -426,7 +628,6 @@ export const archiveAndResetTitle = internalMutation({
         categoryEvidence: undefined,
         ratingModel: undefined,
         ratedAt: undefined,
-        subtitleInfo: undefined,
         videoAnalysis: undefined,
         status: "pending",
       });
@@ -449,11 +650,57 @@ export const resetEpisode = internalMutation({
       categoryEvidence: undefined,
       ratingModel: undefined,
       ratedAt: undefined,
-      subtitleInfo: undefined,
       status: "unrated",
     });
 
     return episode;
+  },
+});
+
+const manualSubtitleTargetValidator = v.union(
+  v.object({
+    scope: v.literal("title"),
+    titleId: v.id("titles"),
+  }),
+  v.object({
+    scope: v.literal("episode"),
+    episodeId: v.id("episodes"),
+  })
+);
+
+export const attachManualSubtitleArchive = internalMutation({
+  args: {
+    target: manualSubtitleTargetValidator,
+    subtitleInfo: v.object({
+      status: v.literal("success"),
+      source: v.string(),
+      language: v.optional(v.string()),
+      dialogueLines: v.optional(v.number()),
+      transcriptStorage: v.object({
+        provider: v.literal("r2"),
+        bucket: v.string(),
+        key: v.string(),
+        bytes: v.number(),
+        sha256: v.string(),
+        uploadedAt: v.number(),
+      }),
+    }),
+  },
+  handler: async (ctx, args) => {
+    if (args.target.scope === "title") {
+      const title = await ctx.db.get(args.target.titleId);
+      if (!title) throw new Error("Title not found");
+      await ctx.db.patch(args.target.titleId, {
+        subtitleInfo: args.subtitleInfo,
+      });
+      return;
+    }
+
+    const episode = await ctx.db.get(args.target.episodeId);
+    if (!episode) throw new Error("Episode not found");
+    await ctx.db.patch(args.target.episodeId, {
+      subtitleInfo: args.subtitleInfo,
+    });
   },
 });
 
@@ -484,6 +731,7 @@ export const reRateTitle = action({
     // Insert queue item
     const queueItemId = await ctx.runMutation(internal.admin.insertQueueItem, {
       tmdbId: title.tmdbId,
+      titleId: args.titleId,
       title: title.title,
       type: title.type as "movie" | "tv",
       source: "admin_rerate",
@@ -527,6 +775,7 @@ export const reRateEpisode = action({
     // Insert queue item
     const queueItemId = await ctx.runMutation(internal.admin.insertQueueItem, {
       tmdbId: episode.tmdbShowId,
+      titleId: episode.titleId,
       title: `${title.title} S${episode.seasonNumber}E${episode.episodeNumber}`,
       type: "episode",
       source: "admin_rerate",
@@ -541,6 +790,226 @@ export const reRateEpisode = action({
     });
 
     return { success: true };
+  },
+});
+
+export const getSubtitleArchive = action({
+  args: {
+    target: manualSubtitleTargetValidator,
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    found: boolean;
+    message?: string;
+    subtitleStatus?: string;
+    source?: string;
+    language?: string;
+    dialogueLines?: number;
+    storageKey?: string;
+    storageBucket?: string;
+    storageBytes?: number;
+    uploadedAt?: number;
+    transcript?: string;
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    await ctx.runQuery(internal.admin.getAdminUser, {
+      clerkId: identity.subject,
+    });
+
+    const record = await (args.target.scope === "title"
+      ? ctx.runQuery(api.titles.getTitle, {
+          titleId: args.target.titleId,
+        })
+      : ctx.runQuery(api.episodes.getEpisode, {
+          episodeId: args.target.episodeId,
+        }));
+    if (!record) {
+      throw new Error(args.target.scope === "title" ? "Title not found" : "Episode not found");
+    }
+
+    const subtitleInfo = record.subtitleInfo as
+      | {
+          status?: string;
+          source?: string;
+          language?: string;
+          dialogueLines?: number;
+          transcriptStorage?: {
+            key: string;
+            bucket: string;
+            bytes: number;
+            uploadedAt: number;
+          };
+        }
+      | undefined;
+    const storage = subtitleInfo?.transcriptStorage;
+    if (!storage) {
+      return {
+        found: false,
+        message: "No archived subtitle transcript exists for this record yet.",
+        subtitleStatus: subtitleInfo?.status,
+        source: subtitleInfo?.source,
+        language: subtitleInfo?.language,
+        dialogueLines: subtitleInfo?.dialogueLines,
+      };
+    }
+
+    if (!isR2Configured()) {
+      return {
+        found: false,
+        message:
+          "R2 is not configured for reads in this environment. Set R2 env vars to view archived subtitles.",
+        subtitleStatus: subtitleInfo?.status,
+        source: subtitleInfo?.source,
+        language: subtitleInfo?.language,
+        dialogueLines: subtitleInfo?.dialogueLines,
+        storageKey: storage.key,
+      };
+    }
+
+    const transcript = await downloadTextFromR2({
+      key: storage.key,
+      bucket: storage.bucket,
+    });
+    if (!transcript || transcript.trim().length === 0) {
+      return {
+        found: false,
+        message:
+          "Subtitle archive metadata exists, but the transcript text could not be loaded.",
+        subtitleStatus: subtitleInfo?.status,
+        source: subtitleInfo?.source,
+        language: subtitleInfo?.language,
+        dialogueLines: subtitleInfo?.dialogueLines,
+        storageKey: storage.key,
+        storageBucket: storage.bucket,
+      };
+    }
+
+    return {
+      found: true,
+      subtitleStatus: subtitleInfo?.status,
+      source: subtitleInfo?.source,
+      language: subtitleInfo?.language,
+      dialogueLines: subtitleInfo?.dialogueLines,
+      storageKey: storage.key,
+      storageBucket: storage.bucket,
+      storageBytes: storage.bytes,
+      uploadedAt: storage.uploadedAt,
+      transcript,
+    };
+  },
+});
+
+export const addManualSubtitleArchive = action({
+  args: {
+    target: manualSubtitleTargetValidator,
+    transcript: v.string(),
+    rerate: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    await ctx.runQuery(internal.admin.getAdminUser, {
+      clerkId: identity.subject,
+    });
+
+    const transcript = args.transcript.trim();
+    if (transcript.length < 20) {
+      throw new Error("Transcript text is too short");
+    }
+
+    const dialogueLines = transcript
+      .split("\n")
+      .filter((line) => line.trim().length > 0).length;
+
+    if (args.target.scope === "title") {
+      const title = await ctx.runQuery(api.titles.getTitle, {
+        titleId: args.target.titleId,
+      });
+      if (!title) throw new Error("Title not found");
+
+      const key = buildManualTitleTranscriptKey({
+        tmdbId: title.tmdbId,
+        type: title.type,
+        title: title.title,
+      });
+      const stored = await uploadTextToR2({ key, text: transcript });
+      if (!stored) {
+        throw new Error(
+          "R2 upload failed or is not configured. Set R2 env vars first."
+        );
+      }
+
+      await ctx.runMutation(internal.admin.attachManualSubtitleArchive, {
+        target: args.target,
+        subtitleInfo: {
+          status: "success",
+          source: "admin_manual",
+          language: "en",
+          dialogueLines,
+          transcriptStorage: stored,
+        },
+      });
+
+      if (args.rerate) {
+        await ctx.runAction(api.admin.reRateTitle, { titleId: args.target.titleId });
+      }
+
+      return {
+        success: true,
+        scope: "title" as const,
+        key: stored.key,
+        bytes: stored.bytes,
+      };
+    }
+
+    const episode = await ctx.runQuery(api.episodes.getEpisode, {
+      episodeId: args.target.episodeId,
+    });
+    if (!episode) throw new Error("Episode not found");
+    const parentTitle = await ctx.runQuery(api.titles.getTitle, {
+      titleId: episode.titleId,
+    });
+    if (!parentTitle) throw new Error("Parent title not found");
+
+    const key = buildManualEpisodeTranscriptKey({
+      tmdbShowId: episode.tmdbShowId,
+      seasonNumber: episode.seasonNumber,
+      episodeNumber: episode.episodeNumber,
+      showTitle: parentTitle.title,
+    });
+    const stored = await uploadTextToR2({ key, text: transcript });
+    if (!stored) {
+      throw new Error(
+        "R2 upload failed or is not configured. Set R2 env vars first."
+      );
+    }
+
+    await ctx.runMutation(internal.admin.attachManualSubtitleArchive, {
+      target: args.target,
+      subtitleInfo: {
+        status: "success",
+        source: "admin_manual",
+        language: "en",
+        dialogueLines,
+        transcriptStorage: stored,
+      },
+    });
+
+    if (args.rerate) {
+      await ctx.runAction(api.admin.reRateEpisode, {
+        episodeId: args.target.episodeId,
+      });
+    }
+
+    return {
+      success: true,
+      scope: "episode" as const,
+      key: stored.key,
+      bytes: stored.bytes,
+    };
   },
 });
 
@@ -640,6 +1109,7 @@ export const getTitleForReRate = internalQuery({
 export const insertQueueItem = internalMutation({
   args: {
     tmdbId: v.number(),
+    titleId: v.optional(v.id("titles")),
     title: v.string(),
     type: v.union(v.literal("movie"), v.literal("tv"), v.literal("episode")),
     source: v.literal("admin_rerate"),
@@ -650,6 +1120,7 @@ export const insertQueueItem = internalMutation({
   handler: async (ctx, args) => {
     return await ctx.db.insert("ratingQueue", {
       tmdbId: args.tmdbId,
+      titleId: args.titleId,
       title: args.title,
       type: args.type,
       priority: 100,

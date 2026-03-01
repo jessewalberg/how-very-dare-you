@@ -17,6 +17,8 @@ import { RatingBreakdown } from "@/components/rating/RatingBreakdown";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import type { CategoryRatings } from "@/lib/scoring";
+import { assessRatingQuality } from "@/lib/ratingQuality";
+import { cn } from "@/lib/utils";
 
 interface EpisodeDetailSheetProps {
   episodeId: Id<"episodes"> | null;
@@ -43,6 +45,10 @@ export function EpisodeDetailSheet({
   const displayRatings = hasRatings
     ? (episode.ratings as CategoryRatings)
     : null;
+  const quality = assessRatingQuality({
+    confidence: episode?.ratingConfidence,
+    subtitleInfo: episode?.subtitleInfo,
+  });
   const episodeOverstimulation = episode?.ratings?.overstimulation;
   const overstimulationNote =
     episodeOverstimulation === undefined
@@ -92,6 +98,20 @@ export function EpisodeDetailSheet({
             <p className="text-sm leading-relaxed text-muted-foreground">
               {episode.overview}
             </p>
+          )}
+
+          {isAdmin && episode?.ratings && quality.needsReview && (
+            <div
+              className={cn(
+                "rounded-lg border px-3 py-2 text-xs",
+                quality.severity === "critical"
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
+              )}
+            >
+              <p className="font-semibold">Needs quality review</p>
+              <p className="mt-0.5">{quality.reasons.join(" ")}</p>
+            </div>
           )}
 
           {displayRatings && (

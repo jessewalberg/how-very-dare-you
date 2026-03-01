@@ -27,5 +27,8 @@ test.describe("Unauthenticated access guards", () => {
     await expect(
       page.getByRole("heading", { name: "Queue Monitor" })
     ).not.toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Rating Quality Review" })
+    ).not.toBeVisible();
   });
 });

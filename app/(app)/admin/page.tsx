@@ -4,6 +4,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowRight,
   Film,
   ListOrdered,
@@ -205,14 +206,14 @@ export default function AdminDashboardPage() {
       </div>
 
       {!stats ? (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-40 rounded-xl" />
           ))}
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard
               title="Titles"
               icon={Film}
@@ -257,6 +258,32 @@ export default function AdminDashboardPage() {
                 { label: "processing", value: stats.queueStats.processing },
                 { label: "completed", value: stats.queueStats.completed },
                 { label: "failed", value: stats.queueStats.failed },
+              ]}
+            />
+            <StatCard
+              title="Quality"
+              icon={AlertTriangle}
+              href="/admin/queue"
+              total={
+                (stats.qualityStats?.titleNeedsReview ?? 0) +
+                (stats.qualityStats?.episodeNeedsReview ?? 0)
+              }
+              breakdowns={[
+                {
+                  label: "titles flagged",
+                  value: stats.qualityStats?.titleNeedsReview ?? 0,
+                },
+                {
+                  label: "episodes flagged",
+                  value: stats.qualityStats?.episodeNeedsReview ?? 0,
+                },
+                {
+                  label: "critical",
+                  value:
+                    (stats.qualityStats?.titleCritical ?? 0) +
+                    (stats.qualityStats?.episodeCritical ?? 0),
+                  className: "text-red-600",
+                },
               ]}
             />
           </div>

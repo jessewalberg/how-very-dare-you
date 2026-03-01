@@ -14,11 +14,17 @@ import {
   searchSubtitles,
   downloadSubtitle,
   extractDialogue,
-  pickBestSubtitle,
+  pickSubtitleCandidates,
+  isOpenSubtitlesQuotaError,
   gatherTVEpisodeDialogue,
 } from "../lib/opensubtitles";
 import { chatCompletion, parseJSONResponse, estimateCostCents } from "../lib/openrouter";
-import { uploadTextToR2, type R2TranscriptStorage } from "../lib/r2";
+import {
+  downloadTextFromR2,
+  uploadTextToR2,
+  type R2TranscriptStorage,
+} from "../lib/r2";
+import { assessRatingQuality } from "../lib/ratingQuality";
 import {
   assertCategoryRatings,
   assertConfidence,
@@ -326,6 +332,17 @@ function toTranscriptExcerpt(text: string, maxLines = MAX_PROMPT_SUBTITLE_LINES)
   return text.split("\n").slice(0, maxLines).join("\n");
 }
 
+function pickSubtitleTextForArchival(args: {
+  subtitleTranscript?: string;
+  subtitleExcerpt?: string;
+}): string | undefined {
+  const transcript = args.subtitleTranscript?.trim();
+  if (transcript) return transcript;
+  const excerpt = args.subtitleExcerpt?.trim();
+  if (excerpt) return excerpt;
+  return undefined;
+}
+
 function slugForKey(input: string): string {
   const slug = input
     .toLowerCase()
@@ -373,9 +390,42 @@ async function maybeArchiveTranscript(
   }
 }
 
+async function maybeLoadArchivedTranscript(
+  storage: R2TranscriptStorage | undefined,
+  label: string
+): Promise<string | undefined> {
+  if (!storage) return undefined;
+  try {
+    const text = await downloadTextFromR2({
+      bucket: storage.bucket,
+      key: storage.key,
+    });
+    if (!text || text.trim().length === 0) {
+      console.warn(
+        `[R2] Archived subtitle not found or empty for ${label} key=${storage.key}`
+      );
+      return undefined;
+    }
+    console.log(
+      `[R2] Loaded archived subtitle for ${label} key=${storage.key} chars=${text.length}`
+    );
+    return text;
+  } catch (e) {
+    console.error(
+      `[R2] Failed to load archived subtitle for ${label} key=${storage.key}:`,
+      e
+    );
+    return undefined;
+  }
+}
+
 async function gatherMovieData(
   tmdbId: number,
-  options: { includeSubtitles: boolean }
+  options: {
+    includeSubtitles: boolean;
+    archivedSubtitleText?: string;
+    archivedTranscriptStorage?: R2TranscriptStorage;
+  }
 ): Promise<GatheredData> {
   const tmdbKey = process.env.TMDB_API_KEY!;
   const omdbKey = process.env.OMDB_API_KEY;
@@ -420,6 +470,20 @@ async function gatherMovieData(
     }
   }
 
+  const archivedText = options.archivedSubtitleText?.trim();
+  if (archivedText) {
+    data.subtitleTranscript = archivedText;
+    data.subtitleExcerpt = toTranscriptExcerpt(archivedText);
+    data.subtitleInfo = {
+      status: "success",
+      source: "r2_archive",
+      language: "en",
+      dialogueLines: archivedText.split("\n").length,
+      transcriptStorage: options.archivedTranscriptStorage,
+    };
+    return data;
+  }
+
   // Fetch subtitles for dialogue analysis (8s timeout so it never blocks the pipeline)
   if (options.includeSubtitles && subtitlesKey && tmdb.imdb_id) {
     try {
@@ -427,15 +491,24 @@ async function gatherMovieData(
       const subtitleResult = await Promise.race([
         (async () => {
           const searchResults = await searchSubtitles(tmdb.imdb_id!, subtitlesKey);
-          const best = pickBestSubtitle(searchResults);
-          if (best) {
-            const srtText = await downloadSubtitle(best.fileId, subtitlesKey);
-            const transcript = extractDialogue(srtText, MAX_ARCHIVED_SUBTITLE_LINES);
-            const dialogue = transcript
-              ? toTranscriptExcerpt(transcript)
-              : extractDialogue(srtText, MAX_PROMPT_SUBTITLE_LINES);
-            const lines = transcript ? transcript.split("\n").length : 0;
-            return { dialogue, transcript, language: best.language, lines };
+          const candidates = pickSubtitleCandidates(searchResults, 5);
+          if (candidates.length === 0) return null;
+          for (const candidate of candidates) {
+            try {
+              const srtText = await downloadSubtitle(candidate.fileId, subtitlesKey);
+              const transcript = extractDialogue(srtText, MAX_ARCHIVED_SUBTITLE_LINES);
+              const dialogue = transcript
+                ? toTranscriptExcerpt(transcript)
+                : extractDialogue(srtText, MAX_PROMPT_SUBTITLE_LINES);
+              const lines = transcript ? transcript.split("\n").length : 0;
+              return { dialogue, transcript, language: candidate.language, lines };
+            } catch (e) {
+              if (isOpenSubtitlesQuotaError(e)) throw e;
+              console.warn(
+                `[OpenSubtitles] Movie candidate download failed file_id=${candidate.fileId} (continuing)`,
+                e
+              );
+            }
           }
           return null;
         })(),
@@ -456,7 +529,12 @@ async function gatherMovieData(
       }
     } catch (e) {
       console.error("Subtitle fetch failed (non-fatal):", e);
-      data.subtitleInfo = { status: "failed" };
+      data.subtitleInfo = {
+        status: "failed",
+        source: isOpenSubtitlesQuotaError(e)
+          ? "opensubtitles_quota"
+          : "opensubtitles",
+      };
     }
   } else if (!options.includeSubtitles) {
     data.subtitleInfo = { status: "skipped" };
@@ -467,7 +545,11 @@ async function gatherMovieData(
 
 async function gatherTVData(
   tmdbId: number,
-  options: { includeSubtitles: boolean }
+  options: {
+    includeSubtitles: boolean;
+    archivedSubtitleText?: string;
+    archivedTranscriptStorage?: R2TranscriptStorage;
+  }
 ): Promise<GatheredData> {
   const tmdbKey = process.env.TMDB_API_KEY!;
   const omdbKey = process.env.OMDB_API_KEY;
@@ -532,6 +614,20 @@ async function gatherTVData(
     }
   }
 
+  const archivedText = options.archivedSubtitleText?.trim();
+  if (archivedText) {
+    data.subtitleTranscript = archivedText;
+    data.subtitleExcerpt = toTranscriptExcerpt(archivedText);
+    data.subtitleInfo = {
+      status: "success",
+      source: "r2_archive",
+      language: "en",
+      dialogueLines: archivedText.split("\n").length,
+      transcriptStorage: options.archivedTranscriptStorage,
+    };
+    return data;
+  }
+
   // Fetch per-episode subtitles if we got an IMDB ID (15s timeout for multi-episode fetch)
   if (options.includeSubtitles && subtitlesKey && data.imdbId) {
     try {
@@ -555,7 +651,12 @@ async function gatherTVData(
       }
     } catch (e) {
       console.error("Subtitle fetch failed (non-fatal):", e);
-      data.subtitleInfo = { status: "failed" };
+      data.subtitleInfo = {
+        status: "failed",
+        source: isOpenSubtitlesQuotaError(e)
+          ? "opensubtitles_quota"
+          : "opensubtitles",
+      };
     }
   } else if (!options.includeSubtitles) {
     data.subtitleInfo = { status: "skipped" };
@@ -572,6 +673,26 @@ interface PipelineMetrics {
   estimatedCostCents: number;
 }
 
+function logQualityWarning(args: {
+  scope: "title" | "episode";
+  label: string;
+  confidence?: number;
+  subtitleStatus?: string;
+  reasons: string[];
+}): void {
+  if (args.reasons.length === 0) return;
+  console.warn(
+    "[QualityReview] Rating needs manual review:",
+    JSON.stringify({
+      scope: args.scope,
+      label: args.label,
+      confidence: args.confidence,
+      subtitleStatus: args.subtitleStatus,
+      reasons: args.reasons,
+    })
+  );
+}
+
 async function runRatingPipeline(
   ctx: ActionCtx,
   tmdbId: number,
@@ -585,27 +706,66 @@ async function runRatingPipeline(
   );
   const startTime = Date.now();
 
+  const existingTitle = await ctx.runQuery(api.titles.getTitleByTmdbId, {
+    tmdbId,
+  });
+  const archivedSubtitleText = await maybeLoadArchivedTranscript(
+    existingTitle?.subtitleInfo?.transcriptStorage,
+    `title tmdbId=${tmdbId}`
+  );
+  const archivedTranscriptStorage = archivedSubtitleText
+    ? existingTitle?.subtitleInfo?.transcriptStorage
+    : undefined;
+
   // 1. Gather data
   const data =
     type === "movie"
-      ? await gatherMovieData(tmdbId, options)
-      : await gatherTVData(tmdbId, options);
+      ? await gatherMovieData(tmdbId, {
+          ...options,
+          archivedSubtitleText,
+          archivedTranscriptStorage,
+        })
+      : await gatherTVData(tmdbId, {
+          ...options,
+          archivedSubtitleText,
+          archivedTranscriptStorage,
+        });
 
-  if (data.subtitleTranscript) {
-    const transcriptStorage = await maybeArchiveTranscript(
-      buildTitleTranscriptKey({
-        tmdbId,
-        type,
-        title: data.title,
-      }),
-      data.subtitleTranscript
-    );
-    if (transcriptStorage) {
-      data.subtitleInfo = {
-        ...(data.subtitleInfo ?? { status: "success" }),
-        transcriptStorage,
-      };
+  const archivalText = pickSubtitleTextForArchival({
+    subtitleTranscript: data.subtitleTranscript,
+    subtitleExcerpt: data.subtitleExcerpt,
+  });
+  if (archivalText) {
+    if (!data.subtitleInfo?.transcriptStorage) {
+      console.log(
+        `[R2] Attempting subtitle archival for title tmdbId=${tmdbId} type=${type} chars=${archivalText.length}`
+      );
+      const transcriptStorage = await maybeArchiveTranscript(
+        buildTitleTranscriptKey({
+          tmdbId,
+          type,
+          title: data.title,
+        }),
+        archivalText
+      );
+      if (transcriptStorage) {
+        data.subtitleInfo = {
+          ...(data.subtitleInfo ?? { status: "success" }),
+          transcriptStorage,
+        };
+        console.log(
+          `[R2] Subtitle archived for title tmdbId=${tmdbId} key=${transcriptStorage.key} bytes=${transcriptStorage.bytes}`
+        );
+      }
+    } else {
+      console.log(
+        `[R2] Reusing existing archived subtitle for title tmdbId=${tmdbId} key=${data.subtitleInfo.transcriptStorage.key}`
+      );
     }
+  } else {
+    console.log(
+      `[R2] No subtitle text to archive for title tmdbId=${tmdbId} subtitleStatus=${data.subtitleInfo?.status ?? "unknown"}`
+    );
   }
 
   // 2. Construct prompt
@@ -783,7 +943,11 @@ async function runEpisodeRatingPipeline(
     name?: string;
     overview?: string;
     runtime?: number;
-  }
+  },
+  options: {
+    archivedSubtitleText?: string;
+    archivedTranscriptStorage?: R2TranscriptStorage;
+  } = {}
 ): Promise<{
   result: EpisodeRatingResult;
   model: string;
@@ -802,7 +966,18 @@ async function runEpisodeRatingPipeline(
   let subtitleExcerpt: string | undefined;
   let subtitleTranscript: string | undefined;
   let subtitleInfo: SubtitleInfo | undefined;
-  if (subtitlesKey && showContext.imdbId) {
+  const archivedText = options.archivedSubtitleText?.trim();
+  if (archivedText) {
+    subtitleTranscript = archivedText;
+    subtitleExcerpt = toTranscriptExcerpt(archivedText);
+    subtitleInfo = {
+      status: "success",
+      source: "r2_archive",
+      language: "en",
+      dialogueLines: archivedText.split("\n").length,
+      transcriptStorage: options.archivedTranscriptStorage,
+    };
+  } else if (subtitlesKey && showContext.imdbId) {
     try {
       const { gatherSingleEpisodeDialogue } = await import("../lib/opensubtitles");
       const dialogue = await Promise.race([
@@ -829,28 +1004,53 @@ async function runEpisodeRatingPipeline(
       }
     } catch (e) {
       console.error("Episode subtitle fetch failed (non-fatal):", e);
-      subtitleInfo = { status: "failed" };
+      subtitleInfo = {
+        status: "failed",
+        source: isOpenSubtitlesQuotaError(e)
+          ? "opensubtitles_quota"
+          : "opensubtitles",
+      };
     }
   } else {
     subtitleInfo = { status: "skipped" };
   }
 
-  if (subtitleTranscript) {
-    const transcriptStorage = await maybeArchiveTranscript(
-      buildEpisodeTranscriptKey({
-        tmdbShowId: showContext.tmdbShowId,
-        seasonNumber: episodeData.seasonNumber,
-        episodeNumber: episodeData.episodeNumber,
-        showTitle: showContext.title,
-      }),
-      subtitleTranscript
-    );
-    if (transcriptStorage) {
-      subtitleInfo = {
-        ...(subtitleInfo ?? { status: "success" }),
-        transcriptStorage,
-      };
+  const archivalText = pickSubtitleTextForArchival({
+    subtitleTranscript,
+    subtitleExcerpt,
+  });
+  if (archivalText) {
+    if (!subtitleInfo?.transcriptStorage) {
+      console.log(
+        `[R2] Attempting subtitle archival for episode tmdbShowId=${showContext.tmdbShowId} S${episodeData.seasonNumber}E${episodeData.episodeNumber} chars=${archivalText.length}`
+      );
+      const transcriptStorage = await maybeArchiveTranscript(
+        buildEpisodeTranscriptKey({
+          tmdbShowId: showContext.tmdbShowId,
+          seasonNumber: episodeData.seasonNumber,
+          episodeNumber: episodeData.episodeNumber,
+          showTitle: showContext.title,
+        }),
+        archivalText
+      );
+      if (transcriptStorage) {
+        subtitleInfo = {
+          ...(subtitleInfo ?? { status: "success" }),
+          transcriptStorage,
+        };
+        console.log(
+          `[R2] Subtitle archived for episode tmdbShowId=${showContext.tmdbShowId} S${episodeData.seasonNumber}E${episodeData.episodeNumber} key=${transcriptStorage.key} bytes=${transcriptStorage.bytes}`
+        );
+      }
+    } else {
+      console.log(
+        `[R2] Reusing existing archived subtitle for episode tmdbShowId=${showContext.tmdbShowId} S${episodeData.seasonNumber}E${episodeData.episodeNumber} key=${subtitleInfo.transcriptStorage.key}`
+      );
     }
+  } else {
+    console.log(
+      `[R2] No subtitle text to archive for episode tmdbShowId=${showContext.tmdbShowId} S${episodeData.seasonNumber}E${episodeData.episodeNumber} subtitleStatus=${subtitleInfo?.status ?? "unknown"}`
+    );
   }
 
   const userMessage = constructEpisodeRatingPrompt({
@@ -909,6 +1109,19 @@ export const rateTitle = action({
       args.type,
       { includeSubtitles: true }
     );
+    const quality = assessRatingQuality({
+      confidence: result.confidence,
+      subtitleInfo: data.subtitleInfo,
+    });
+    if (quality.needsReview) {
+      logQualityWarning({
+        scope: "title",
+        label: `${data.title} (${args.type})`,
+        confidence: result.confidence,
+        subtitleStatus: data.subtitleInfo?.status,
+        reasons: quality.reasons,
+      });
+    }
 
     // Ensure title exists in DB (create if batch-discovered)
     const existing = await ctx.runQuery(api.titles.getTitleByTmdbId, {
@@ -998,10 +1211,37 @@ export const rateTitleOnDemand = action({
     type: v.union(v.literal("movie"), v.literal("tv")),
   },
   handler: async (ctx, args): Promise<void> => {
+    console.log(
+      "[rateTitleOnDemand] Starting pipeline:",
+      JSON.stringify({ tmdbId: args.tmdbId, type: args.type })
+    );
     // Check if already rated
     const existing = await ctx.runQuery(api.titles.getTitleByTmdbId, {
       tmdbId: args.tmdbId,
     });
+    if (existing) {
+      console.log(
+        "[rateTitleOnDemand] Existing title:",
+        JSON.stringify({
+          titleId: existing._id,
+          title: existing.title,
+          existingType: existing.type,
+          status: existing.status,
+        })
+      );
+      if (existing.type !== args.type) {
+        console.error(
+          "[rateTitleOnDemand] Type mismatch between request and existing title",
+          JSON.stringify({
+            tmdbId: args.tmdbId,
+            requestedType: args.type,
+            existingType: existing.type,
+            titleId: existing._id,
+            title: existing.title,
+          })
+        );
+      }
+    }
     if (existing?.status === "rated" || existing?.status === "reviewed") {
       return; // Already done
     }
@@ -1022,6 +1262,19 @@ export const rateTitleOnDemand = action({
         args.type,
         { includeSubtitles: true }
       );
+      const quality = assessRatingQuality({
+        confidence: result.confidence,
+        subtitleInfo: data.subtitleInfo,
+      });
+      if (quality.needsReview) {
+        logQualityWarning({
+          scope: "title",
+          label: `${data.title} (${args.type})`,
+          confidence: result.confidence,
+          subtitleStatus: data.subtitleInfo?.status,
+          reasons: quality.reasons,
+        });
+      }
 
       // Update title metadata if it was created as a stub
       if (existing && existing.year === 0) {
@@ -1183,8 +1436,28 @@ export const rateEpisodeOnDemand = action({
           name: episode.name ?? undefined,
           overview: episode.overview ?? undefined,
           runtime: episode.runtime ?? undefined,
+        },
+        {
+          archivedSubtitleText: await maybeLoadArchivedTranscript(
+            episode.subtitleInfo?.transcriptStorage,
+            `episode ${episode._id}`
+          ),
+          archivedTranscriptStorage: episode.subtitleInfo?.transcriptStorage,
         }
       );
+      const quality = assessRatingQuality({
+        confidence: result.confidence,
+        subtitleInfo,
+      });
+      if (quality.needsReview) {
+        logQualityWarning({
+          scope: "episode",
+          label: `${title.title} S${episode.seasonNumber}E${episode.episodeNumber}`,
+          confidence: result.confidence,
+          subtitleStatus: subtitleInfo?.status,
+          reasons: quality.reasons,
+        });
+      }
 
       // Save episode rating
       await ctx.runMutation(internal.episodes.saveEpisodeRating, {
@@ -1227,6 +1500,142 @@ export const rateEpisodeOnDemand = action({
   },
 });
 
+function compareSeasonNumber(a: number, b: number): number {
+  // Push season 0 specials behind regular seasons.
+  const aSpecial = a === 0 ? 1 : 0;
+  const bSpecial = b === 0 ? 1 : 0;
+  if (aSpecial !== bSpecial) return aSpecial - bSpecial;
+  return a - b;
+}
+
+async function rateFirstUnratedEpisodeForTvShow(
+  ctx: ActionCtx,
+  args: { tmdbId: number; queueTitle: string }
+): Promise<void> {
+  const show = await ctx.runQuery(api.titles.getTitleByTmdbId, {
+    tmdbId: args.tmdbId,
+  });
+  if (!show || show.type !== "tv") {
+    console.log(
+      "[processQueueItem] TV request fallback to title rating (missing/non-tv title):",
+      JSON.stringify({ tmdbId: args.tmdbId, queueTitle: args.queueTitle })
+    );
+    await ctx.runAction(api.ratings.rateTitleOnDemand, {
+      tmdbId: args.tmdbId,
+      type: "tv",
+    });
+    return;
+  }
+
+  // Ensure season metadata exists before selecting the first unrated episode.
+  if (!show.seasonData || show.seasonData.length === 0) {
+    await ctx.runAction(api.titles.populateSeasonData, {
+      titleId: show._id,
+    });
+  }
+
+  const refreshedShow = await ctx.runQuery(api.titles.getTitle, {
+    titleId: show._id,
+  });
+  if (!refreshedShow || refreshedShow.type !== "tv") {
+    throw new Error("TV title not found after season metadata refresh");
+  }
+
+  const seasonsFromMetadata = (refreshedShow.seasonData ?? [])
+    .map((s) => s.seasonNumber)
+    .filter((n) => Number.isFinite(n))
+    .sort(compareSeasonNumber);
+  const fallbackSeasonCount = Math.max(refreshedShow.numberOfSeasons ?? 0, 0);
+  const fallbackSeasonNumbers =
+    fallbackSeasonCount > 0
+      ? Array.from({ length: fallbackSeasonCount }, (_, i) => i + 1)
+      : [];
+
+  const orderedSeasonNumbers = Array.from(
+    new Set(
+      (seasonsFromMetadata.length > 0
+        ? seasonsFromMetadata
+        : fallbackSeasonNumbers
+      ).sort(compareSeasonNumber)
+    )
+  );
+
+  if (orderedSeasonNumbers.length === 0) {
+    console.log(
+      "[processQueueItem] TV request fallback to title rating (no seasons found):",
+      JSON.stringify({ tmdbId: args.tmdbId, titleId: refreshedShow._id })
+    );
+    await ctx.runAction(api.ratings.rateTitleOnDemand, {
+      tmdbId: args.tmdbId,
+      type: "tv",
+    });
+    return;
+  }
+
+  const loadEpisodes = async () =>
+    await ctx.runQuery(internal.admin.getEpisodesForTitleInternal, {
+      titleId: refreshedShow._id,
+    });
+
+  let episodes = await loadEpisodes();
+  const hasSeasonLoaded = (seasonNumber: number) =>
+    episodes.some((ep) => ep.seasonNumber === seasonNumber);
+  const findCandidate = (seasonNumber: number) =>
+    episodes
+      .filter(
+        (ep) =>
+          ep.seasonNumber === seasonNumber &&
+          ep.status !== "rated" &&
+          ep.status !== "rating"
+      )
+      .sort((a, b) => a.episodeNumber - b.episodeNumber)[0];
+
+  for (const seasonNumber of orderedSeasonNumbers) {
+    if (!hasSeasonLoaded(seasonNumber)) {
+      try {
+        await ctx.runAction(api.episodes.fetchSeasonEpisodes, {
+          titleId: refreshedShow._id,
+          tmdbShowId: refreshedShow.tmdbId,
+          seasonNumber,
+        });
+      } catch (e) {
+        console.error(
+          `[processQueueItem] Failed loading season ${seasonNumber} for tmdbId=${args.tmdbId}:`,
+          e
+        );
+      }
+      episodes = await loadEpisodes();
+    }
+
+    const firstUnrated = findCandidate(seasonNumber);
+    if (firstUnrated) {
+      console.log(
+        "[processQueueItem] TV request routed to first unrated episode:",
+        JSON.stringify({
+          tmdbId: args.tmdbId,
+          titleId: refreshedShow._id,
+          episodeId: firstUnrated._id,
+          seasonNumber: firstUnrated.seasonNumber,
+          episodeNumber: firstUnrated.episodeNumber,
+        })
+      );
+      await ctx.runAction(api.ratings.rateEpisodeOnDemand, {
+        episodeId: firstUnrated._id,
+      });
+      return;
+    }
+  }
+
+  // All known episodes are already rated/in-progress. Keep show aggregate fresh.
+  console.log(
+    "[processQueueItem] TV request skipped (no unrated episodes found):",
+    JSON.stringify({ tmdbId: args.tmdbId, titleId: refreshedShow._id })
+  );
+  await ctx.runMutation(internal.titles.aggregateShowRatings, {
+    titleId: refreshedShow._id,
+  });
+}
+
 /** Process a single queue item through the full rating pipeline. */
 export const processQueueItem = action({
   args: { queueItemId: v.id("ratingQueue") },
@@ -1239,6 +1648,17 @@ export const processQueueItem = action({
       console.log("[processQueueItem] Item not found:", args.queueItemId);
       return;
     }
+    console.log(
+      "[processQueueItem] Loaded queue item:",
+      JSON.stringify({
+        queueItemId: item._id,
+        tmdbId: item.tmdbId,
+        type: item.type,
+        source: item.source,
+        status: item.status,
+        episodeId: item.episodeId,
+      })
+    );
     if (item.status !== "queued") {
       console.log("[processQueueItem] Skipping, status is:", item.status, "for", item.title);
       return;
@@ -1257,6 +1677,19 @@ export const processQueueItem = action({
           episodeId: item.episodeId,
         });
         console.log("[processQueueItem] Episode rating complete:", item.title);
+      } else if (item.type === "tv" && item.source === "user_request") {
+        console.log(
+          "[processQueueItem] TV user request routing to first unrated episode:",
+          item.title
+        );
+        await rateFirstUnratedEpisodeForTvShow(ctx, {
+          tmdbId: item.tmdbId,
+          queueTitle: item.title,
+        });
+        console.log(
+          "[processQueueItem] TV user request episode routing complete:",
+          item.title
+        );
       } else if (item.source === "user_request" || item.source === "admin_rerate") {
         console.log("[processQueueItem] On-demand rating:", item.title, "source:", item.source);
         await ctx.runAction(api.ratings.rateTitleOnDemand, {
@@ -1487,6 +1920,14 @@ export const requestOnDemandRating = mutation({
     type: v.union(v.literal("movie"), v.literal("tv")),
   },
   handler: async (ctx, args) => {
+    console.log(
+      "[requestOnDemandRating] Request received:",
+      JSON.stringify({
+        tmdbId: args.tmdbId,
+        title: args.title,
+        requestedType: args.type,
+      })
+    );
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Sign in required");
 
@@ -1495,6 +1936,31 @@ export const requestOnDemandRating = mutation({
       .query("titles")
       .withIndex("by_tmdbId", (q) => q.eq("tmdbId", args.tmdbId))
       .first();
+    if (existing) {
+      console.log(
+        "[requestOnDemandRating] Existing title hit by tmdbId:",
+        JSON.stringify({
+          titleId: existing._id,
+          existingType: existing.type,
+          requestedType: args.type,
+          status: existing.status,
+          title: existing.title,
+        })
+      );
+      if (existing.type !== args.type) {
+        console.error(
+          "[requestOnDemandRating] Type mismatch between request and existing title",
+          JSON.stringify({
+            tmdbId: args.tmdbId,
+            requestedType: args.type,
+            existingType: existing.type,
+            titleId: existing._id,
+            existingTitle: existing.title,
+            requestedTitle: args.title,
+          })
+        );
+      }
+    }
     if (existing?.status === "rating") {
       return existing._id;
     }
@@ -1567,6 +2033,7 @@ export const requestOnDemandRating = mutation({
     // Add to rating queue
     const queueItemId = await ctx.db.insert("ratingQueue", {
       tmdbId: args.tmdbId,
+      titleId,
       title: args.title,
       type: args.type,
       priority: 10,
@@ -1574,6 +2041,15 @@ export const requestOnDemandRating = mutation({
       status: "queued",
       createdAt: Date.now(),
     });
+    console.log(
+      "[requestOnDemandRating] Queue item created:",
+      JSON.stringify({
+        queueItemId,
+        tmdbId: args.tmdbId,
+        type: args.type,
+        source: "user_request",
+      })
+    );
 
     // Schedule the rating action to run immediately
     await ctx.scheduler.runAfter(0, api.ratings.processQueueItem, {
@@ -1790,6 +2266,7 @@ export const completeQueueItemById = internalMutation({
 export const addToQueue = internalMutation({
   args: {
     tmdbId: v.number(),
+    titleId: v.optional(v.id("titles")),
     title: v.string(),
     type: v.union(v.literal("movie"), v.literal("tv")),
     priority: v.number(),

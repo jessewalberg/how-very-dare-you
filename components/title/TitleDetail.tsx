@@ -46,6 +46,7 @@ import {
   isNoFlags,
   type CategoryRatings,
 } from "@/lib/scoring";
+import { canOpenUserEpisodeSidebar } from "@/lib/sidebarBehavior";
 
 interface TitleDetailProps {
   preloadedTitle: Preloaded<typeof api.titles.getTitle>;
@@ -127,6 +128,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const showTitleRateAction = canInitialRateTitle || canReRateTitle;
   const titleRateButtonLabel = canReRateTitle ? "Re-Rate Title" : "Rate This Title";
   const canRefreshSeasonData = isAdmin && title.type === "tv";
+  const canOpenEpisodeSidebar = canOpenUserEpisodeSidebar(title.type);
 
   async function handleRequestTitleRating() {
     if (!title) return;
@@ -337,7 +339,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           )}
 
           {/* Per-episode ratings (new system) */}
-          {title.type === "tv" && title.tmdbId && (
+          {canOpenEpisodeSidebar && title.tmdbId && (
             <>
               <Separator />
               <SeasonList

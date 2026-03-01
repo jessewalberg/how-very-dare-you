@@ -328,6 +328,7 @@ export const requestEpisodeRating = mutation({
     // Add to rating queue
     const queueItemId = await ctx.db.insert("ratingQueue", {
       tmdbId: episode.tmdbShowId,
+      titleId: episode.titleId,
       title: `${title.title} S${episode.seasonNumber}E${episode.episodeNumber}`,
       type: "episode",
       priority: 10,

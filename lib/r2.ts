@@ -217,3 +217,82 @@ export async function uploadTextToR2(
     uploadedAt: Date.now(),
   };
 }
+
+export async function downloadTextFromR2(args: {
+  key: string;
+  bucket?: string;
+}): Promise<string | null> {
+  const config = getR2Config();
+  if (!config) return null;
+
+  const objectKey = args.key.replace(/^\/+/, "");
+  if (!objectKey) return null;
+
+  const bucket = args.bucket ?? config.bucket;
+  const encodedKey = objectKey.split("/").map(encodePathSegment).join("/");
+  const encodedBucket = encodePathSegment(bucket);
+  const endpointUrl = new URL(config.endpoint);
+  const host = endpointUrl.host;
+  const requestPath = `/${encodedBucket}/${encodedKey}`;
+  const requestUrl = `${config.endpoint}${requestPath}`;
+
+  const payloadHash = await sha256Hex("");
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const credentialScope = `${dateStamp}/auto/s3/aws4_request`;
+
+  const canonicalHeaders = [
+    `host:${host}\n`,
+    `x-amz-content-sha256:${payloadHash}\n`,
+    `x-amz-date:${amzDate}\n`,
+  ].join("");
+  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
+  const canonicalRequest = [
+    "GET",
+    requestPath,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join("\n");
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    await sha256Hex(canonicalRequest),
+  ].join("\n");
+
+  const kDate = await hmacSha256(`AWS4${config.secretAccessKey}`, dateStamp);
+  const kRegion = await hmacSha256(kDate, "auto");
+  const kService = await hmacSha256(kRegion, "s3");
+  const kSigning = await hmacSha256(kService, "aws4_request");
+  const signature = toHex(await hmacSha256(kSigning, stringToSign));
+
+  const authorization = [
+    `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}`,
+    `SignedHeaders=${signedHeaders}`,
+    `Signature=${signature}`,
+  ].join(", ");
+
+  const res = await fetch(requestUrl, {
+    method: "GET",
+    headers: {
+      Authorization: authorization,
+      "x-amz-content-sha256": payloadHash,
+      "x-amz-date": amzDate,
+    },
+  });
+
+  if (res.status === 404) return null;
+
+  if (!res.ok) {
+    const responseText = await res.text().catch(() => "");
+    const details = responseText ? ` ${responseText.slice(0, 300)}` : "";
+    throw new Error(
+      `R2 download failed: ${res.status} ${res.statusText}.${details}`
+    );
+  }
+
+  return await res.text();
+}

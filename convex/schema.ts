@@ -253,6 +253,7 @@ export default defineSchema({
 
   ratingQueue: defineTable({
     tmdbId: v.number(),
+    titleId: v.optional(v.id("titles")),
     title: v.string(),
     type: v.union(v.literal("movie"), v.literal("tv"), v.literal("episode")),
     priority: v.number(),

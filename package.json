@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test:unit": "bun tests/unit/ratingQuality.unit.ts && bun tests/unit/sidebarBehavior.unit.ts && bun tests/unit/adminSubtitleViewer.unit.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
