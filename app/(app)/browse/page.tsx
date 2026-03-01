@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -7,6 +8,14 @@ import { FilterSidebar } from "@/components/browse/FilterSidebar";
 import { TitleGrid } from "@/components/browse/TitleGrid";
 
 export default function BrowsePage() {
+  return (
+    <Suspense>
+      <BrowseContent />
+    </Suspense>
+  );
+}
+
+function BrowseContent() {
   const searchParams = useSearchParams();
   const typeParam = searchParams.get("type") as
     | "movie"
