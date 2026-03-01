@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import SearchPageClient from "./SearchPageClient";
 
@@ -30,5 +31,9 @@ export async function generateMetadata(props: {
 }
 
 export default function SearchPage() {
-  return <SearchPageClient />;
+  return (
+    <Suspense>
+      <SearchPageClient />
+    </Suspense>
+  );
 }
