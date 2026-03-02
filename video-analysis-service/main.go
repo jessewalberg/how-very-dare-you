@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
@@ -23,16 +25,16 @@ type TimingInfo struct {
 }
 
 type AnalysisResponse struct {
-	CutsPerMinute      float64    `json:"cuts_per_minute"`
-	AvgCutDuration     float64    `json:"avg_cut_duration_seconds"`
-	TotalCuts          int        `json:"total_cuts"`
-	TotalDuration      float64    `json:"total_duration_seconds"`
-	AvgSaturation      float64    `json:"avg_saturation"`
-	AvgBrightness      float64    `json:"avg_brightness"`
-	MaxSaturation      float64    `json:"max_saturation"`
-	BrightnessVariance float64    `json:"brightness_variance"`
-	ColorChangeRate    float64    `json:"color_change_rate"`
-	FlashCount         int        `json:"flash_count"`
+	CutsPerMinute      float64     `json:"cuts_per_minute"`
+	AvgCutDuration     float64     `json:"avg_cut_duration_seconds"`
+	TotalCuts          int         `json:"total_cuts"`
+	TotalDuration      float64     `json:"total_duration_seconds"`
+	AvgSaturation      float64     `json:"avg_saturation"`
+	AvgBrightness      float64     `json:"avg_brightness"`
+	MaxSaturation      float64     `json:"max_saturation"`
+	BrightnessVariance float64     `json:"brightness_variance"`
+	ColorChangeRate    float64     `json:"color_change_rate"`
+	FlashCount         int         `json:"flash_count"`
 	Timing             *TimingInfo `json:"timing,omitempty"`
 }
 
@@ -69,6 +71,15 @@ func handleAnalyze(secret string) http.HandlerFunc {
 			return
 		}
 
+		log.Info("analysis request payload",
+			"video_url", req.VideoURL,
+			"video_host", videoHost(req.VideoURL),
+			"title", req.Title,
+			"type", req.Type,
+			"content_length", r.ContentLength,
+			"user_agent", r.UserAgent(),
+			"path", r.URL.Path,
+		)
 		log.Info("analysis started", "video_url", req.VideoURL, "title", req.Title, "type", req.Type)
 		totalStart := time.Now()
 
@@ -129,6 +140,17 @@ func handleAnalyze(secret string) http.HandlerFunc {
 			},
 		})
 	}
+}
+
+func videoHost(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "invalid_url"
+	}
+	if parsed.Host == "" {
+		return fmt.Sprintf("path:%s", parsed.Path)
+	}
+	return parsed.Host
 }
 
 func main() {

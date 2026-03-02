@@ -1,6 +1,8 @@
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import { searchTrailer, searchEpisodeClips, searchEpisodeVideo } from "../lib/youtube";
 import { chatCompletion, parseJSONResponse } from "../lib/openrouter";
 import { assertConfidence, assertSeverityScore } from "./lib/ratingValidation";
@@ -73,6 +75,8 @@ interface OverstimResult extends OverstimLLMResult {
 }
 
 const OVERSTIM_METHOD_VERSION = "overstim-v1";
+const OVERSTIM_MAX_ATTEMPTS = 3;
+const OVERSTIM_RETRY_DELAYS_MS = [30_000, 120_000];
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -151,157 +155,215 @@ async function rateMetrics(
 
 // ── Actions ──────────────────────────────────────────────
 
-/** Analyze a single title for overstimulation via video analysis pipeline. */
+async function runOverstimulationForTitle(
+  ctx: ActionCtx,
+  args: { titleId: Id<"titles">; force?: boolean }
+): Promise<void> {
+  const title = await ctx.runQuery(api.titles.getTitle, { titleId: args.titleId });
+  if (!title) throw new Error("Title not found");
+
+  // Skip redundant analyses unless explicitly forced (e.g. admin re-rate).
+  if (!args.force && title.videoAnalysis && title.ratings?.overstimulation !== undefined) {
+    console.log(`[Overstim] Skipping "${title.title}" (already analyzed)`);
+    return;
+  }
+
+  const serviceUrl = process.env.VIDEO_ANALYSIS_SERVICE_URL;
+  const apiSecret = process.env.VIDEO_ANALYSIS_API_SECRET;
+  const openRouterKey = process.env.OPENROUTER_API_KEY!;
+
+  if (!serviceUrl || !apiSecret) {
+    throw new Error("VIDEO_ANALYSIS_SERVICE_URL or VIDEO_ANALYSIS_API_SECRET not set");
+  }
+
+  const titleMeta = {
+    title: title.title,
+    type: title.type as "movie" | "tv" | "youtube",
+    year: title.year,
+    ageRating: title.ageRating,
+  };
+
+  // 1. Find and analyze trailer
+  const trailerId = await searchTrailer(title.title, title.year, title.type as "movie" | "tv");
+  if (!trailerId) {
+    console.log(`[Overstim] No trailer found for "${title.title}" — skipping`);
+    return;
+  }
+
+  console.log(`[Overstim] Found trailer ${trailerId} for "${title.title}"`);
+  const trailerMetrics = await analyzeVideo(trailerId, title.title, title.type, serviceUrl, apiSecret);
+  console.log(`[Overstim] Trailer metrics for "${title.title}":`, JSON.stringify(trailerMetrics));
+  const trailerResult = await rateMetrics(titleMeta, trailerMetrics, openRouterKey);
+
+  let severity: number;
+  let sourceType: "movie_trailer" | "tv_weighted" | "tv_trailer_fallback" =
+    "movie_trailer";
+  let formula = "round(clamp(trailer, 0, 4))";
+  let computedScore = trailerResult.severity;
+  let primaryVideoId = trailerId;
+  let episodeSampleDetails:
+    | {
+        requestedCount: number;
+        analyzedCount: number;
+        videoIds: string[];
+        severities: number[];
+        averageSeverity?: number;
+      }
+    | undefined;
+
+  if (title.type === "tv") {
+    // 2. For TV: search for episode clips
+    const episodeResults: Array<{ videoId: string; result: OverstimResult }> = [];
+    let requestedEpisodeCount = 0;
+    try {
+      const episodeIds = await searchEpisodeClips(title.title, 2);
+      requestedEpisodeCount = episodeIds.length;
+      console.log(`[Overstim] Found ${episodeIds.length} episode clips for "${title.title}"`);
+
+      for (const epId of episodeIds) {
+        try {
+          const epMetrics = await analyzeVideo(epId, title.title, title.type, serviceUrl, apiSecret);
+          const epResult = await rateMetrics(titleMeta, epMetrics, openRouterKey);
+          episodeResults.push({ videoId: epId, result: epResult });
+        } catch (e) {
+          console.error(`[Overstim] Episode clip ${epId} analysis failed (non-fatal):`, e instanceof Error ? e.message : e);
+        }
+      }
+
+      if (episodeIds.length > 0) {
+        primaryVideoId = episodeIds[0];
+      }
+    } catch (e) {
+      console.error(`[Overstim] Episode clip search failed (non-fatal):`, e instanceof Error ? e.message : e);
+    }
+
+    if (episodeResults.length > 0) {
+      // Weighted average: 70% episodes / 30% trailer (per spec)
+      const episodeAvg =
+        episodeResults.reduce((sum, r) => sum + r.result.severity, 0) /
+        episodeResults.length;
+      computedScore = episodeAvg * 0.7 + trailerResult.severity * 0.3;
+      severity = Math.round(computedScore);
+      severity = Math.max(0, Math.min(4, severity));
+      sourceType = "tv_weighted";
+      formula = "round(clamp((episode_avg*0.7)+(trailer*0.3), 0, 4))";
+      episodeSampleDetails = {
+        requestedCount: requestedEpisodeCount,
+        analyzedCount: episodeResults.length,
+        videoIds: episodeResults.map((r) => r.videoId),
+        severities: episodeResults.map((r) => r.result.severity),
+        averageSeverity: episodeAvg,
+      };
+      console.log(`[Overstim] TV weighted score: episodes=${episodeAvg.toFixed(1)} trailer=${trailerResult.severity} → ${severity}`);
+    } else {
+      // Trailer only — apply 0.7x bias correction
+      computedScore = trailerResult.severity * 0.7;
+      severity = Math.max(0, Math.round(computedScore));
+      sourceType = "tv_trailer_fallback";
+      formula = "round(clamp(trailer*0.7, 0, 4))";
+      episodeSampleDetails = {
+        requestedCount: requestedEpisodeCount,
+        analyzedCount: 0,
+        videoIds: [],
+        severities: [],
+      };
+      console.log(`[Overstim] TV bias correction (no episodes): ${trailerResult.severity} → ${severity}`);
+    }
+  } else {
+    // Movies: use trailer score directly
+    severity = trailerResult.severity;
+  }
+
+  // 3. Save to database
+  await ctx.runMutation(internal.healthRatings.saveOverstimulation, {
+    titleId: args.titleId,
+    overstimulation: severity,
+    videoAnalysis: {
+      youtubeVideoId: primaryVideoId,
+      analyzedAt: Date.now(),
+      cutsPerMinute: trailerMetrics.cuts_per_minute,
+      avgCutDuration: trailerMetrics.avg_cut_duration_seconds,
+      avgSaturation: trailerMetrics.avg_saturation,
+      avgBrightness: trailerMetrics.avg_brightness,
+      brightnessVariance: trailerMetrics.brightness_variance,
+      flashCount: trailerMetrics.flash_count,
+      trailerBiasCorrected: title.type === "tv",
+      derivation: {
+        methodVersion: OVERSTIM_METHOD_VERSION,
+        sourceType,
+        formula,
+        computedScore,
+        trailer: {
+          videoId: trailerId,
+          severity: trailerResult.severity,
+          confidence: trailerResult.confidence,
+          note: trailerResult.note,
+          model: trailerResult.model,
+        },
+        episodeSamples: episodeSampleDetails,
+      },
+    },
+  });
+
+  console.log(`[Overstim] Saved score ${severity} for "${title.title}"`);
+}
+
+/** Public entrypoint: enqueue title overstimulation analysis for background processing. */
 export const analyzeOverstimulation = action({
   args: { titleId: v.id("titles"), force: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<void> => {
-    const title = await ctx.runQuery(api.titles.getTitle, { titleId: args.titleId });
-    if (!title) throw new Error("Title not found");
-
-    // Skip redundant analyses unless explicitly forced (e.g. admin re-rate).
-    if (!args.force && title.videoAnalysis && title.ratings?.overstimulation !== undefined) {
-      console.log(`[Overstim] Skipping "${title.title}" (already analyzed)`);
-      return;
-    }
-
-    const serviceUrl = process.env.VIDEO_ANALYSIS_SERVICE_URL;
-    const apiSecret = process.env.VIDEO_ANALYSIS_API_SECRET;
-    const openRouterKey = process.env.OPENROUTER_API_KEY!;
-
-    if (!serviceUrl || !apiSecret) {
-      throw new Error("VIDEO_ANALYSIS_SERVICE_URL or VIDEO_ANALYSIS_API_SECRET not set");
-    }
-
-    const titleMeta = {
-      title: title.title,
-      type: title.type as "movie" | "tv" | "youtube",
-      year: title.year,
-      ageRating: title.ageRating,
-    };
-
-    // 1. Find and analyze trailer
-    const trailerId = await searchTrailer(title.title, title.year, title.type as "movie" | "tv");
-    if (!trailerId) {
-      console.log(`[Overstim] No trailer found for "${title.title}" — skipping`);
-      return;
-    }
-
-    console.log(`[Overstim] Found trailer ${trailerId} for "${title.title}"`);
-    const trailerMetrics = await analyzeVideo(trailerId, title.title, title.type, serviceUrl, apiSecret);
-    console.log(`[Overstim] Trailer metrics for "${title.title}":`, JSON.stringify(trailerMetrics));
-    const trailerResult = await rateMetrics(titleMeta, trailerMetrics, openRouterKey);
-
-    let severity: number;
-    let sourceType: "movie_trailer" | "tv_weighted" | "tv_trailer_fallback" =
-      "movie_trailer";
-    let formula = "round(clamp(trailer, 0, 4))";
-    let computedScore = trailerResult.severity;
-    let primaryVideoId = trailerId;
-    let episodeSampleDetails:
-      | {
-          requestedCount: number;
-          analyzedCount: number;
-          videoIds: string[];
-          severities: number[];
-          averageSeverity?: number;
-        }
-      | undefined;
-
-    if (title.type === "tv") {
-      // 2. For TV: search for episode clips
-      const episodeResults: Array<{ videoId: string; result: OverstimResult }> = [];
-      let requestedEpisodeCount = 0;
-      try {
-        const episodeIds = await searchEpisodeClips(title.title, 2);
-        requestedEpisodeCount = episodeIds.length;
-        console.log(`[Overstim] Found ${episodeIds.length} episode clips for "${title.title}"`);
-
-        for (const epId of episodeIds) {
-          try {
-            const epMetrics = await analyzeVideo(epId, title.title, title.type, serviceUrl, apiSecret);
-            const epResult = await rateMetrics(titleMeta, epMetrics, openRouterKey);
-            episodeResults.push({ videoId: epId, result: epResult });
-          } catch (e) {
-            console.error(`[Overstim] Episode clip ${epId} analysis failed (non-fatal):`, e instanceof Error ? e.message : e);
-          }
-        }
-
-        if (episodeIds.length > 0) {
-          primaryVideoId = episodeIds[0];
-        }
-      } catch (e) {
-        console.error(`[Overstim] Episode clip search failed (non-fatal):`, e instanceof Error ? e.message : e);
-      }
-
-      if (episodeResults.length > 0) {
-        // Weighted average: 70% episodes / 30% trailer (per spec)
-        const episodeAvg =
-          episodeResults.reduce((sum, r) => sum + r.result.severity, 0) /
-          episodeResults.length;
-        computedScore = episodeAvg * 0.7 + trailerResult.severity * 0.3;
-        severity = Math.round(computedScore);
-        severity = Math.max(0, Math.min(4, severity));
-        sourceType = "tv_weighted";
-        formula = "round(clamp((episode_avg*0.7)+(trailer*0.3), 0, 4))";
-        episodeSampleDetails = {
-          requestedCount: requestedEpisodeCount,
-          analyzedCount: episodeResults.length,
-          videoIds: episodeResults.map((r) => r.videoId),
-          severities: episodeResults.map((r) => r.result.severity),
-          averageSeverity: episodeAvg,
-        };
-        console.log(`[Overstim] TV weighted score: episodes=${episodeAvg.toFixed(1)} trailer=${trailerResult.severity} → ${severity}`);
-      } else {
-        // Trailer only — apply 0.7x bias correction
-        computedScore = trailerResult.severity * 0.7;
-        severity = Math.max(0, Math.round(computedScore));
-        sourceType = "tv_trailer_fallback";
-        formula = "round(clamp(trailer*0.7, 0, 4))";
-        episodeSampleDetails = {
-          requestedCount: requestedEpisodeCount,
-          analyzedCount: 0,
-          videoIds: [],
-          severities: [],
-        };
-        console.log(`[Overstim] TV bias correction (no episodes): ${trailerResult.severity} → ${severity}`);
-      }
-    } else {
-      // Movies: use trailer score directly
-      severity = trailerResult.severity;
-    }
-
-    // 3. Save to database
-    await ctx.runMutation(internal.healthRatings.saveOverstimulation, {
+    const jobId = await ctx.runMutation(internal.healthRatings.enqueueOverstimulationJob, {
       titleId: args.titleId,
-      overstimulation: severity,
-      videoAnalysis: {
-        youtubeVideoId: primaryVideoId,
-        analyzedAt: Date.now(),
-        cutsPerMinute: trailerMetrics.cuts_per_minute,
-        avgCutDuration: trailerMetrics.avg_cut_duration_seconds,
-        avgSaturation: trailerMetrics.avg_saturation,
-        avgBrightness: trailerMetrics.avg_brightness,
-        brightnessVariance: trailerMetrics.brightness_variance,
-        flashCount: trailerMetrics.flash_count,
-        trailerBiasCorrected: title.type === "tv",
-        derivation: {
-          methodVersion: OVERSTIM_METHOD_VERSION,
-          sourceType,
-          formula,
-          computedScore,
-          trailer: {
-            videoId: trailerId,
-            severity: trailerResult.severity,
-            confidence: trailerResult.confidence,
-            note: trailerResult.note,
-            model: trailerResult.model,
-          },
-          episodeSamples: episodeSampleDetails,
-        },
-      },
+      force: args.force,
+    });
+    await ctx.scheduler.runAfter(0, api.healthRatings.processOverstimulationJob, {
+      jobId,
+    });
+  },
+});
+
+/** Worker action for queued title overstimulation jobs. */
+export const processOverstimulationJob = action({
+  args: { jobId: v.id("overstimulationQueue") },
+  handler: async (ctx, args): Promise<void> => {
+    const job = await ctx.runQuery(internal.healthRatings.getOverstimulationJob, {
+      jobId: args.jobId,
+    });
+    if (!job || job.status !== "queued") return;
+
+    const attempts = job.attempts ?? 0;
+    await ctx.runMutation(internal.healthRatings.markOverstimulationJobProcessing, {
+      jobId: args.jobId,
+      attempts: attempts + 1,
     });
 
-    console.log(`[Overstim] Saved score ${severity} for "${title.title}"`);
+    try {
+      await runOverstimulationForTitle(ctx, {
+        titleId: job.titleId,
+        force: job.force,
+      });
+      await ctx.runMutation(internal.healthRatings.markOverstimulationJobCompleted, {
+        jobId: args.jobId,
+      });
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      if (attempts + 1 >= OVERSTIM_MAX_ATTEMPTS) {
+        await ctx.runMutation(internal.healthRatings.markOverstimulationJobFailed, {
+          jobId: args.jobId,
+          error: errorMessage,
+        });
+        throw e;
+      }
+
+      const delayMs = OVERSTIM_RETRY_DELAYS_MS[Math.min(attempts, OVERSTIM_RETRY_DELAYS_MS.length - 1)];
+      await ctx.runMutation(internal.healthRatings.markOverstimulationJobQueued, {
+        jobId: args.jobId,
+        error: errorMessage,
+      });
+      await ctx.scheduler.runAfter(delayMs, api.healthRatings.processOverstimulationJob, {
+        jobId: args.jobId,
+      });
+    }
   },
 });
 
@@ -421,6 +483,103 @@ export const runOverstimulationBatch = action({
 });
 
 // ── Internal Mutations ───────────────────────────────────
+
+export const enqueueOverstimulationJob = internalMutation({
+  args: {
+    titleId: v.id("titles"),
+    force: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("overstimulationQueue")
+      .withIndex("by_titleId", (q) => q.eq("titleId", args.titleId))
+      .collect();
+    const activeJob = existing.find(
+      (job) => job.status === "queued" || job.status === "processing"
+    );
+    if (activeJob) {
+      if (args.force && !activeJob.force) {
+        await ctx.db.patch(activeJob._id, {
+          force: true,
+          updatedAt: Date.now(),
+        });
+      }
+      return activeJob._id;
+    }
+
+    const now = Date.now();
+    return await ctx.db.insert("overstimulationQueue", {
+      titleId: args.titleId,
+      force: args.force,
+      status: "queued",
+      attempts: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const getOverstimulationJob = internalQuery({
+  args: { jobId: v.id("overstimulationQueue") },
+  handler: async (ctx, args) => await ctx.db.get(args.jobId),
+});
+
+export const markOverstimulationJobProcessing = internalMutation({
+  args: {
+    jobId: v.id("overstimulationQueue"),
+    attempts: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "processing",
+      attempts: args.attempts,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      lastError: undefined,
+    });
+  },
+});
+
+export const markOverstimulationJobCompleted = internalMutation({
+  args: { jobId: v.id("overstimulationQueue") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "completed",
+      completedAt: Date.now(),
+      updatedAt: Date.now(),
+      lastError: undefined,
+    });
+  },
+});
+
+export const markOverstimulationJobQueued = internalMutation({
+  args: {
+    jobId: v.id("overstimulationQueue"),
+    error: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "queued",
+      lastError: args.error,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const markOverstimulationJobFailed = internalMutation({
+  args: {
+    jobId: v.id("overstimulationQueue"),
+    error: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "failed",
+      completedAt: Date.now(),
+      updatedAt: Date.now(),
+      lastError: args.error,
+    });
+  },
+});
 
 export const saveOverstimulation = internalMutation({
   args: {

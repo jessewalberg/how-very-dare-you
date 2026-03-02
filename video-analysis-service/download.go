@@ -45,6 +45,7 @@ func writeCookiesFile() string {
 }
 
 func downloadVideo(ctx context.Context, videoURL string) (string, error) {
+	log := logFor(ctx)
 	tmpDir, err := os.MkdirTemp("", "video-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
@@ -70,13 +71,30 @@ func downloadVideo(ctx context.Context, videoURL string) (string, error) {
 	}
 
 	args = append(args, videoURL)
+	log.Info("yt-dlp starting",
+		"video_url", videoURL,
+		"tmp_dir", tmpDir,
+		"use_cookie_file", cookiesPath != "",
+		"use_cookie_browser", os.Getenv("YOUTUBE_COOKIES_BROWSER") != "",
+		"arg_count", len(args),
+	)
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Error("yt-dlp failed",
+			"video_url", videoURL,
+			"error", err,
+			"output", truncateForLog(string(output), 4000),
+		)
 		os.RemoveAll(tmpDir)
 		return "", fmt.Errorf("yt-dlp failed: %w", err)
+	}
+	if len(output) > 0 {
+		log.Info("yt-dlp output",
+			"video_url", videoURL,
+			"output", truncateForLog(string(output), 1200),
+		)
 	}
 
 	entries, _ := os.ReadDir(tmpDir)
