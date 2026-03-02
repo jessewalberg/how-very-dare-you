@@ -1,6 +1,8 @@
 // OpenSubtitles API client
 // Docs: https://ai.opensubtitles.com/docs
 
+import { logExternalRequest, logExternalResponse } from "@/lib/externalApiLogs";
+
 const BASE_URL = "https://api.opensubtitles.com/api/v1";
 const DEFAULT_USER_AGENT = "HowVeryDareYou v1";
 const AUTH_TOKEN_TTL_MS = 50 * 60 * 1000;
@@ -140,9 +142,11 @@ export async function searchSubtitles(
     url.searchParams.set("episode_number", String(options.episodeNumber));
   }
 
+  const requestLog = logExternalRequest("OpenSubtitles", "GET", url);
   const res = await fetch(url.toString(), {
     headers: await buildRequestHeaders(apiKey, true),
   });
+  logExternalResponse("OpenSubtitles", requestLog, res.status, res.statusText);
 
   if (!res.ok) {
     throw await buildApiError("OpenSubtitles API error", res);
@@ -228,11 +232,19 @@ export async function downloadSubtitle(
   apiKey: string
 ): Promise<string> {
   // Step 1: Get download link
-  const linkRes = await fetch(`${BASE_URL}/download`, {
+  const downloadEndpoint = `${BASE_URL}/download`;
+  const requestLog = logExternalRequest("OpenSubtitles", "POST", downloadEndpoint);
+  const linkRes = await fetch(downloadEndpoint, {
     method: "POST",
     headers: await buildRequestHeaders(apiKey, true),
     body: JSON.stringify({ file_id: fileId }),
   });
+  logExternalResponse(
+    "OpenSubtitles",
+    requestLog,
+    linkRes.status,
+    linkRes.statusText
+  );
 
   if (!linkRes.ok) {
     throw await buildApiError("OpenSubtitles download error", linkRes);
@@ -241,7 +253,14 @@ export async function downloadSubtitle(
   const linkData = (await linkRes.json()) as OpenSubtitlesDownload;
 
   // Step 2: Fetch the actual subtitle file
+  const subtitleRequestLog = logExternalRequest("OpenSubtitles", "GET", linkData.link);
   const subtitleRes = await fetch(linkData.link);
+  logExternalResponse(
+    "OpenSubtitles",
+    subtitleRequestLog,
+    subtitleRes.status,
+    subtitleRes.statusText
+  );
   if (!subtitleRes.ok) {
     throw new Error(
       `Failed to download subtitle file: ${subtitleRes.status} ${subtitleRes.statusText}`
@@ -394,7 +413,9 @@ async function getAuthToken(apiKey: string): Promise<string | undefined> {
     return tokenCache.token;
   }
 
-  const res = await fetch(`${BASE_URL}/login`, {
+  const loginEndpoint = `${BASE_URL}/login`;
+  const requestLog = logExternalRequest("OpenSubtitles", "POST", loginEndpoint);
+  const res = await fetch(loginEndpoint, {
     method: "POST",
     headers: {
       "Api-Key": apiKey,
@@ -403,6 +424,7 @@ async function getAuthToken(apiKey: string): Promise<string | undefined> {
     },
     body: JSON.stringify({ username, password }),
   });
+  logExternalResponse("OpenSubtitles", requestLog, res.status, res.statusText);
 
   if (!res.ok) {
     throw await buildApiError("OpenSubtitles login error", res);

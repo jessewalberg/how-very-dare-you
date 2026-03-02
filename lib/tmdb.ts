@@ -1,6 +1,8 @@
 // TMDB API client
 // Docs: https://developer.themoviedb.org/docs
 
+import { logExternalRequest, logExternalResponse } from "@/lib/externalApiLogs";
+
 const BASE_URL = "https://api.themoviedb.org/3";
 
 // ── Types ─────────────────────────────────────────────────
@@ -174,7 +176,9 @@ async function tmdbFetch<T>(
     url.searchParams.set(k, v);
   }
 
+  const requestLog = logExternalRequest("TMDB", "GET", url);
   const res = await fetch(url.toString());
+  logExternalResponse("TMDB", requestLog, res.status, res.statusText);
   if (!res.ok) {
     throw new Error(`TMDB API error: ${res.status} ${res.statusText}`);
   }
