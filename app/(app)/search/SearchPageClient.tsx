@@ -4,10 +4,12 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { useUser } from "@clerk/nextjs";
 import {
   Search,
   Sparkles,
   Crown,
+  LogIn,
   AlertCircle,
   Film,
   Tv,
@@ -19,8 +21,10 @@ import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { TitleGrid } from "@/components/browse/TitleGrid";
 import type { CategoryRatings } from "@/lib/scoring";
+import { getEffectiveCategoryWeights } from "@/lib/userWeights";
 
 export default function SearchPageClient() {
+  const { isSignedIn } = useUser();
   const searchParams = useSearchParams();
   const router = useRouter();
   const q = searchParams.get("q") ?? "";
@@ -30,6 +34,7 @@ export default function SearchPageClient() {
     api.search.searchTitles,
     q.length >= 2 ? { searchTerm: q } : "skip"
   );
+  const profile = useQuery(api.users.getMyProfile);
 
   const rateLimit = useQuery(api.users.getRateLimitStatus);
   const isAdmin = useQuery(api.admin.isCurrentUserAdmin);
@@ -56,7 +61,9 @@ export default function SearchPageClient() {
   const hasDbResults = dbResults && dbResults.length > 0;
   const remaining = rateLimit ? rateLimit.limit - rateLimit.used : null;
   const canAdminAdd = isAdmin === true;
-  const canRequestFromSearch = canAdminAdd || (remaining !== null && remaining > 0);
+  const canRequestFromSearch =
+    canAdminAdd || (isSignedIn && remaining !== null && remaining > 0);
+  const effectiveWeights = getEffectiveCategoryWeights(profile);
 
   // Always search TMDB for additional candidates, then de-duplicate against DB hits.
   useEffect(() => {
@@ -104,8 +111,12 @@ export default function SearchPageClient() {
     try {
       const titleId = await requestRating({ tmdbId, title, type });
       router.push(`/title/${titleId}`);
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Sign in required")) {
+        setError("Sign in to request ratings.");
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
     } finally {
       setRequestingId(null);
     }
@@ -127,8 +138,25 @@ export default function SearchPageClient() {
         )}
       </div>
 
+      {/* Signed-out gate for on-demand requests */}
+      {!isSignedIn && !canAdminAdd && (
+        <div className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <LogIn className="size-3.5" />
+          <span>Sign in to request up to 3 ratings per day.</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto px-1.5 py-0.5 text-[10px] font-semibold gap-1"
+            onClick={() => router.push("/sign-in")}
+          >
+            Sign In
+            <ArrowRight className="size-3" />
+          </Button>
+        </div>
+      )}
+
       {/* Rate limit indicator */}
-      {rateLimit && (
+      {rateLimit && isSignedIn && (
         <div
           className={cn(
             "inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs",
@@ -159,7 +187,7 @@ export default function SearchPageClient() {
         </div>
       )}
 
-      {!canAdminAdd && rateLimit && remaining === 0 && (
+      {!canAdminAdd && isSignedIn && rateLimit && remaining === 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <Crown className="size-4 shrink-0" />
           {rateLimit.tier === "free" ? (
@@ -225,6 +253,7 @@ export default function SearchPageClient() {
             }))
           }
           isLoading={isLoading}
+          weights={effectiveWeights}
           emptyState={
             q
               ? {
@@ -362,6 +391,17 @@ export default function SearchPageClient() {
                               {canAdminAdd ? "Add" : "Rate"}
                             </>
                           )}
+                        </Button>
+                      ) : !isSignedIn ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full shrink-0 gap-1 text-xs sm:ml-auto sm:w-auto"
+                          onClick={() => router.push("/sign-in")}
+                        >
+                          <LogIn className="size-3" />
+                          Sign In to Rate
+                          <ArrowRight className="size-3" />
                         </Button>
                       ) : (
                         <Button

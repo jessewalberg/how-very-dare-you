@@ -5,7 +5,12 @@ import { Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { calculateCompositeScore, isNoFlags, type CategoryRatings } from "@/lib/scoring";
+import {
+  calculateCompositeScore,
+  isNoFlags,
+  type CategoryRatings,
+  type CategoryWeights,
+} from "@/lib/scoring";
 import { NoFlagsBadge } from "@/components/rating/NoFlagsBadge";
 import { SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
 
@@ -15,6 +20,7 @@ interface EpisodeCardProps {
   stillPath?: string;
   status: "unrated" | "rating" | "rated" | "failed";
   ratings?: CategoryRatings;
+  weights?: CategoryWeights;
   onRate: () => void;
   onClick: () => void;
   rateDisabled?: boolean;
@@ -26,6 +32,7 @@ export function EpisodeCard({
   stillPath,
   status,
   ratings,
+  weights,
   onRate,
   onClick,
   rateDisabled,
@@ -33,7 +40,7 @@ export function EpisodeCard({
   const isRated = status === "rated" && ratings;
   const isRating = status === "rating";
   const noFlags = isRated ? isNoFlags(ratings) : false;
-  const composite = isRated ? calculateCompositeScore(ratings) : null;
+  const composite = isRated ? calculateCompositeScore(ratings, weights) : null;
   const roundedSeverity =
     composite !== null ? (Math.round(composite) as SeverityLevel) : null;
   const adjustedSeverity =

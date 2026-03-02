@@ -7,6 +7,7 @@ import {
   calculateCompositeScore,
   isNoFlags,
   type CategoryRatings,
+  type CategoryWeights,
 } from "@/lib/scoring";
 import { CompositeScore } from "@/components/rating/CompositeScore";
 import { NoFlagsBadge } from "@/components/rating/NoFlagsBadge";
@@ -31,6 +32,7 @@ interface TitleCardProps {
   ratings?: CategoryRatings;
   status: string;
   streamingProviders?: StreamingProvider[];
+  weights?: CategoryWeights;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -50,10 +52,11 @@ export function TitleCard({
   ratings,
   status,
   streamingProviders,
+  weights,
 }: TitleCardProps) {
   const hasRatings = ratings && status === "rated";
   const noFlags = hasRatings && isNoFlags(ratings);
-  const composite = hasRatings ? calculateCompositeScore(ratings) : null;
+  const composite = hasRatings ? calculateCompositeScore(ratings, weights) : null;
 
   return (
     <Link

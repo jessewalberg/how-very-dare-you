@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 const COOKIE_NAME = "site-access";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const sitePassword = process.env.SITE_PASSWORD;
 
   // If no password is set, allow all traffic (dev / no protection needed)
@@ -37,8 +37,9 @@ export const config = {
      * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization)
-     * - favicon.ico, icons, images
+     * - favicon and app icons
+     * - metadata routes
      */
-    "/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|opengraph|sitemap|robots).*)",
+    "/((?!_next/static|_next/image|favicon.ico|favicon-16x16.png|favicon-32x32.png|favicon-16x16-light.png|favicon-32x32-light.png|icon|apple-icon|opengraph|sitemap|robots|manifest.webmanifest).*)",
   ],
 };

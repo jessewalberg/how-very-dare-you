@@ -47,6 +47,7 @@ import {
   type CategoryRatings,
 } from "@/lib/scoring";
 import { canOpenUserEpisodeSidebar } from "@/lib/sidebarBehavior";
+import { getEffectiveCategoryWeights } from "@/lib/userWeights";
 
 interface TitleDetailProps {
   preloadedTitle: Preloaded<typeof api.titles.getTitle>;
@@ -71,6 +72,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
 
   const isInWatchlist = (title && profile?.watchlist?.includes(title._id)) ?? false;
   const isPaid = profile?.tier === "paid";
+  const effectiveWeights = getEffectiveCategoryWeights(profile);
 
   if (!title) {
     return (
@@ -93,7 +95,9 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const hasRatings = title.ratings && title.status !== "pending" && title.status !== "rating";
   const ratings = title.ratings as CategoryRatings | undefined;
   const noFlags = ratings ? isNoFlags(ratings) : false;
-  const composite = ratings ? calculateCompositeScore(ratings) : null;
+  const composite = ratings
+    ? calculateCompositeScore(ratings, effectiveWeights)
+    : null;
   const totalSeasonEpisodes =
     title.type === "tv"
       ? (title.seasonData ?? []).reduce(
@@ -194,7 +198,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           genre={title.genre}
           posterPath={title.posterPath}
         />
-        {canManuallyRate && (
+        {canManuallyRate && isSignedIn && (
           <div className="mt-4 flex flex-col items-center gap-3">
             {requestError && (
               <p className="text-sm text-destructive">{requestError}</p>
@@ -207,6 +211,17 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               <Sparkles className={cn("size-4", requestingRating && "animate-pulse")} />
               {requestingRating ? "Requesting rating..." : "Rate This Title"}
             </Button>
+          </div>
+        )}
+        {canManuallyRate && !isSignedIn && (
+          <div className="mt-4 text-center text-sm text-muted-foreground">
+            <Link
+              href="/sign-in"
+              className="font-medium underline underline-offset-2 hover:text-foreground transition-colors"
+            >
+              Sign in
+            </Link>{" "}
+            to request up to 3 ratings per day.
           </div>
         )}
       </div>
@@ -331,6 +346,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {ratings && (
             <RatingBreakdown
               ratings={ratings}
+              weights={effectiveWeights}
               notes={normalizedRatingNotes}
               categoryEvidence={title.categoryEvidence ?? undefined}
             />
@@ -344,6 +360,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                 titleId={title._id}
                 tmdbShowId={title.tmdbId}
                 showTitle={title.title}
+                weights={effectiveWeights}
               />
             </>
           )}
@@ -381,7 +398,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
 
           {/* Actions */}
           <div className="flex flex-wrap gap-3">
-            {showTitleRateAction && (
+            {showTitleRateAction && isSignedIn && (
               <div className="flex flex-col gap-1.5">
                 <Button
                   size="sm"
@@ -465,7 +482,8 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                 >
                   Sign in
                 </Link>{" "}
-                to submit corrections or save to your watchlist.
+                to request up to 3 ratings per day, submit corrections, or save to
+                your watchlist.
               </p>
             )}
           </div>

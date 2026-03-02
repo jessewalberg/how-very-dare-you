@@ -6,14 +6,21 @@ import { Tv, Loader2 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { SeasonAccordion } from "./SeasonAccordion";
+import type { CategoryWeights } from "@/lib/scoring";
 
 interface SeasonListProps {
   titleId: Id<"titles">;
   tmdbShowId: number;
   showTitle: string;
+  weights?: CategoryWeights;
 }
 
-export function SeasonList({ titleId, tmdbShowId, showTitle }: SeasonListProps) {
+export function SeasonList({
+  titleId,
+  tmdbShowId,
+  showTitle,
+  weights,
+}: SeasonListProps) {
   const seasonInfo = useQuery(api.titles.getSeasonList, { titleId });
   const populateSeasonData = useAction(api.titles.populateSeasonData);
   const populatingRef = useRef(false);
@@ -81,6 +88,7 @@ export function SeasonList({ titleId, tmdbShowId, showTitle }: SeasonListProps) 
             seasonName={season.name ?? undefined}
             episodeCount={season.episodeCount}
             showTitle={showTitle}
+            weights={weights}
           />
         ))}
       </div>

@@ -5,11 +5,11 @@ import { cn } from "@/lib/utils";
 import { TitleCard } from "@/components/title/TitleCard";
 import { TitleCardSkeleton } from "@/components/title/TitleCardSkeleton";
 import { SearchX } from "lucide-react";
-import type { CategoryRatings } from "@/lib/scoring";
+import type { CategoryRatings, CategoryWeights } from "@/lib/scoring";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 
-interface TitleData {
+export interface TitleData {
   _id: Id<"titles">;
   title: string;
   year: number;
@@ -35,9 +35,15 @@ interface TitleGridProps {
     ctaLabel?: string;
     ctaHref?: string;
   };
+  weights?: CategoryWeights;
 }
 
-export function TitleGrid({ titles, isLoading, emptyState }: TitleGridProps) {
+export function TitleGrid({
+  titles,
+  isLoading,
+  emptyState,
+  weights,
+}: TitleGridProps) {
   if (isLoading || titles === undefined) {
     return (
       <div
@@ -96,6 +102,7 @@ export function TitleGrid({ titles, isLoading, emptyState }: TitleGridProps) {
           ratings={title.ratings as CategoryRatings | undefined}
           status={title.status}
           streamingProviders={title.streamingProviders}
+          weights={weights}
         />
       ))}
     </div>

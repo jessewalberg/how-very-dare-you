@@ -14,6 +14,7 @@ import {
   isNoFlags,
   type CategoryRatings,
 } from "@/lib/scoring";
+import { getEffectiveCategoryWeights } from "@/lib/userWeights";
 
 interface TitleSearchProps {
   placeholder?: string;
@@ -57,6 +58,8 @@ export function TitleSearch({
     api.search.searchTitles,
     debouncedQuery.length >= 2 ? { searchTerm: debouncedQuery } : "skip"
   );
+  const profile = useQuery(api.users.getMyProfile);
+  const effectiveWeights = getEffectiveCategoryWeights(profile);
 
   const showResults = open && debouncedQuery.length >= 2;
 
@@ -150,7 +153,10 @@ export function TitleSearch({
                   hasRatings && isNoFlags(title.ratings as CategoryRatings);
                 const composite =
                   hasRatings
-                    ? calculateCompositeScore(title.ratings as CategoryRatings)
+                    ? calculateCompositeScore(
+                        title.ratings as CategoryRatings,
+                        effectiveWeights
+                      )
                     : null;
                 const TypeIcon = title.type === "tv" ? Tv : Film;
 
