@@ -112,6 +112,7 @@ export const getDashboardStats = query({
       queued: allOverstimQueue.filter((q) => q.status === "queued").length,
       processing: allOverstimQueue.filter((q) => q.status === "processing").length,
       completed: allOverstimQueue.filter((q) => q.status === "completed").length,
+      skipped: allOverstimQueue.filter((q) => q.status === "skipped").length,
       failed: allOverstimQueue.filter((q) => q.status === "failed").length,
     };
 
@@ -478,6 +479,7 @@ export const getOverstimulationJobs = query({
         v.literal("queued"),
         v.literal("processing"),
         v.literal("completed"),
+        v.literal("skipped"),
         v.literal("failed")
       )
     ),
@@ -496,6 +498,7 @@ export const getOverstimulationJobs = query({
       : await ctx.db.query("overstimulationQueue").order("desc").take(limit);
 
     const titleCache = new Map<string, Doc<"titles"> | null>();
+    const episodeCache = new Map<string, Doc<"episodes"> | null>();
 
     return await Promise.all(
       jobs.map(async (job) => {
@@ -505,11 +508,29 @@ export const getOverstimulationJobs = query({
           titleCache.set(titleKey, title ?? null);
         }
         const title = titleCache.get(titleKey);
+        const targetType = job.episodeId ? "episode" : "title";
+        let episode:
+          | Doc<"episodes">
+          | null
+          | undefined = undefined;
+        if (job.episodeId) {
+          const episodeKey = String(job.episodeId);
+          if (!episodeCache.has(episodeKey)) {
+            episodeCache.set(episodeKey, (await ctx.db.get(job.episodeId)) ?? null);
+          }
+          episode = episodeCache.get(episodeKey);
+        }
+
         return {
           ...job,
+          targetType,
           titleName: title?.title ?? "Unknown title",
           titleYear: title?.year ?? undefined,
           tmdbId: title?.tmdbId ?? undefined,
+          episodeId: job.episodeId,
+          seasonNumber: episode?.seasonNumber ?? undefined,
+          episodeNumber: episode?.episodeNumber ?? undefined,
+          episodeName: episode?.name ?? undefined,
         };
       })
     );

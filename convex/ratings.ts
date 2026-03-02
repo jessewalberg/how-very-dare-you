@@ -1490,12 +1490,6 @@ export const rateEpisodeOnDemand = action({
       await ctx.scheduler.runAfter(0, api.healthRatings.analyzeEpisodeOverstimulation, {
         episodeId: args.episodeId,
       });
-
-      // Always enqueue a title-level overstimulation job for visibility in the
-      // admin queue. The worker itself will fast-skip if analysis already exists.
-      await ctx.scheduler.runAfter(0, api.healthRatings.analyzeOverstimulation, {
-        titleId: episode.titleId,
-      });
     } catch (e) {
       // Reset on failure
       await ctx.runMutation(internal.episodes.setEpisodeStatus, {

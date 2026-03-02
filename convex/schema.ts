@@ -285,11 +285,16 @@ export default defineSchema({
 
   overstimulationQueue: defineTable({
     titleId: v.id("titles"),
+    episodeId: v.optional(v.id("episodes")),
+    targetType: v.optional(
+      v.union(v.literal("title"), v.literal("episode"))
+    ),
     force: v.optional(v.boolean()),
     status: v.union(
       v.literal("queued"),
       v.literal("processing"),
       v.literal("completed"),
+      v.literal("skipped"),
       v.literal("failed")
     ),
     attempts: v.optional(v.number()),
@@ -300,6 +305,7 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   })
     .index("by_titleId", ["titleId"])
+    .index("by_episodeId", ["episodeId"])
     .index("by_status_createdAt", ["status", "createdAt"]),
 
   adminConfig: defineTable({
