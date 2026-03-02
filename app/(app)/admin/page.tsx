@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Save,
   Users,
+  Zap,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -206,14 +207,14 @@ export default function AdminDashboardPage() {
       </div>
 
       {!stats ? (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-40 rounded-xl" />
           ))}
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
             <StatCard
               title="Titles"
               icon={Film}
@@ -284,6 +285,18 @@ export default function AdminDashboardPage() {
                     (stats.qualityStats?.episodeCritical ?? 0),
                   className: "text-red-600",
                 },
+              ]}
+            />
+            <StatCard
+              title="Overstim Queue"
+              icon={Zap}
+              href="/admin/queue"
+              total={stats.overstimQueueStats.total}
+              breakdowns={[
+                { label: "queued", value: stats.overstimQueueStats.queued },
+                { label: "processing", value: stats.overstimQueueStats.processing },
+                { label: "completed", value: stats.overstimQueueStats.completed },
+                { label: "failed", value: stats.overstimQueueStats.failed, className: "text-red-600" },
               ]}
             />
           </div>
