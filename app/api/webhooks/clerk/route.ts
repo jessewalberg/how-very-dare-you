@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -70,16 +71,40 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const posthog = getPostHogClient();
+
   // Handle events
   try {
     switch (event.type) {
       case "user.created": {
         const { id, ...rest } = event.data;
+        const email = getPrimaryEmail(event.data);
+        const name = getFullName(rest as ClerkUserEvent);
         await convex.mutation(api.users.getOrCreateUser, {
           clerkId: id,
-          email: getPrimaryEmail(event.data),
-          name: getFullName(rest as ClerkUserEvent),
+          email,
+          name,
         });
+
+        // Identify the new user and track signup in PostHog
+        posthog?.identify({
+          distinctId: id,
+          properties: {
+            email,
+            name,
+            clerk_id: id,
+          },
+        });
+        posthog?.capture({
+          distinctId: id,
+          event: "user_signed_up",
+          properties: {
+            clerk_id: id,
+            email,
+            name,
+          },
+        });
+
         console.log(`[ClerkWebhook] User created: ${id}`);
         break;
       }

@@ -2,7 +2,7 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { TitleGrid } from "@/components/browse/TitleGrid";
 import type { CategoryRatings } from "@/lib/scoring";
 import { getEffectiveCategoryWeights } from "@/lib/userWeights";
+import posthog from "posthog-js";
 
 export default function SearchPageClient() {
   const { isSignedIn } = useUser();
@@ -56,6 +57,8 @@ export default function SearchPageClient() {
   const [requestingId, setRequestingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tmdbRetryNonce, setTmdbRetryNonce] = useState(0);
+  const trackedSearchQueryRef = useRef<string | null>(null);
+  const trackedResultsQueryRef = useRef<string | null>(null);
 
   const isLoading = dbResults === undefined && q.length >= 2;
   const hasDbResults = dbResults && dbResults.length > 0;
@@ -101,6 +104,41 @@ export default function SearchPageClient() {
     (r) => !dbKeys.has(`${r.type}-${r.tmdbId}`)
   );
 
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) {
+      trackedSearchQueryRef.current = null;
+      trackedResultsQueryRef.current = null;
+      return;
+    }
+
+    if (trackedSearchQueryRef.current === query) return;
+    trackedSearchQueryRef.current = query;
+
+    posthog.capture("search_submitted", {
+      source: "search_page",
+      query,
+      query_length: query.length,
+      signed_in: isSignedIn,
+    });
+  }, [q, isSignedIn]);
+
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2 || dbResults === undefined || tmdbLoading) return;
+    if (trackedResultsQueryRef.current === query) return;
+    trackedResultsQueryRef.current = query;
+
+    posthog.capture("search_results_viewed", {
+      source: "search_page",
+      query,
+      db_results_count: dbResults.length,
+      tmdb_additional_results_count: tmdbAdditionalResults.length,
+      total_results_count: dbResults.length + tmdbAdditionalResults.length,
+      tmdb_error: tmdbError,
+    });
+  }, [q, dbResults, tmdbLoading, tmdbAdditionalResults.length, tmdbError]);
+
   async function handleRequestRating(
     tmdbId: number,
     title: string,
@@ -110,11 +148,21 @@ export default function SearchPageClient() {
     setRequestingId(tmdbId);
     try {
       const titleId = await requestRating({ tmdbId, title, type });
+      posthog.capture("rating_requested", {
+        tmdb_id: tmdbId,
+        title,
+        type,
+        search_query: q,
+        is_admin: canAdminAdd,
+      });
       router.push(`/title/${titleId}`);
     } catch (err) {
       if (err instanceof Error && err.message.includes("Sign in required")) {
         setError("Sign in to request ratings.");
       } else {
+        posthog.captureException(err instanceof Error ? err : new Error(String(err)), {
+          properties: { tmdb_id: tmdbId, title, type },
+        });
         setError("Something went wrong. Please try again.");
       }
     } finally {
