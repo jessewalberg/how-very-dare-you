@@ -62,19 +62,17 @@ export function TitleCard({
     <Link
       href={`/title/${id}`}
       className={cn(
-        "group relative flex gap-3 rounded-xl border bg-card p-3",
+        "group relative flex gap-3.5 rounded-2xl border border-border/60 bg-card/95 p-3.5",
         "transition-all duration-200 ease-out",
-        "hover:shadow-md hover:-translate-y-0.5 hover:border-border/80",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        "sm:flex-col sm:gap-0 sm:p-0 sm:overflow-hidden"
+        "hover:border-border/80 hover:shadow-sm",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       )}
     >
       {/* Poster */}
       <div
         className={cn(
-          "relative shrink-0 overflow-hidden rounded-lg bg-muted",
-          "w-20 h-[120px]",
-          "sm:w-full sm:h-auto sm:aspect-[2/3] sm:rounded-none sm:rounded-t-xl"
+          "relative h-[132px] w-[88px] shrink-0 overflow-hidden rounded-xl bg-muted",
+          "ring-1 ring-black/5 dark:ring-white/10"
         )}
       >
         {posterPath ? (
@@ -82,8 +80,8 @@ export function TitleCard({
             src={`https://image.tmdb.org/t/p/w342${posterPath}`}
             alt={`${title} (${year}) ${type === "tv" ? "TV show" : "movie"} poster`}
             fill
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-            sizes="(max-width: 640px) 80px, (max-width: 1024px) 200px, 240px"
+            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            sizes="88px"
             loading="lazy"
           />
         ) : (
@@ -108,8 +106,8 @@ export function TitleCard({
         {ageRating && (
           <span
             className={cn(
-              "absolute top-1.5 right-1.5 hidden sm:inline-flex",
-              "rounded-sm bg-black/70 px-1.5 py-0.5",
+              "absolute right-1.5 top-1.5 inline-flex",
+              "rounded-sm bg-black/75 px-1.5 py-0.5",
               "text-[10px] font-bold text-white tracking-wide"
             )}
           >
@@ -119,26 +117,25 @@ export function TitleCard({
       </div>
 
       {/* Info */}
-      <div className="flex min-w-0 flex-1 flex-col justify-between gap-2 sm:p-3 sm:pt-2.5">
+      <div className="flex min-w-0 flex-1 flex-col justify-between gap-2.5">
         <div className="space-y-1">
           {/* Title + year */}
-          <h3 className="text-sm font-semibold leading-tight line-clamp-2 group-hover:text-foreground/80 transition-colors">
+          <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight transition-colors group-hover:text-foreground/85">
             {title}
-            <span className="ml-1 text-muted-foreground font-normal">
+            <span className="ml-1 font-normal text-muted-foreground">
               ({year})
             </span>
           </h3>
 
           {/* Type + genre + age rating (mobile) */}
-          <p className="text-xs text-muted-foreground truncate">
+          <p className="truncate text-xs font-medium text-muted-foreground">
             {TYPE_LABELS[type]}
             {genre && <span> · {genre}</span>}
-            {ageRating && <span className="sm:hidden"> · {ageRating}</span>}
           </p>
         </div>
 
         {/* Score or status */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {noFlags ? (
             <NoFlagsBadge compact />
           ) : composite !== null ? (
@@ -148,47 +145,37 @@ export function TitleCard({
               variant="secondary"
               className="text-[10px] font-medium px-1.5 py-0"
             >
-              {status === "rating" ? "Rating..." : "Pending"}
+              {status === "rating" ? "Analyzing..." : "Queued"}
             </Badge>
           ) : null}
           {ratings?.overstimulation != null && ratings.overstimulation >= 3 && (
             <span
-              className="inline-flex items-center gap-0.5 rounded-sm bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-700"
+              className="inline-flex items-center gap-1 rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
               title={`Overstimulation: ${ratings.overstimulation}/4`}
             >
               <Zap className="size-2.5" />
+              High stimulus
             </span>
           )}
         </div>
 
         {/* Streaming providers */}
         {streamingProviders && streamingProviders.length > 0 && (
-          <div className="flex items-center gap-1 flex-wrap">
-            {streamingProviders.slice(0, 4).map((provider) => (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {streamingProviders.slice(0, 2).map((provider) => (
               <span
                 key={provider.name}
                 className={cn(
-                  "inline-flex items-center rounded-sm bg-muted/60 px-1.5 py-0.5",
-                  "text-[9px] font-medium text-muted-foreground tracking-wide"
+                  "inline-flex items-center rounded-md bg-muted/70 px-2 py-0.5",
+                  "text-[10px] font-medium leading-tight text-muted-foreground"
                 )}
               >
-                {provider.logoPath ? (
-                  <Image
-                    src={`https://image.tmdb.org/t/p/w45${provider.logoPath}`}
-                    alt={provider.name}
-                    width={14}
-                    height={14}
-                    className="rounded-sm"
-                    loading="lazy"
-                  />
-                ) : (
-                  provider.name
-                )}
+                {provider.name}
               </span>
             ))}
-            {streamingProviders.length > 4 && (
-              <span className="text-[9px] text-muted-foreground">
-                +{streamingProviders.length - 4}
+            {streamingProviders.length > 2 && (
+              <span className="text-[10px] text-muted-foreground">
+                +{streamingProviders.length - 2}
               </span>
             )}
           </div>

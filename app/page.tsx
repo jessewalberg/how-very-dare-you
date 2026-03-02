@@ -158,8 +158,8 @@ export default function HomePage() {
             </div>
 
             <p className="mt-3 text-xs text-muted-foreground/60">
-              Search rated titles instantly with no account. Sign in to request up
-              to 3 new ratings per day.
+              Search analyzed titles instantly with no account. Sign in to request up
+              to 3 new AI analyses per day.
             </p>
           </div>
         </div>
@@ -184,7 +184,7 @@ export default function HomePage() {
                 step: "1",
                 title: "Search",
                 description:
-                  "Look up any movie or show. If it isn't in our database yet, sign in to request an on-demand rating.",
+                  "Look up any movie or show. If it isn't in our database yet, sign in to request an on-demand AI analysis.",
               },
               {
                 icon: Eye,
@@ -232,7 +232,7 @@ export default function HomePage() {
               See Exactly What&apos;s in Every Title
             </h2>
             <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
-              Every movie and show is rated across 8 categories on a 0–4
+              Every movie and show is AI analyzed across 8 categories on a 0–4
               severity scale. No surprises.
             </p>
           </div>
@@ -311,7 +311,7 @@ export default function HomePage() {
                   "Full 8-category breakdown",
                   "Browse No Flags content",
                   "Filter by age range",
-                  "3 on-demand ratings/day (with free account)",
+                  "3 on-demand AI analyses/day (with free account)",
                 ].map((feature) => (
                   <li
                     key={feature}
@@ -341,7 +341,7 @@ export default function HomePage() {
                   <span className="text-sm text-muted-foreground">/month</span>
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Personalized ratings tailored to your family.
+                  Personalized analysis scoring tailored to your family.
                 </p>
               </div>
               <ul className="space-y-2.5">
@@ -351,7 +351,7 @@ export default function HomePage() {
                   "Personalized composite score",
                   "Advanced filters",
                   "Save to watchlist",
-                  "10 on-demand ratings/day",
+                  "10 on-demand AI analyses/day",
                 ].map((feature) => (
                   <li
                     key={feature}
@@ -378,8 +378,8 @@ export default function HomePage() {
             Start Making Informed Decisions Today
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed opacity-70">
-            Search thousands of rated titles with no account, then sign in when
-            you want to request up to 3 new ratings per day.
+            Search thousands of analyzed titles with no account, then sign in when
+            you want to request up to 3 new AI analyses per day.
           </p>
           <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <LandingAuthButtons />

@@ -16,6 +16,7 @@ import { CategoryEvidence } from "./CategoryEvidence";
 interface RatingBreakdownProps {
   ratings: CategoryRatings;
   weights?: CategoryWeights;
+  compositeOverride?: number;
   notes?: string;
   categoryEvidence?: Partial<Record<string, { explanation: string; quote?: string }>>;
 }
@@ -91,10 +92,14 @@ function CategoryRow({
 export function RatingBreakdown({
   ratings,
   weights,
+  compositeOverride,
   notes,
   categoryEvidence,
 }: RatingBreakdownProps) {
-  const composite = calculateCompositeScore(ratings, weights);
+  const composite =
+    typeof compositeOverride === "number"
+      ? compositeOverride
+      : calculateCompositeScore(ratings, weights);
   const noFlags = isNoFlags(ratings);
 
   return (

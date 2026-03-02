@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { useUser } from "@clerk/nextjs";
+import { SignInButton, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import {
   Bookmark,
@@ -43,9 +43,9 @@ export default function WatchlistPage() {
         <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
           Save titles you want to watch and track their content ratings.
         </p>
-        <Button className="mt-6" asChild>
-          <Link href="/sign-in">Sign In</Link>
-        </Button>
+        <SignInButton mode="modal">
+          <Button className="mt-6">Sign In</Button>
+        </SignInButton>
       </div>
     );
   }

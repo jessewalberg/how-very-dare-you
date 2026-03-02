@@ -15,10 +15,72 @@ import {
 } from "./lib/ratingValidation";
 import { isSeedTitle } from "./lib/seedData";
 
+function calculateDefaultCompositeFromRatings(ratings: {
+  lgbtq: number;
+  climate: number;
+  racialIdentity: number;
+  genderRoles: number;
+  antiAuthority: number;
+  religious: number;
+  political: number;
+  sexuality: number;
+  overstimulation?: number;
+}): number {
+  const values = [
+    ratings.lgbtq,
+    ratings.climate,
+    ratings.racialIdentity,
+    ratings.genderRoles,
+    ratings.antiAuthority,
+    ratings.religious,
+    ratings.political,
+    ratings.sexuality,
+    ...(ratings.overstimulation === undefined ? [] : [ratings.overstimulation]),
+  ];
+
+  // Default weights are all 5, so weighted score per category is severity * 0.5.
+  const weightedScores = values.map((value) => value * 0.5);
+  const peak = Math.max(...weightedScores);
+  const avg =
+    weightedScores.reduce((sum, value) => sum + value, 0) / weightedScores.length;
+  const raw = peak * 0.6 + avg * 0.4;
+
+  return Math.min(4, Math.max(0, Math.round(raw * 10) / 10));
+}
+
 export const getTitle = query({
   args: { titleId: v.id("titles") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.titleId);
+    const title = await ctx.db.get(args.titleId);
+    if (!title) return null;
+
+    if (!(title.type === "tv" && title.hasEpisodeRatings)) {
+      return title;
+    }
+
+    const episodes = await ctx.db
+      .query("episodes")
+      .withIndex("by_titleId", (q) => q.eq("titleId", args.titleId))
+      .collect();
+
+    const ratedEpisodes = episodes.filter((ep) => ep.status === "rated" && ep.ratings);
+    if (ratedEpisodes.length === 0) {
+      return {
+        ...title,
+        episodeCompositeScore: undefined as number | undefined,
+      };
+    }
+
+    const avgEpisodeComposite =
+      ratedEpisodes.reduce(
+        (sum, ep) => sum + calculateDefaultCompositeFromRatings(ep.ratings!),
+        0
+      ) / ratedEpisodes.length;
+
+    return {
+      ...title,
+      episodeCompositeScore: Math.round(avgEpisodeComposite * 10) / 10,
+    };
   },
 });
 

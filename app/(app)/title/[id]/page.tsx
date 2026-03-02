@@ -39,11 +39,16 @@ export async function generateMetadata(props: {
   }
 
   const ratings = title.status === "rated" ? title.ratings : undefined;
+  const derivedEpisodeComposite =
+    (title as { episodeCompositeScore?: number }).episodeCompositeScore;
   const typeLabel = title.type === "tv" ? "TV Show" : "Movie";
 
   let description: string;
   if (ratings) {
-    const composite = calculateCompositeScore(ratings, DEFAULT_WEIGHTS);
+    const composite =
+      title.hasEpisodeRatings && typeof derivedEpisodeComposite === "number"
+        ? derivedEpisodeComposite
+        : calculateCompositeScore(ratings, DEFAULT_WEIGHTS);
     const severityLabel = getSeverityLabel(Math.round(composite));
     const noFlags = isNoFlags(ratings);
 

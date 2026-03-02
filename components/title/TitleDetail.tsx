@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Preloaded, usePreloadedQuery, useQuery, useMutation, useAction } from "convex/react";
-import { useUser } from "@clerk/nextjs";
+import { SignInButton, useUser } from "@clerk/nextjs";
 import {
   Clock,
   Film,
@@ -46,6 +46,10 @@ import {
   isNoFlags,
   type CategoryRatings,
 } from "@/lib/scoring";
+import {
+  REQUEST_DAILY_ANALYSIS_SUFFIX,
+  getTitleAnalysisActionLabel,
+} from "@/lib/analysisCopy";
 import { canOpenUserEpisodeSidebar } from "@/lib/sidebarBehavior";
 import { getEffectiveCategoryWeights } from "@/lib/userWeights";
 import posthog from "posthog-js";
@@ -115,10 +119,17 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const isLoading = title.status === "pending" || title.status === "rating";
   const hasRatings = title.ratings && title.status !== "pending" && title.status !== "rating";
   const ratings = title.ratings as CategoryRatings | undefined;
+  const derivedEpisodeComposite =
+    (title as { episodeCompositeScore?: number }).episodeCompositeScore;
   const noFlags = ratings ? isNoFlags(ratings) : false;
-  const composite = ratings
+  const categoryComposite = ratings
     ? calculateCompositeScore(ratings, effectiveWeights)
     : null;
+  const episodeComposite =
+    title.hasEpisodeRatings && typeof derivedEpisodeComposite === "number"
+      ? derivedEpisodeComposite
+      : null;
+  const composite = episodeComposite ?? categoryComposite;
   const totalSeasonEpisodes =
     title.type === "tv"
       ? (title.seasonData ?? []).reduce(
@@ -132,11 +143,11 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
     title.ratedEpisodeCount != null &&
     totalSeasonEpisodes != null &&
     totalSeasonEpisodes > 0
-      ? `Based on ${title.ratedEpisodeCount} of ${totalSeasonEpisodes} episodes. Average severity per category across rated episodes.`
+      ? `Based on ${title.ratedEpisodeCount} of ${totalSeasonEpisodes} episodes. Average severity per category across AI-analyzed episodes.`
       : title.ratingNotes ?? undefined;
   const showScoreExplanation =
     title.hasEpisodeRatings && title.ratedEpisodeCount != null
-      ? `Show-level score from ${title.ratedEpisodeCount} rated episode${title.ratedEpisodeCount !== 1 ? "s" : ""} (average per category across rated episodes).`
+      ? `Show-level score from ${title.ratedEpisodeCount} analyzed episode${title.ratedEpisodeCount !== 1 ? "s" : ""} (average of episode-level composites).`
       : "Show-level score on a 0-4 scale.";
   const TypeIcon = title.type === "tv" ? Tv : Film;
   const typeLabel =
@@ -148,10 +159,10 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const canRequestTitleRating = title.type === "movie" || title.type === "tv";
   const canManuallyRate = title.status === "pending" && canRequestTitleRating;
   const isAdmin = profile?.isAdmin === true;
-  const canReRateTitle = canRequestTitleRating && hasRatings && isAdmin;
-  const canInitialRateTitle = canRequestTitleRating && !hasRatings;
+  const canReRateTitle = Boolean(canRequestTitleRating && hasRatings && isAdmin);
+  const canInitialRateTitle = Boolean(canRequestTitleRating && !hasRatings);
   const showTitleRateAction = canInitialRateTitle || canReRateTitle;
-  const titleRateButtonLabel = canReRateTitle ? "Re-Rate Title" : "Rate This Title";
+  const titleRateButtonLabel = getTitleAnalysisActionLabel(canReRateTitle);
   const canRefreshSeasonData = isAdmin && title.type === "tv";
   const canOpenEpisodeSidebar = canOpenUserEpisodeSidebar(title.type);
 
@@ -247,19 +258,21 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               className="gap-1.5"
             >
               <Sparkles className={cn("size-4", requestingRating && "animate-pulse")} />
-              {requestingRating ? "Requesting rating..." : "Rate This Title"}
+              {requestingRating ? "Requesting analysis..." : "Analyze This Title"}
             </Button>
           </div>
         )}
         {canManuallyRate && !isSignedIn && (
           <div className="mt-4 text-center text-sm text-muted-foreground">
-            <Link
-              href="/sign-in"
-              className="font-medium underline underline-offset-2 hover:text-foreground transition-colors"
-            >
-              Sign in
-            </Link>{" "}
-            to request up to 3 ratings per day.
+            <SignInButton mode="modal">
+              <button
+                type="button"
+                className="font-medium underline underline-offset-2 transition-colors hover:text-foreground"
+              >
+                Sign in
+              </button>
+            </SignInButton>{" "}
+            {REQUEST_DAILY_ANALYSIS_SUFFIX}
           </div>
         )}
       </div>
@@ -397,6 +410,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
             <RatingBreakdown
               ratings={ratings}
               weights={effectiveWeights}
+              compositeOverride={composite ?? undefined}
               notes={normalizedRatingNotes}
               categoryEvidence={title.categoryEvidence ?? undefined}
             />
@@ -432,7 +446,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {/* Rating metadata */}
           {title.ratedAt && (
             <p className="text-[11px] text-muted-foreground/50">
-              Rated{" "}
+              AI analyzed{" "}
               {new Date(title.ratedAt).toLocaleDateString("en-US", {
                 year: "numeric",
                 month: "long",
@@ -457,7 +471,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                   className="gap-1.5"
                 >
                   <Sparkles className={cn("size-3.5", requestingRating && "animate-pulse")} />
-                  {requestingRating ? "Requesting rating..." : titleRateButtonLabel}
+                  {requestingRating ? "Requesting analysis..." : titleRateButtonLabel}
                 </Button>
                 {requestError && (
                   <p className="text-xs text-destructive">{requestError}</p>
@@ -536,13 +550,15 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
             )}
             {!isSignedIn && (
               <p className="text-xs text-muted-foreground">
-                <Link
-                  href="/sign-in"
-                  className="font-medium underline underline-offset-2 hover:text-foreground transition-colors"
-                >
-                  Sign in
-                </Link>{" "}
-                to request up to 3 ratings per day, submit corrections, or save to
+                <SignInButton mode="modal">
+                  <button
+                    type="button"
+                    className="font-medium underline underline-offset-2 transition-colors hover:text-foreground"
+                  >
+                    Sign in
+                  </button>
+                </SignInButton>{" "}
+                to request up to 3 AI analyses per day, submit corrections, or save to
                 your watchlist.
               </p>
             )}

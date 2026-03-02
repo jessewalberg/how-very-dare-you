@@ -31,7 +31,7 @@ export function LandingSampleCards() {
   if (featured.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
-        No rated titles yet. Rate a title from search and it will appear here.
+        No analyzed titles yet. Request analysis from search and it will appear here.
       </div>
     );
   }
