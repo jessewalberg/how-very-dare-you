@@ -5,7 +5,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { SignInButton, useUser } from "@clerk/nextjs";
 import {
   Search,
   Sparkles,
@@ -23,6 +23,11 @@ import { Button } from "@/components/ui/button";
 import { TitleGrid } from "@/components/browse/TitleGrid";
 import type { CategoryRatings } from "@/lib/scoring";
 import { getEffectiveCategoryWeights } from "@/lib/userWeights";
+import {
+  SIGN_IN_DAILY_ANALYSIS_PROMPT,
+  formatRemainingAnalyses,
+  formatUsageResetCopy,
+} from "@/lib/analysisCopy";
 import posthog from "posthog-js";
 
 export default function SearchPageClient() {
@@ -176,7 +181,7 @@ export default function SearchPageClient() {
       router.push(`/title/${titleId}`);
     } catch (err) {
       if (err instanceof Error && err.message.includes("Sign in required")) {
-        setError("Sign in to request ratings.");
+        setError("Sign in to request AI analyses.");
       } else {
         posthog.captureException(err instanceof Error ? err : new Error(String(err)), {
           properties: { tmdb_id: tmdbId, title, type },
@@ -199,7 +204,7 @@ export default function SearchPageClient() {
               ? "Searching..."
               : totalMatchedCount > 0
                 ? `${totalMatchedCount} result${totalMatchedCount !== 1 ? "s" : ""} for "${q}"`
-                : `No rated results for "${q}"`}
+                : `No analyzed results for "${q}"`}
           </p>
         )}
       </div>
@@ -208,16 +213,17 @@ export default function SearchPageClient() {
       {!isSignedIn && !canAdminAdd && (
         <div className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           <LogIn className="size-3.5" />
-          <span>Sign in to request up to 3 ratings per day.</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-auto px-1.5 py-0.5 text-[10px] font-semibold gap-1"
-            onClick={() => router.push("/sign-in")}
-          >
-            Sign In
-            <ArrowRight className="size-3" />
-          </Button>
+          <span>{SIGN_IN_DAILY_ANALYSIS_PROMPT}</span>
+          <SignInButton mode="modal">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-auto gap-1 px-1.5 py-0.5 text-[10px] font-semibold"
+            >
+              Sign In
+              <ArrowRight className="size-3" />
+            </Button>
+          </SignInButton>
         </div>
       )}
 
@@ -234,9 +240,9 @@ export default function SearchPageClient() {
           <Sparkles className="size-3.5" />
           <span>
             {canAdminAdd ? (
-              "Admin mode: add/rerate requests from search are always enabled"
+              "Admin mode: add/re-analyze requests from search are always enabled"
             ) : (
-              `${remaining} of ${rateLimit.limit} on-demand lookups remaining today`
+              formatRemainingAnalyses(remaining ?? 0, rateLimit.limit)
             )}
           </span>
           {!canAdminAdd && rateLimit.tier === "free" && (
@@ -258,8 +264,7 @@ export default function SearchPageClient() {
           <Crown className="size-4 shrink-0" />
           {rateLimit.tier === "free" ? (
             <p>
-              You&apos;ve used {rateLimit.used}/{rateLimit.limit} free lookups
-              today. Resets at midnight.
+              {formatUsageResetCopy(rateLimit.used, rateLimit.limit, "free")}
               <Button
                 variant="link"
                 className="h-auto p-0 pl-1 text-amber-900 underline-offset-2"
@@ -267,13 +272,10 @@ export default function SearchPageClient() {
               >
                 Upgrade to Premium
               </Button>{" "}
-              for 10 lookups per day.
+              for 10 analyses per day.
             </p>
           ) : (
-            <p>
-              You&apos;ve used {rateLimit.used}/{rateLimit.limit} lookups today.
-              Resets at midnight.
-            </p>
+            <p>{formatUsageResetCopy(rateLimit.used, rateLimit.limit, "paid")}</p>
           )}
         </div>
       )}
@@ -351,7 +353,7 @@ export default function SearchPageClient() {
                   More titles from TMDB
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  View existing matches or add titles not yet in our database.
+                  View existing advisories or request AI analysis for new titles.
                 </p>
               </div>
             </div>
@@ -467,26 +469,27 @@ export default function SearchPageClient() {
                           {isRequesting ? (
                             <>
                               <Loader2 className="size-3.5 animate-spin" />
-                              {canAdminAdd ? "Adding..." : "Rating..."}
+                              {canAdminAdd ? "Adding..." : "Analyzing..."}
                             </>
                           ) : (
                             <>
                               <Sparkles className="size-3.5" />
-                              {canAdminAdd ? "Add" : "Rate"}
+                              {canAdminAdd ? "Add" : "Analyze"}
                             </>
                           )}
                         </Button>
                       ) : !isSignedIn ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="w-full shrink-0 gap-1 text-xs sm:ml-auto sm:w-auto"
-                          onClick={() => router.push("/sign-in")}
-                        >
-                          <LogIn className="size-3" />
-                          Sign In to Rate
-                          <ArrowRight className="size-3" />
-                        </Button>
+                        <SignInButton mode="modal">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="w-full shrink-0 gap-1 text-xs sm:ml-auto sm:w-auto"
+                          >
+                            <LogIn className="size-3" />
+                            Sign In to Analyze
+                            <ArrowRight className="size-3" />
+                          </Button>
+                        </SignInButton>
                       ) : (
                         <Button
                           size="sm"

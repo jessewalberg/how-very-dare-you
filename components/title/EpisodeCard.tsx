@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { SignInButton } from "@clerk/nextjs";
 import { Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,8 @@ interface EpisodeCardProps {
   onRate: () => void;
   onClick: () => void;
   rateDisabled?: boolean;
+  requireSignInForRate?: boolean;
+  rateLabel?: string;
 }
 
 export function EpisodeCard({
@@ -36,6 +39,8 @@ export function EpisodeCard({
   onRate,
   onClick,
   rateDisabled,
+  requireSignInForRate = false,
+  rateLabel = "Analyze Episode",
 }: EpisodeCardProps) {
   const isRated = status === "rated" && ratings;
   const isRating = status === "rating";
@@ -118,26 +123,40 @@ export function EpisodeCard({
           {isRating && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Loader2 className="size-3 animate-spin" />
-              Rating...
+              Analyzing...
             </span>
           )}
           {status === "failed" && (
             <span className="text-xs text-destructive">Failed</span>
           )}
           {(status === "unrated" || status === "failed") && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2 text-[10px]"
-              disabled={rateDisabled || isRating}
-              onClick={(e) => {
-                e.stopPropagation();
-                onRate();
-              }}
-            >
-              <Sparkles className="mr-1 size-3" />
-              Rate This
-            </Button>
+            requireSignInForRate ? (
+              <SignInButton mode="modal">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-[10px]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Sparkles className="mr-1 size-3" />
+                  {rateLabel}
+                </Button>
+              </SignInButton>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-[10px]"
+                disabled={rateDisabled || isRating}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRate();
+                }}
+              >
+                <Sparkles className="mr-1 size-3" />
+                {rateLabel}
+              </Button>
+            )
           )}
         </div>
       </div>

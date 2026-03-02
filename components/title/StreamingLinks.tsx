@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { ExternalLink } from "lucide-react";
@@ -30,14 +31,26 @@ export function StreamingLinks({
   surface = "title_detail",
   compact = false,
 }: StreamingLinksProps) {
-  if (providers.length === 0) return null;
+  const [distinctId, setDistinctId] = useState<string | null>(null);
 
-  let distinctId: string | null = null;
-  try {
-    distinctId = posthog.get_distinct_id();
-  } catch {
-    distinctId = null;
-  }
+  useEffect(() => {
+    let nextDistinctId: string | null = null;
+    try {
+      nextDistinctId = posthog.get_distinct_id();
+    } catch {
+      nextDistinctId = null;
+    }
+
+    const timer = window.setTimeout(() => {
+      setDistinctId(nextDistinctId);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  if (providers.length === 0) return null;
 
   return (
     <div

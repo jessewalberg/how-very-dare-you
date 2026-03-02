@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import { BrandMark } from "@/components/layout/BrandMark";
 
 const FOOTER_LINKS = [
   { href: "/about", label: "About" },
@@ -14,16 +14,10 @@ export function Footer() {
         <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
           {/* Brand */}
           <div className="flex items-center gap-2.5 text-muted-foreground">
-            <div className="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-muted/40">
-              <Image
-                src="/brand/howverydareyou-mark-192.png"
-                alt=""
-                width={24}
-                height={24}
-                className="size-6 rounded-md object-cover"
-              />
-            </div>
-            <span className="text-sm font-medium">How Very Dare You</span>
+            <BrandMark size={36} />
+            <span className="text-sm font-semibold text-foreground">
+              How Very Dare You
+            </span>
           </div>
 
           {/* Links */}

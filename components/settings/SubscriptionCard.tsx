@@ -25,7 +25,7 @@ const PREMIUM_FEATURES = [
   "Personalized composite score",
   "Advanced browse filters",
   "Save to watchlist",
-  "10 on-demand ratings/day",
+  "10 on-demand AI analyses/day",
 ];
 
 export function SubscriptionCard({

@@ -4,6 +4,14 @@ import type { NextRequest } from "next/server";
 const COOKIE_NAME = "site-access";
 
 export function proxy(request: NextRequest) {
+  const runtimeEnv = process.env.VERCEL_ENV ?? process.env.NODE_ENV;
+  const isProduction = runtimeEnv === "production";
+
+  // Never password-gate production.
+  if (isProduction) {
+    return NextResponse.next();
+  }
+
   const sitePassword = process.env.SITE_PASSWORD;
 
   // If no password is set, allow all traffic (dev / no protection needed)

@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
+import { useUser } from "@clerk/nextjs";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/convex/_generated/api";
@@ -15,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EpisodeCard } from "./EpisodeCard";
 import { EpisodeDetailSheet } from "./EpisodeDetailSheet";
 import type { CategoryRatings, CategoryWeights } from "@/lib/scoring";
+import { getEpisodeAnalysisActionLabel } from "@/lib/analysisCopy";
 
 interface SeasonAccordionProps {
   titleId: Id<"titles">;
@@ -35,6 +37,7 @@ export function SeasonAccordion({
   showTitle,
   weights,
 }: SeasonAccordionProps) {
+  const { isSignedIn } = useUser();
   const [open, setOpen] = useState(false);
   const [fetched, setFetched] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -107,7 +110,7 @@ export function SeasonAccordion({
             {seasonName || `Season ${seasonNumber}`}
             <span className="text-xs text-muted-foreground">
               {episodeCount} episodes
-              {ratedCount > 0 && ` · ${ratedCount} rated`}
+              {ratedCount > 0 && ` · ${ratedCount} analyzed`}
             </span>
           </span>
           <div className="flex items-center gap-2">
@@ -156,6 +159,8 @@ export function SeasonAccordion({
                   weights={weights}
                   onRate={() => handleRate(ep._id)}
                   onClick={() => handleEpisodeClick(ep._id)}
+                  requireSignInForRate={!isSignedIn}
+                  rateLabel={getEpisodeAnalysisActionLabel(Boolean(isSignedIn))}
                 />
               ))}
           </div>

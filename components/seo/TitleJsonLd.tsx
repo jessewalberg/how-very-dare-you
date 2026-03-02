@@ -23,6 +23,7 @@ interface TitleJsonLdProps {
     aiNotes?: string;
     ratingNotes?: string;
     runtime?: number;
+    episodeCompositeScore?: number;
     streamingProviders?: StreamingProvider[];
   };
 }
@@ -50,7 +51,10 @@ export function TitleJsonLd({ title }: TitleJsonLdProps) {
   }
 
   if (title.status === "rated" && title.ratings) {
-    const composite = calculateCompositeScore(title.ratings, DEFAULT_WEIGHTS);
+    const composite =
+      typeof title.episodeCompositeScore === "number"
+        ? title.episodeCompositeScore
+        : calculateCompositeScore(title.ratings, DEFAULT_WEIGHTS);
     const roundedComposite = Math.round(composite);
     const severityLabel = getSeverityLabel(roundedComposite);
     const noFlags = isNoFlags(title.ratings);

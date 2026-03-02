@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import { BrandMark } from "@/components/layout/BrandMark";
 
 export default function PasswordPage() {
   const [password, setPassword] = useState("");
@@ -39,15 +39,8 @@ export default function PasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-6 text-center">
         <div>
-          <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-2xl border border-border/50 bg-muted/40">
-            <Image
-              src="/brand/howverydareyou-mark-192.png"
-              alt="How Very Dare You logo"
-              width={64}
-              height={64}
-              className="size-16 rounded-xl object-cover"
-              priority
-            />
+          <div className="mx-auto mb-4 flex justify-center">
+            <BrandMark size={72} priority />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">
             How Very Dare You

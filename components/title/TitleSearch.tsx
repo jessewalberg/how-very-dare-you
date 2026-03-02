@@ -228,7 +228,7 @@ export function TitleSearch({
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-[10px] font-medium text-muted-foreground">
                           <Clock className="size-3" />
-                          Not Rated
+                          Not Analyzed
                         </span>
                       )}
                     </div>

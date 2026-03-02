@@ -23,7 +23,7 @@ export function LandingNoFlagsPreview() {
   if (titles.length === 0) {
     return (
       <div className="mt-10 rounded-xl border border-dashed bg-card px-6 py-8 text-center text-sm text-muted-foreground">
-        No live no-flags titles yet. Rate more content to populate this section.
+        No live no-flags titles yet. Analyze more content to populate this section.
       </div>
     );
   }

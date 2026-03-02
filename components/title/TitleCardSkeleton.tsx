@@ -5,29 +5,27 @@ export function TitleCardSkeleton() {
   return (
     <div
       className={cn(
-        "flex gap-3 rounded-xl border bg-card p-3",
-        "sm:flex-col sm:gap-0 sm:p-0 sm:overflow-hidden"
+        "flex gap-3.5 rounded-2xl border border-border/60 bg-card/95 p-3.5"
       )}
     >
       {/* Poster */}
       <Skeleton
         className={cn(
-          "shrink-0 rounded-lg",
-          "w-20 h-[120px]",
-          "sm:w-full sm:h-auto sm:aspect-[2/3] sm:rounded-none sm:rounded-t-xl"
+          "h-[132px] w-[88px] shrink-0 rounded-xl"
         )}
       />
 
       {/* Info */}
-      <div className="flex min-w-0 flex-1 flex-col justify-between gap-2 sm:p-3 sm:pt-2.5">
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-3 w-1/2" />
+      <div className="flex min-w-0 flex-1 flex-col justify-between gap-2.5">
+        <div className="space-y-1.5">
+          <Skeleton className="h-4 w-[85%]" />
+          <Skeleton className="h-4 w-[60%]" />
+          <Skeleton className="h-3 w-2/3" />
         </div>
-        <Skeleton className="h-6 w-20 rounded-md" />
-        <div className="flex gap-1">
-          <Skeleton className="h-4 w-12 rounded-sm" />
-          <Skeleton className="h-4 w-12 rounded-sm" />
+        <Skeleton className="h-6 w-24 rounded-md" />
+        <div className="flex gap-1.5">
+          <Skeleton className="h-5 w-14 rounded-md" />
+          <Skeleton className="h-5 w-14 rounded-md" />
         </div>
       </div>
     </div>

@@ -40,7 +40,7 @@ export default function NoFlagsPage() {
         emptyState={{
           title: "No no-flags titles yet",
           description:
-            "No titles currently meet zero-flag criteria. Check back after more ratings are processed.",
+            "No titles currently meet zero-flag criteria. Check back after more AI analyses are processed.",
           ctaLabel: "Browse all titles",
           ctaHref: "/browse",
         }}

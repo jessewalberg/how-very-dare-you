@@ -70,12 +70,12 @@ export function SeasonList({
         </h2>
         {seasonInfo.ratedEpisodeCount != null && seasonInfo.ratedEpisodeCount > 0 && (
           <span className="text-xs text-muted-foreground">
-            · {seasonInfo.ratedEpisodeCount} rated
+            · {seasonInfo.ratedEpisodeCount} analyzed
           </span>
         )}
       </div>
       <p className="text-[11px] text-muted-foreground/70">
-        Episode badges are per-episode scores (0-4). The main title score is show-level.
+        Episode badges are AI-analyzed per-episode scores (0-4). The main title score is show-level.
       </p>
 
       <div className="space-y-1.5">
