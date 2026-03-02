@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Trash2,
   ExternalLink,
+  Zap,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -42,8 +43,22 @@ import { cn } from "@/lib/utils";
 import { resolveAdminQueueSidebarTarget } from "@/lib/sidebarBehavior";
 
 type StatusFilter = "queued" | "processing" | "completed" | "failed" | undefined;
+type OverstimStatusFilter =
+  | "queued"
+  | "processing"
+  | "completed"
+  | "failed"
+  | undefined;
 
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: undefined, label: "All" },
+  { value: "queued", label: "Queued" },
+  { value: "processing", label: "Processing" },
+  { value: "completed", label: "Completed" },
+  { value: "failed", label: "Failed" },
+];
+
+const OVERSTIM_STATUS_OPTIONS: { value: OverstimStatusFilter; label: string }[] = [
   { value: undefined, label: "All" },
   { value: "queued", label: "Queued" },
   { value: "processing", label: "Processing" },
@@ -82,16 +97,23 @@ interface QualityReviewItem {
 
 export default function AdminQueuePage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(undefined);
+  const [overstimStatusFilter, setOverstimStatusFilter] =
+    useState<OverstimStatusFilter>(undefined);
   const [qualitySeverityFilter, setQualitySeverityFilter] =
     useState<QualitySeverityFilter>("all");
   const [acting, setActing] = useState<string | null>(null);
   const items = useQuery(api.admin.getQueueItems, { status: statusFilter });
+  const overstimJobs = useQuery(api.admin.getOverstimulationJobs, {
+    status: overstimStatusFilter,
+    limit: 100,
+  });
   const qualityItems = useQuery(api.admin.getQualityReviewItems, {
     severity:
       qualitySeverityFilter === "all" ? undefined : qualitySeverityFilter,
   }) as QualityReviewItem[] | undefined;
   const forceComplete = useMutation(api.admin.forceCompleteQueueItem);
   const retryItem = useAction(api.admin.retryQueueItem);
+  const retryOverstimJob = useAction(api.admin.retryOverstimulationJob);
   const deleteItem = useMutation(api.admin.deleteQueueItem);
   const reRateTitle = useAction(api.admin.reRateTitle);
   const reRateEpisode = useAction(api.admin.reRateEpisode);
@@ -364,6 +386,131 @@ export default function AdminQueuePage() {
                         Add subtitles
                       </Button>
                     </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Overstimulation queue */}
+      <div className="rounded-lg border bg-card p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold flex items-center gap-1.5">
+              <Zap className="size-4 text-blue-600" />
+              Overstimulation Jobs
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Background video-analysis jobs. Failures include service
+              `request_id` when available.
+            </p>
+          </div>
+          {overstimJobs !== undefined && (
+            <span className="text-xs text-muted-foreground">
+              {overstimJobs.length} job{overstimJobs.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {OVERSTIM_STATUS_OPTIONS.map((opt) => (
+            <button
+              key={opt.label}
+              onClick={() => setOverstimStatusFilter(opt.value)}
+              className={cn(
+                "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                overstimStatusFilter === opt.value
+                  ? "bg-foreground text-background"
+                  : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {overstimJobs === undefined && (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full rounded-lg" />
+            ))}
+          </div>
+        )}
+
+        {overstimJobs && overstimJobs.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            No overstimulation jobs for this filter.
+          </p>
+        )}
+
+        {overstimJobs && overstimJobs.length > 0 && (
+          <div className="space-y-2">
+            {overstimJobs.map((job) => {
+              const jobActionKey = `overstim:${job._id}`;
+              const isJobActing = acting === jobActionKey;
+
+              return (
+                <div
+                  key={job._id}
+                  className="rounded-lg border bg-muted/10 p-3 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {job.titleName}
+                        {job.titleYear ? ` (${job.titleYear})` : ""}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        tmdb {job.tmdbId ?? "unknown"} · attempts {job.attempts ?? 0}
+                        {job.force ? " · force" : ""}
+                      </p>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={cn("text-[10px] px-1.5 py-0", STATUS_COLORS[job.status])}
+                    >
+                      {job.status}
+                    </Badge>
+                  </div>
+                  {job.lastError && (
+                    <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">
+                      {job.lastError}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-muted-foreground">
+                      Updated{" "}
+                      {new Date(job.updatedAt).toLocaleString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                    {job.status === "failed" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2 text-[11px] gap-1"
+                        disabled={isJobActing}
+                        onClick={() =>
+                          void handleAction(
+                            () =>
+                              retryOverstimJob({
+                                jobId: job._id as Id<"overstimulationQueue">,
+                              }),
+                            jobActionKey
+                          )
+                        }
+                      >
+                        <RefreshCw
+                          className={cn("size-3", isJobActing && "animate-spin")}
+                        />
+                        Retry
+                      </Button>
+                    )}
                   </div>
                 </div>
               );

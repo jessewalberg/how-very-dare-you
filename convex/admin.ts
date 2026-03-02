@@ -106,6 +106,15 @@ export const getDashboardStats = query({
       failed: allQueue.filter((q) => q.status === "failed").length,
     };
 
+    const allOverstimQueue = await ctx.db.query("overstimulationQueue").collect();
+    const overstimQueueStats = {
+      total: allOverstimQueue.length,
+      queued: allOverstimQueue.filter((q) => q.status === "queued").length,
+      processing: allOverstimQueue.filter((q) => q.status === "processing").length,
+      completed: allOverstimQueue.filter((q) => q.status === "completed").length,
+      failed: allOverstimQueue.filter((q) => q.status === "failed").length,
+    };
+
     const titleQuality = allTitles.reduce(
       (acc, title) => {
         if (!title.ratings) return acc;
@@ -142,6 +151,7 @@ export const getDashboardStats = query({
       userStats,
       correctionStats,
       queueStats,
+      overstimQueueStats,
       qualityStats: {
         titleNeedsReview: titleQuality.needsReview,
         titleCritical: titleQuality.critical,
@@ -458,6 +468,51 @@ export const getQueueItems = query({
     }
 
     return enriched;
+  },
+});
+
+export const getOverstimulationJobs = query({
+  args: {
+    status: v.optional(
+      v.union(
+        v.literal("queued"),
+        v.literal("processing"),
+        v.literal("completed"),
+        v.literal("failed")
+      )
+    ),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const limit = Math.min(Math.max(args.limit ?? 100, 1), 500);
+    const jobs = args.status
+      ? await ctx.db
+        .query("overstimulationQueue")
+        .withIndex("by_status_createdAt", (q) => q.eq("status", args.status!))
+        .order("desc")
+        .take(limit)
+      : await ctx.db.query("overstimulationQueue").order("desc").take(limit);
+
+    const titleCache = new Map<string, Doc<"titles"> | null>();
+
+    return await Promise.all(
+      jobs.map(async (job) => {
+        const titleKey = String(job.titleId);
+        if (!titleCache.has(titleKey)) {
+          const title = await ctx.db.get(job.titleId);
+          titleCache.set(titleKey, title ?? null);
+        }
+        const title = titleCache.get(titleKey);
+        return {
+          ...job,
+          titleName: title?.title ?? "Unknown title",
+          titleYear: title?.year ?? undefined,
+          tmdbId: title?.tmdbId ?? undefined,
+        };
+      })
+    );
   },
 });
 
@@ -1170,6 +1225,30 @@ export const retryQueueItem = action({
   },
 });
 
+export const retryOverstimulationJob = action({
+  args: { jobId: v.id("overstimulationQueue") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    await ctx.runQuery(internal.admin.getAdminUser, { clerkId: identity.subject });
+
+    const job = await ctx.runQuery(internal.admin.getOverstimulationJobById, {
+      jobId: args.jobId,
+    });
+    if (!job) throw new Error("Overstimulation job not found");
+
+    await ctx.runMutation(internal.admin.resetOverstimulationJobToQueued, {
+      jobId: args.jobId,
+    });
+
+    await ctx.scheduler.runAfter(0, api.healthRatings.processOverstimulationJob, {
+      jobId: args.jobId,
+    });
+
+    return { success: true };
+  },
+});
+
 export const deleteQueueItem = mutation({
   args: { queueItemId: v.id("ratingQueue") },
   handler: async (ctx, args) => {
@@ -1180,6 +1259,11 @@ export const deleteQueueItem = mutation({
   },
 });
 
+export const getOverstimulationJobById = internalQuery({
+  args: { jobId: v.id("overstimulationQueue") },
+  handler: async (ctx, args) => await ctx.db.get(args.jobId),
+});
+
 export const resetQueueItemToQueued = internalMutation({
   args: { queueItemId: v.id("ratingQueue") },
   handler: async (ctx, args) => {
@@ -1187,6 +1271,20 @@ export const resetQueueItemToQueued = internalMutation({
       status: "queued",
       lastError: undefined,
       attempts: 0,
+    });
+  },
+});
+
+export const resetOverstimulationJobToQueued = internalMutation({
+  args: { jobId: v.id("overstimulationQueue") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "queued",
+      attempts: 0,
+      lastError: undefined,
+      startedAt: undefined,
+      completedAt: undefined,
+      updatedAt: Date.now(),
     });
   },
 });

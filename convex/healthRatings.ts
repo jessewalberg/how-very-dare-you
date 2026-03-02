@@ -91,6 +91,11 @@ interface VideoAnalysisResponse extends VideoAnalysisMetrics {
   timing?: VideoAnalysisTiming;
 }
 
+interface VideoAnalysisErrorResponse {
+  error?: string;
+  request_id?: string;
+}
+
 /** Call the Go video analysis service for a single YouTube video. */
 async function analyzeVideo(
   videoId: string,
@@ -113,7 +118,19 @@ async function analyzeVideo(
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`Video analysis service error ${res.status}: ${errBody}`);
+    let requestId: string | undefined;
+    let message = errBody;
+    try {
+      const parsed = JSON.parse(errBody) as VideoAnalysisErrorResponse;
+      message = parsed.error ?? errBody;
+      requestId = parsed.request_id;
+    } catch {
+      // Keep raw body if not JSON.
+    }
+
+    throw new Error(
+      `Video analysis service error ${res.status}: ${message}${requestId ? ` (request_id=${requestId})` : ""}`
+    );
   }
 
   const data = await res.json() as VideoAnalysisResponse;

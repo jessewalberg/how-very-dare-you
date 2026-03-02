@@ -39,13 +39,18 @@ type AnalysisResponse struct {
 }
 
 type ErrorResponse struct {
-	Error string `json:"error"`
+	Error     string `json:"error"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
-func writeError(w http.ResponseWriter, msg string, code int) {
+func writeError(ctx context.Context, w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(ErrorResponse{Error: msg})
+	payload := ErrorResponse{Error: msg}
+	if reqID := requestIDFromContext(ctx); reqID != "" {
+		payload.RequestID = reqID
+	}
+	json.NewEncoder(w).Encode(payload)
 }
 
 func handleAnalyze(secret string) http.HandlerFunc {
@@ -53,7 +58,7 @@ func handleAnalyze(secret string) http.HandlerFunc {
 		log := logFor(r.Context())
 
 		if r.Header.Get("Authorization") != "Bearer "+secret {
-			writeError(w, "unauthorized", http.StatusUnauthorized)
+			writeError(r.Context(), w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
@@ -62,12 +67,12 @@ func handleAnalyze(secret string) http.HandlerFunc {
 
 		var req AnalysisRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeError(r.Context(), w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		if req.VideoURL == "" {
-			writeError(w, "video_url is required", http.StatusBadRequest)
+			writeError(r.Context(), w, "video_url is required", http.StatusBadRequest)
 			return
 		}
 
@@ -89,7 +94,7 @@ func handleAnalyze(secret string) http.HandlerFunc {
 		dlMs := time.Since(dlStart).Milliseconds()
 		if err != nil {
 			log.Error("download failed", "video_url", req.VideoURL, "error", err, "duration_ms", dlMs)
-			writeError(w, "download failed: "+err.Error(), http.StatusInternalServerError)
+			writeError(r.Context(), w, "download failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		defer cleanup(videoPath)
@@ -101,7 +106,7 @@ func handleAnalyze(secret string) http.HandlerFunc {
 		sceneMs := time.Since(sceneStart).Milliseconds()
 		if err != nil {
 			log.Error("scene detection failed", "video_url", req.VideoURL, "error", err, "duration_ms", sceneMs)
-			writeError(w, "scene detection failed: "+err.Error(), http.StatusInternalServerError)
+			writeError(r.Context(), w, "scene detection failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		log.Info("scene detection complete", "video_url", req.VideoURL, "duration_ms", sceneMs, "total_cuts", cuts.Total)
@@ -112,7 +117,7 @@ func handleAnalyze(secret string) http.HandlerFunc {
 		colorMs := time.Since(colorStart).Milliseconds()
 		if err != nil {
 			log.Error("color analysis failed", "video_url", req.VideoURL, "error", err, "duration_ms", colorMs)
-			writeError(w, "color analysis failed: "+err.Error(), http.StatusInternalServerError)
+			writeError(r.Context(), w, "color analysis failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		log.Info("color analysis complete", "video_url", req.VideoURL, "duration_ms", colorMs)
