@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Preloaded, usePreloadedQuery, useQuery, useMutation, useAction } from "convex/react";
@@ -48,6 +48,7 @@ import {
 } from "@/lib/scoring";
 import { canOpenUserEpisodeSidebar } from "@/lib/sidebarBehavior";
 import { getEffectiveCategoryWeights } from "@/lib/userWeights";
+import posthog from "posthog-js";
 
 interface TitleDetailProps {
   preloadedTitle: Preloaded<typeof api.titles.getTitle>;
@@ -69,10 +70,30 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const [refreshingSeasons, setRefreshingSeasons] = useState(false);
   const [seasonRefreshMessage, setSeasonRefreshMessage] = useState<string | null>(null);
   const [seasonRefreshError, setSeasonRefreshError] = useState<string | null>(null);
+  const trackedViewIdRef = useRef<string | null>(null);
 
   const isInWatchlist = (title && profile?.watchlist?.includes(title._id)) ?? false;
   const isPaid = profile?.tier === "paid";
   const effectiveWeights = getEffectiveCategoryWeights(profile);
+
+  useEffect(() => {
+    if (!title) {
+      trackedViewIdRef.current = null;
+      return;
+    }
+    if (trackedViewIdRef.current === title._id) return;
+    trackedViewIdRef.current = title._id;
+
+    posthog.capture("title_viewed", {
+      title_id: title._id,
+      tmdb_id: title.tmdbId,
+      title: title.title,
+      type: title.type,
+      year: title.year,
+      status: title.status,
+      has_ratings: title.status === "rated" && Boolean(title.ratings),
+    });
+  }, [title]);
 
   if (!title) {
     return (
@@ -142,14 +163,31 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
     try {
       if (canReRateTitle) {
         await adminReRateTitle({ titleId: title._id });
+        posthog.capture("title_rating_requested", {
+          title_id: title._id,
+          title: title.title,
+          type: title.type,
+          action: "re_rate",
+          is_admin: true,
+        });
       } else {
         await requestRating({
           tmdbId: title.tmdbId,
           title: title.title,
           type: title.type as "movie" | "tv",
         });
+        posthog.capture("title_rating_requested", {
+          title_id: title._id,
+          tmdb_id: title.tmdbId,
+          title: title.title,
+          type: title.type,
+          action: "initial_rate",
+        });
       }
-    } catch {
+    } catch (err) {
+      posthog.captureException(err instanceof Error ? err : new Error(String(err)), {
+        properties: { title_id: title._id, title: title.title },
+      });
       setRequestError("Something went wrong. Please try again.");
     } finally {
       setRequestingRating(false);
@@ -455,8 +493,18 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                   try {
                     if (isInWatchlist) {
                       await removeFromWatchlist({ titleId: title._id });
+                      posthog.capture("watchlist_title_removed", {
+                        title_id: title._id,
+                        title: title.title,
+                        type: title.type,
+                      });
                     } else {
                       await addToWatchlist({ titleId: title._id });
+                      posthog.capture("watchlist_title_added", {
+                        title_id: title._id,
+                        title: title.title,
+                        type: title.type,
+                      });
                     }
                   } catch {
                     // silent

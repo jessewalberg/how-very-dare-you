@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { isPaidSubscriptionStatus } from "@/lib/subscription";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-01-28.clover",
@@ -66,6 +67,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
+  const posthog = getPostHogClient();
+
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -81,6 +84,18 @@ export async function POST(req: NextRequest) {
           : session.subscription?.id;
 
       await syncCustomerSubscription(customerId, subscriptionId);
+
+      posthog?.capture({
+        distinctId: customerId,
+        event: "checkout_completed",
+        properties: {
+          stripe_customer_id: customerId,
+          stripe_subscription_id: subscriptionId,
+          payment_status: session.payment_status,
+          currency: session.currency,
+          amount_total: session.amount_total,
+        },
+      });
       break;
     }
 
@@ -107,6 +122,16 @@ export async function POST(req: NextRequest) {
         stripeSubscriptionId: undefined,
         tier: "free",
         subscriptionExpiresAt: undefined,
+      });
+
+      posthog?.capture({
+        distinctId: customerId,
+        event: "subscription_cancelled",
+        properties: {
+          stripe_customer_id: customerId,
+          stripe_subscription_id: subscription.id,
+          cancel_at_period_end: subscription.cancel_at_period_end,
+        },
       });
       break;
     }

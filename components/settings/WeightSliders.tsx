@@ -15,6 +15,7 @@ import {
   serializeCategoryWeights,
   areCategoryWeightsEqual,
 } from "@/lib/userWeights";
+import posthog from "posthog-js";
 
 // Sample title for live preview
 const SAMPLE_RATINGS: CategoryRatings = {
@@ -120,6 +121,9 @@ export function WeightSliders({ isPaid, currentWeights }: WeightSlidersProps) {
       setSaving(true);
       try {
         await updateWeights({ weights });
+        posthog.capture("category_weights_saved", {
+          weights,
+        });
       } catch {
         // Silently handle - user will see stale weights
       } finally {

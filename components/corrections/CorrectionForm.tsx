@@ -17,6 +17,7 @@ import {
 import { RatingBadge } from "@/components/rating/RatingBadge";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CategoryRatings } from "@/lib/scoring";
+import posthog from "posthog-js";
 
 interface CorrectionFormProps {
   titleId: Id<"titles">;
@@ -58,9 +59,20 @@ export function CorrectionForm({
         suggestedSeverity: Number(suggestedSeverity),
         reason: reason.trim(),
       });
+      posthog.capture("correction_submitted", {
+        title_id: titleId,
+        title_name: titleName,
+        category,
+        current_severity: currentSeverity ?? 0,
+        suggested_severity: Number(suggestedSeverity),
+        reason_length: reason.trim().length,
+      });
       setSubmitted(true);
       onSuccess?.();
-    } catch {
+    } catch (err) {
+      posthog.captureException(err instanceof Error ? err : new Error(String(err)), {
+        properties: { title_id: titleId, category },
+      });
       setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);

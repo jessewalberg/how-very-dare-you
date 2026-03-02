@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/convex/_generated/api";
 import { CompositeScore } from "@/components/rating/CompositeScore";
 import { NoFlagsBadge } from "@/components/rating/NoFlagsBadge";
+import posthog from "posthog-js";
 import {
   calculateCompositeScore,
   isNoFlags,
@@ -64,10 +65,17 @@ export function TitleSearch({
   const showResults = open && debouncedQuery.length >= 2;
 
   const handleSelect = useCallback(
-    (titleId: string) => {
+    (title: { _id: string; title: string; type: string; year: number }) => {
+      posthog.capture("search_result_clicked", {
+        source: "header_search",
+        title_id: title._id,
+        title: title.title,
+        type: title.type,
+        year: title.year,
+      });
       setOpen(false);
       setQuery("");
-      router.push(`/title/${titleId}`);
+      router.push(`/title/${title._id}`);
     },
     [router]
   );
@@ -95,6 +103,11 @@ export function TitleSearch({
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && query.trim()) {
+              posthog.capture("search_submitted", {
+                source: "header_search",
+                query: query.trim(),
+                query_length: query.trim().length,
+              });
               setOpen(false);
               router.push(`/search?q=${encodeURIComponent(query.trim())}`);
             }
@@ -163,7 +176,7 @@ export function TitleSearch({
                 return (
                   <button
                     key={title._id}
-                    onClick={() => handleSelect(title._id)}
+                    onClick={() => handleSelect(title)}
                     className={cn(
                       "flex w-full items-center gap-3 px-3 py-2.5",
                       "text-left transition-colors duration-100",
