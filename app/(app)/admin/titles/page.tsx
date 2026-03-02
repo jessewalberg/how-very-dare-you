@@ -121,6 +121,7 @@ export default function AdminTitlesPage() {
     type: "title" | "episode";
     id: Id<"titles"> | Id<"episodes">;
     name: string;
+    mode: "rate" | "rerate";
   } | null>(null);
   const [reRating, setReRating] = useState(false);
   const [subtitleViewer, setSubtitleViewer] =
@@ -151,7 +152,9 @@ export default function AdminTitlesPage() {
       } else {
         await reRateEpisode({ episodeId: confirmReRate.id as Id<"episodes"> });
       }
-      toast.success(`Re-rating started for ${confirmReRate.name}`);
+      toast.success(
+        `${confirmReRate.mode === "rate" ? "Rating" : "Re-rating"} started for ${confirmReRate.name}`
+      );
       setConfirmReRate(null);
     } catch (e) {
       console.error("Re-rate failed:", e);
@@ -443,6 +446,7 @@ export default function AdminTitlesPage() {
                           type: "title",
                           id: title._id,
                           name: title.title,
+                          mode: "rerate",
                         });
                       }}
                     >
@@ -460,11 +464,12 @@ export default function AdminTitlesPage() {
                     onEpisodeOpen={(episodeId, showTitle) =>
                       setSelectedEpisode({ episodeId, showTitle })
                     }
-                    onReRate={(episodeId, name) =>
+                    onReRate={(episodeId, name, mode) =>
                       setConfirmReRate({
                         type: "episode",
                         id: episodeId,
                         name,
+                        mode,
                       })
                     }
                     onViewSubtitles={(episodeId, name) =>
@@ -490,15 +495,19 @@ export default function AdminTitlesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Re-rate {confirmReRate?.type === "episode" ? "Episode" : "Title"}
+              {confirmReRate?.mode === "rate" ? "Rate" : "Re-rate"}{" "}
+              {confirmReRate?.type === "episode" ? "Episode" : "Title"}
             </DialogTitle>
             <DialogDescription>
-              This will archive the current ratings for{" "}
+              {confirmReRate?.mode === "rate"
+                ? "This will send"
+                : "This will archive the current ratings for"}{" "}
               <span className="font-medium text-foreground">
                 {confirmReRate?.name}
               </span>{" "}
-              and send it back through the AI rating pipeline. Previous ratings
-              will be preserved in the rating history.
+              {confirmReRate?.mode === "rate"
+                ? "through the AI rating pipeline."
+                : "and send it back through the AI rating pipeline. Previous ratings will be preserved in the rating history."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -513,10 +522,10 @@ export default function AdminTitlesPage() {
               {reRating ? (
                 <>
                   <RefreshCw className="size-3 animate-spin mr-1" />
-                  Re-rating...
+                  {confirmReRate?.mode === "rate" ? "Rating..." : "Re-rating..."}
                 </>
               ) : (
-                "Confirm Re-rate"
+                `Confirm ${confirmReRate?.mode === "rate" ? "Rate" : "Re-rate"}`
               )}
             </Button>
           </DialogFooter>
@@ -715,7 +724,11 @@ function EpisodePanel({
   titleId: Id<"titles">;
   titleName: string;
   onEpisodeOpen: (episodeId: Id<"episodes">, showTitle: string) => void;
-  onReRate: (episodeId: Id<"episodes">, name: string) => void;
+  onReRate: (
+    episodeId: Id<"episodes">,
+    name: string,
+    mode: "rate" | "rerate"
+  ) => void;
   onViewSubtitles: (episodeId: Id<"episodes">, name: string) => void;
   needsReviewOnly: boolean;
 }) {
@@ -898,8 +911,8 @@ function EpisodePanel({
                       Subtitles
                     </Button>
 
-                    {/* Re-rate button */}
-                    {(ep.status === "rated" || ep.status === "failed") && (
+                    {/* Rate / Re-rate button */}
+                    {ep.status !== "rating" && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -908,12 +921,13 @@ function EpisodePanel({
                           event.stopPropagation();
                           onReRate(
                             ep._id,
-                            `${titleName} S${ep.seasonNumber}E${ep.episodeNumber}`
+                            `${titleName} S${ep.seasonNumber}E${ep.episodeNumber}`,
+                            ep.status === "unrated" ? "rate" : "rerate"
                           );
                         }}
                       >
                         <RefreshCw className="size-2.5" />
-                        Re-rate
+                        {ep.status === "unrated" ? "Rate" : "Re-rate"}
                       </Button>
                     )}
                   </div>
