@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import {
   Shield,
   Search,
@@ -16,6 +15,7 @@ import { LandingSampleCards } from "@/components/landing/LandingSampleCards";
 import { LandingNoFlagsPreview } from "@/components/landing/LandingNoFlagsPreview";
 import { LandingSearch } from "@/components/landing/LandingSearch";
 import { LandingAuthButtons, LandingNavAuth } from "@/components/landing/LandingAuthButtons";
+import { BrandMark } from "@/components/layout/BrandMark";
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
 
@@ -104,17 +104,12 @@ export default function HomePage() {
       <header className="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
           <Link href="/" aria-label="How Very Dare You home" className="flex items-center gap-2.5 group">
-            <div className="flex size-10 items-center justify-center rounded-xl border border-border/50 bg-muted/40">
-              <Image
-                src="/brand/howverydareyou-mark-192.png"
-                alt=""
-                width={32}
-                height={32}
-                className="size-8 rounded-lg object-cover transition-transform duration-200 group-hover:scale-105"
-                priority
-              />
-            </div>
-            <span className="text-base font-bold tracking-tight">
+            <BrandMark
+              size={44}
+              priority
+              className="transition-transform duration-200 group-hover:scale-105"
+            />
+            <span className="text-lg font-extrabold tracking-tight">
               How Very Dare You
             </span>
           </Link>
@@ -397,16 +392,10 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 py-8">
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
             <div className="flex items-center gap-2.5 text-muted-foreground">
-              <div className="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-muted/40">
-                <Image
-                  src="/brand/howverydareyou-mark-192.png"
-                  alt=""
-                  width={24}
-                  height={24}
-                  className="size-6 rounded-md object-cover"
-                />
-              </div>
-              <span className="text-sm font-medium">How Very Dare You</span>
+              <BrandMark size={36} />
+              <span className="text-sm font-semibold text-foreground">
+                How Very Dare You
+              </span>
             </div>
             <nav className="flex items-center gap-4">
               {["About", "Privacy", "Terms"].map((link) => (

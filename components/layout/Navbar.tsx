@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { Menu, Search, Settings, X } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/layout/BrandMark";
 import {
   Sheet,
   SheetContent,
@@ -46,20 +46,12 @@ export function Navbar() {
           aria-label="How Very Dare You home"
           className="flex items-center gap-2.5 shrink-0 group"
         >
-          <div className="flex size-10 items-center justify-center rounded-xl border border-border/50 bg-muted/40">
-            <Image
-              src="/brand/howverydareyou-mark-192.png"
-              alt=""
-              width={32}
-              height={32}
-              className={cn(
-                "size-8 rounded-lg object-cover",
-                "transition-transform duration-200 group-hover:scale-105"
-              )}
-              priority
-            />
-          </div>
-          <span className="text-base font-bold tracking-tight hidden sm:inline">
+          <BrandMark
+            size={44}
+            priority
+            className={cn("transition-transform duration-200 group-hover:scale-105")}
+          />
+          <span className="hidden text-lg font-extrabold tracking-tight sm:inline">
             How Very Dare You
           </span>
         </Link>
@@ -169,15 +161,7 @@ export function Navbar() {
         <SheetContent side="left" className="w-72">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
-              <div className="flex size-6 items-center justify-center rounded-md border border-border/50 bg-muted/40">
-                <Image
-                  src="/brand/howverydareyou-mark-192.png"
-                  alt=""
-                  width={20}
-                  height={20}
-                  className="size-5 rounded-[4px] object-cover"
-                />
-              </div>
+              <BrandMark size={28} />
               How Very Dare You
             </SheetTitle>
             <SheetDescription className="sr-only">
