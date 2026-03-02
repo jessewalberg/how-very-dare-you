@@ -26,7 +26,7 @@ export function LandingAuthButtons() {
         <Button
           size="lg"
           variant="outline"
-          className="min-w-[160px]"
+          className="min-w-[160px] text-foreground"
         >
           Create Account
         </Button>
@@ -56,7 +56,7 @@ export function LandingNavAuth() {
         </Button>
       </SignInButton>
       <SignUpButton mode="modal">
-        <Button variant="outline" size="sm" className="text-xs h-8">
+        <Button variant="outline" size="sm" className="text-xs h-8 text-foreground">
           Sign Up
         </Button>
       </SignUpButton>
