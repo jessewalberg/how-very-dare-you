@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import posthog from "posthog-js";
 
 interface SubscriptionCardProps {
   tier: "free" | "paid";
@@ -36,21 +37,29 @@ export function SubscriptionCard({
   const [loading, setLoading] = useState(false);
 
   async function handleUpgrade() {
+    posthog.capture("upgrade_clicked", {
+      current_tier: tier,
+    });
     setLoading(true);
     try {
       const url = await createCheckout();
       if (url) window.location.href = url;
-    } catch {
+    } catch (err) {
+      posthog.captureException(err instanceof Error ? err : new Error(String(err)));
       setLoading(false);
     }
   }
 
   async function handleManage() {
+    posthog.capture("manage_subscription_clicked", {
+      current_tier: tier,
+    });
     setLoading(true);
     try {
       const url = await createPortal();
       if (url) window.location.href = url;
-    } catch {
+    } catch (err) {
+      posthog.captureException(err instanceof Error ? err : new Error(String(err)));
       setLoading(false);
     }
   }

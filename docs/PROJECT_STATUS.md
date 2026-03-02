@@ -14,7 +14,7 @@
 | 3. Pages | ✅ Done | Landing, browse, search, detail, settings, corrections |
 | 4. Backend | ✅ Done | Convex functions, API clients, AI pipeline, Stripe, Clerk webhooks |
 | 5. Integration & Polish | ✅ Done | Real data in DB, core flows working, SEO + full Prompt 5.3 polish complete |
-| 6. Deployment | ⬜ Not started | Env vars, Vercel, production verification |
+| 6. Deployment | 🔶 Partial | Production deployment completed; final production verification checklist still tracked below |
 | 7. V2 Overstimulation | ✅ Done | Video analysis working |
 
 ---
@@ -73,7 +73,7 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 | ~~Product name~~ | ~~"How Very Dare You"~~ | ✅ Decided |
 | ~~Domain name~~ | ~~howverydareyou.com~~ | ✅ Purchased |
 | Dark mode | Add in polish pass or post-launch? | ⬜ Decide |
-| Affiliate links | Which streaming services? Setup needed? | ⬜ Research |
+| Affiliate links | Which streaming services? Setup needed? | 🟡 In progress (US-first hybrid routing/tracking shipped) |
 | Launch strategy | Soft launch → Product Hunt? Beta users first? | ⬜ Decide |
 
 ---
@@ -96,6 +96,20 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 - [x] Prompt 5.3 polish pass: responsive layout fixes, full skeleton coverage, empty/error states, route error boundaries, rating/no-flags animations, accessibility labels/focus states, Convex reconnect banner, and performance quick wins
 - [x] QA sweep: `bun run lint`, `bun run typecheck`, `bun run test:unit`, `bun run test:e2e` (63 passed, 6 skipped)
 - [x] Build verification note: `bun run build` fails in sandbox due blocked Google Fonts fetch for Plus Jakarta Sans; expected to pass in networked CI/deploy environment
+- [x] Branding refresh: optimized OG fallback, generated app/apple/favicons from brand mark, and wired icon metadata + web manifest
+- [x] Favicon pipeline hardening: added `png-to-ico` + `bun run brand:favicon` to keep `app/favicon.ico` in sync with PNG sources
+- [x] Next.js convention migration: replaced deprecated `middleware.ts` with `proxy.ts`
+- [x] Browse filters fix: wired sidebar filters end-to-end on `/browse` (including premium `max_*` severity filters), fixed active filter detection, and preserved query params reliably on rapid toggles
+- [x] Browse filter test coverage: added unit tests for filter parsing/application and a dedicated cross-browser e2e spec for filter interactions
+- [x] Latest QA sweep: `bun run lint`, `bun run typecheck`, `bun run test:unit`, `bun run test:e2e` (75 passed, 12 skipped)
+- [x] Production deployment completed (user confirmed)
+- [x] Personalized weight scoring wired app-wide: browse/search/watchlist/title detail/title search/episode cards now use paid user weights (fallback to defaults for free users)
+- [x] Settings weight live preview fix: prevented server prop re-sync from overwriting local slider edits and enabled first-save when a paid user has no prior `categoryWeights`
+- [x] Weight scoring coverage: added `tests/unit/userWeights.unit.ts` and `tests/e2e/specs/settings-weights.spec.ts` (premium-auth dependent; gracefully skips when unavailable)
+- [x] Verification for this pass: `bun run typecheck`, `bun run lint`, `bun run test:unit` passed; `bun run build` blocked in sandbox by Google Fonts fetch restriction
+- [x] Auth gating update: signed-out users can browse/search/view rated titles, but requesting new on-demand ratings now requires sign-in (titles + episodes), with updated search/detail/landing copy and unauthenticated e2e coverage
+- [x] Affiliate click tracking: provider links now route through `/go/[titleId]` with server-side PostHog events (`watch_provider_clicked` / `watch_provider_click_failed`), anonymized distinct-id fallback, and new unit/e2e coverage
+- [x] Affiliate URL preservation: TMDB metadata refreshes now preserve existing `streamingProviders[].affiliateUrl` values by provider-name merge logic in title metadata/update mutations, with unit coverage
 
 ---
 
@@ -116,3 +130,7 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 | 2026-03-01 | P0 resolved: name is "How Very Dare You", domain is howverydareyou.com. |
 | 2026-03-01 | P1 SEO & metadata pass completed: dynamic title metadata + JSON-LD, homepage/browse/search metadata, robots/sitemap verification, heading and alt-text audits, static OG fallback, SEO unit/e2e coverage. |
 | 2026-03-01 | P2 polish & responsive pass completed (Prompt 5.3): responsive fixes, loading/empty/error states, accessibility/performance improvements, animation refinements, and full lint/typecheck/unit/e2e verification. |
+| 2026-03-01 | Branding + platform polish follow-up: icon/manifest pipeline, middleware→proxy migration, and browse filter sidebar wiring with new unit/e2e coverage (full suite green: 72 passed, 6 skipped). |
+| 2026-03-01 | Deployment update: production deployment confirmed by user; deployment phase moved to partial pending final production checklist verification. |
+| 2026-03-01 | Personalized weights follow-up: fixed settings live preview sync/save behavior, propagated paid category weights through score surfaces (browse/search/watchlist/detail/episodes), and added unit + premium-auth e2e coverage. |
+| 2026-03-01 | Access model update: on-demand rating requests now require authentication (free accounts get 3/day), signed-out users still browse/search rated content, and unauthenticated search gate behavior is covered in Playwright. |

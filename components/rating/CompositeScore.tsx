@@ -65,6 +65,7 @@ export function CompositeScore({
   if (compact) {
     return (
       <div
+        data-testid="composite-score-compact"
         className={cn(
           "inline-flex items-center gap-1.5 rounded-md px-2 py-1",
           "ring-1 ring-inset",
@@ -73,6 +74,7 @@ export function CompositeScore({
         )}
       >
         <span
+          data-testid="composite-score-value-compact"
           className={cn(
             "text-sm font-bold tabular-nums tracking-tight",
             config.color
@@ -94,6 +96,7 @@ export function CompositeScore({
 
   return (
     <div
+      data-testid="composite-score"
       className="flex flex-col items-center gap-1"
       role="status"
       aria-label={`Overall content advisory score: ${score.toFixed(1)} out of 4, ${label}`}
@@ -110,6 +113,7 @@ export function CompositeScore({
         )}
       >
         <span
+          data-testid="composite-score-value"
           className={cn(
             "text-2xl font-extrabold tabular-nums leading-none tracking-tighter",
             config.color

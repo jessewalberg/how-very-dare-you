@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Preloaded, usePreloadedQuery, useQuery, useMutation, useAction } from "convex/react";
@@ -47,6 +47,8 @@ import {
   type CategoryRatings,
 } from "@/lib/scoring";
 import { canOpenUserEpisodeSidebar } from "@/lib/sidebarBehavior";
+import { getEffectiveCategoryWeights } from "@/lib/userWeights";
+import posthog from "posthog-js";
 
 interface TitleDetailProps {
   preloadedTitle: Preloaded<typeof api.titles.getTitle>;
@@ -68,9 +70,30 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const [refreshingSeasons, setRefreshingSeasons] = useState(false);
   const [seasonRefreshMessage, setSeasonRefreshMessage] = useState<string | null>(null);
   const [seasonRefreshError, setSeasonRefreshError] = useState<string | null>(null);
+  const trackedViewIdRef = useRef<string | null>(null);
 
   const isInWatchlist = (title && profile?.watchlist?.includes(title._id)) ?? false;
   const isPaid = profile?.tier === "paid";
+  const effectiveWeights = getEffectiveCategoryWeights(profile);
+
+  useEffect(() => {
+    if (!title) {
+      trackedViewIdRef.current = null;
+      return;
+    }
+    if (trackedViewIdRef.current === title._id) return;
+    trackedViewIdRef.current = title._id;
+
+    posthog.capture("title_viewed", {
+      title_id: title._id,
+      tmdb_id: title.tmdbId,
+      title: title.title,
+      type: title.type,
+      year: title.year,
+      status: title.status,
+      has_ratings: title.status === "rated" && Boolean(title.ratings),
+    });
+  }, [title]);
 
   if (!title) {
     return (
@@ -93,7 +116,9 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const hasRatings = title.ratings && title.status !== "pending" && title.status !== "rating";
   const ratings = title.ratings as CategoryRatings | undefined;
   const noFlags = ratings ? isNoFlags(ratings) : false;
-  const composite = ratings ? calculateCompositeScore(ratings) : null;
+  const composite = ratings
+    ? calculateCompositeScore(ratings, effectiveWeights)
+    : null;
   const totalSeasonEpisodes =
     title.type === "tv"
       ? (title.seasonData ?? []).reduce(
@@ -138,14 +163,31 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
     try {
       if (canReRateTitle) {
         await adminReRateTitle({ titleId: title._id });
+        posthog.capture("title_rating_requested", {
+          title_id: title._id,
+          title: title.title,
+          type: title.type,
+          action: "re_rate",
+          is_admin: true,
+        });
       } else {
         await requestRating({
           tmdbId: title.tmdbId,
           title: title.title,
           type: title.type as "movie" | "tv",
         });
+        posthog.capture("title_rating_requested", {
+          title_id: title._id,
+          tmdb_id: title.tmdbId,
+          title: title.title,
+          type: title.type,
+          action: "initial_rate",
+        });
       }
-    } catch {
+    } catch (err) {
+      posthog.captureException(err instanceof Error ? err : new Error(String(err)), {
+        properties: { title_id: title._id, title: title.title },
+      });
       setRequestError("Something went wrong. Please try again.");
     } finally {
       setRequestingRating(false);
@@ -194,7 +236,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           genre={title.genre}
           posterPath={title.posterPath}
         />
-        {canManuallyRate && (
+        {canManuallyRate && isSignedIn && (
           <div className="mt-4 flex flex-col items-center gap-3">
             {requestError && (
               <p className="text-sm text-destructive">{requestError}</p>
@@ -207,6 +249,17 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               <Sparkles className={cn("size-4", requestingRating && "animate-pulse")} />
               {requestingRating ? "Requesting rating..." : "Rate This Title"}
             </Button>
+          </div>
+        )}
+        {canManuallyRate && !isSignedIn && (
+          <div className="mt-4 text-center text-sm text-muted-foreground">
+            <Link
+              href="/sign-in"
+              className="font-medium underline underline-offset-2 hover:text-foreground transition-colors"
+            >
+              Sign in
+            </Link>{" "}
+            to request up to 3 ratings per day.
           </div>
         )}
       </div>
@@ -254,7 +307,13 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {/* Streaming links — below poster on desktop */}
           {title.streamingProviders && title.streamingProviders.length > 0 && (
             <div className="mt-4 hidden lg:block">
-              <StreamingLinks providers={title.streamingProviders} />
+              <StreamingLinks
+                titleId={title._id}
+                tmdbId={title.tmdbId}
+                titleType={title.type}
+                providers={title.streamingProviders}
+                surface="title_detail"
+              />
             </div>
           )}
         </div>
@@ -321,7 +380,13 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {/* Streaming links — inline on mobile */}
           {title.streamingProviders && title.streamingProviders.length > 0 && (
             <div className="lg:hidden">
-              <StreamingLinks providers={title.streamingProviders} />
+              <StreamingLinks
+                titleId={title._id}
+                tmdbId={title.tmdbId}
+                titleType={title.type}
+                providers={title.streamingProviders}
+                surface="title_detail"
+              />
             </div>
           )}
 
@@ -331,6 +396,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {ratings && (
             <RatingBreakdown
               ratings={ratings}
+              weights={effectiveWeights}
               notes={normalizedRatingNotes}
               categoryEvidence={title.categoryEvidence ?? undefined}
             />
@@ -344,6 +410,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                 titleId={title._id}
                 tmdbShowId={title.tmdbId}
                 showTitle={title.title}
+                weights={effectiveWeights}
               />
             </>
           )}
@@ -381,7 +448,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
 
           {/* Actions */}
           <div className="flex flex-wrap gap-3">
-            {showTitleRateAction && (
+            {showTitleRateAction && isSignedIn && (
               <div className="flex flex-col gap-1.5">
                 <Button
                   size="sm"
@@ -438,8 +505,18 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                   try {
                     if (isInWatchlist) {
                       await removeFromWatchlist({ titleId: title._id });
+                      posthog.capture("watchlist_title_removed", {
+                        title_id: title._id,
+                        title: title.title,
+                        type: title.type,
+                      });
                     } else {
                       await addToWatchlist({ titleId: title._id });
+                      posthog.capture("watchlist_title_added", {
+                        title_id: title._id,
+                        title: title.title,
+                        type: title.type,
+                      });
                     }
                   } catch {
                     // silent
@@ -465,7 +542,8 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                 >
                   Sign in
                 </Link>{" "}
-                to submit corrections or save to your watchlist.
+                to request up to 3 ratings per day, submit corrections, or save to
+                your watchlist.
               </p>
             )}
           </div>

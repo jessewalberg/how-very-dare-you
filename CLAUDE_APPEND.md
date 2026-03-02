@@ -1,4 +1,4 @@
-# Project-Specific Context (Append to auto-generated CLAUDE.md)
+# Project-Specific Context
 
 ## IMPORTANT: This project uses the following stack. Always consult official docs:
 

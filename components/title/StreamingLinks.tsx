@@ -3,26 +3,49 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { ExternalLink } from "lucide-react";
+import posthog from "posthog-js";
+import { buildWatchProviderRedirectUrl, type WatchProviderSurface } from "@/lib/affiliateTracking";
 
 interface StreamingProvider {
   name: string;
   logoPath?: string;
   affiliateUrl?: string;
+  url?: string;
 }
 
 interface StreamingLinksProps {
+  titleId: string;
+  tmdbId: number;
+  titleType: "movie" | "tv" | "youtube";
   providers: StreamingProvider[];
+  surface?: WatchProviderSurface;
   compact?: boolean;
 }
 
 export function StreamingLinks({
+  titleId,
+  tmdbId,
+  titleType,
   providers,
+  surface = "title_detail",
   compact = false,
 }: StreamingLinksProps) {
   if (providers.length === 0) return null;
 
+  let distinctId: string | null = null;
+  try {
+    distinctId = posthog.get_distinct_id();
+  } catch {
+    distinctId = null;
+  }
+
   return (
-    <div className={cn("flex items-center gap-1.5 flex-wrap")}>
+    <div
+      className={cn("flex items-center gap-1.5 flex-wrap")}
+      data-title-id={titleId}
+      data-tmdb-id={tmdbId}
+      data-title-type={titleType}
+    >
       {!compact && (
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">
           Watch on
@@ -62,21 +85,24 @@ export function StreamingLinks({
           </span>
         );
 
-        if (provider.affiliateUrl) {
-          return (
-            <a
-              key={provider.name}
-              href={provider.affiliateUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="no-underline"
-            >
-              {content}
-            </a>
-          );
-        }
+        const href = buildWatchProviderRedirectUrl({
+          titleId,
+          providerName: provider.name,
+          surface,
+          distinctId,
+        });
 
-        return <span key={provider.name}>{content}</span>;
+        return (
+          <a
+            key={provider.name}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="no-underline"
+          >
+            {content}
+          </a>
+        );
       })}
     </div>
   );

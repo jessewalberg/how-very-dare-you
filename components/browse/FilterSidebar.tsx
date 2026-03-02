@@ -22,6 +22,10 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { CATEGORIES } from "@/lib/constants";
+import {
+  hasMaxSeverityFilters,
+  parseMaxSeverityFilters,
+} from "@/lib/browseFilters";
 
 const culturalCategories = CATEGORIES.filter((c) => c.group === "cultural");
 const healthCategories = CATEGORIES.filter((c) => c.group === "health");
@@ -75,23 +79,41 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
   const currentAgeRatings = searchParams.getAll("age");
   const currentServices = searchParams.getAll("service");
   const noFlagsOnly = searchParams.get("noFlags") === "true";
+  const maxSeverityByCategory = parseMaxSeverityFilters(
+    new URLSearchParams(searchParams.toString())
+  );
+
+  const getLatestParams = useCallback(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search);
+    }
+    return new URLSearchParams(searchParams.toString());
+  }, [searchParams]);
+
+  const pushBrowseParams = useCallback(
+    (params: URLSearchParams) => {
+      const query = params.toString();
+      router.push(query ? `/browse?${query}` : "/browse");
+    },
+    [router]
+  );
 
   const updateParam = useCallback(
     (key: string, value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = getLatestParams();
       if (value) {
         params.set(key, value);
       } else {
         params.delete(key);
       }
-      router.push(`/browse?${params.toString()}`);
+      pushBrowseParams(params);
     },
-    [router, searchParams]
+    [getLatestParams, pushBrowseParams]
   );
 
   const toggleArrayParam = useCallback(
     (key: string, value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = getLatestParams();
       const current = params.getAll(key);
       if (current.includes(value)) {
         params.delete(key);
@@ -101,9 +123,9 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
       } else {
         params.append(key, value);
       }
-      router.push(`/browse?${params.toString()}`);
+      pushBrowseParams(params);
     },
-    [router, searchParams]
+    [getLatestParams, pushBrowseParams]
   );
 
   const clearFilters = useCallback(() => {
@@ -114,7 +136,8 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
     currentType ||
     currentAgeRatings.length > 0 ||
     currentServices.length > 0 ||
-    noFlagsOnly;
+    noFlagsOnly ||
+    hasMaxSeverityFilters(maxSeverityByCategory);
 
   return (
     <div className="space-y-6">

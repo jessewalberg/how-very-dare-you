@@ -25,6 +25,7 @@ import {
   type R2TranscriptStorage,
 } from "../lib/r2";
 import { assessRatingQuality } from "../lib/ratingQuality";
+import { mergeStreamingProvidersWithAffiliates } from "../lib/streamingProviders";
 import {
   assertCategoryRatings,
   assertConfidence,
@@ -1846,7 +1847,7 @@ export const runNightlyBatch = action({
 
 export const searchTMDB = action({
   args: { query: v.string() },
-  handler: async (_ctx, args): Promise<
+  handler: async (ctx, args): Promise<
     {
       tmdbId: number;
       title: string;
@@ -1854,6 +1855,9 @@ export const searchTMDB = action({
       year: number;
       posterPath: string | null;
       overview: string;
+      existingTitleId?: string;
+      existingTitleStatus?: string;
+      existingHasRatings?: boolean;
     }[]
   > => {
     const query = args.query.trim();
@@ -1906,8 +1910,36 @@ export const searchTMDB = action({
 
     // Sort by popularity descending, return top 12
     results.sort((a, b) => b.popularity - a.popularity);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    return results.slice(0, 12).map(({ popularity, ...rest }) => rest);
+    const topResults = results
+      .slice(0, 12)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      .map(({ popularity, ...rest }) => rest);
+
+    const withExistingTitles = await Promise.all(
+      topResults.map(async (result) => {
+        const existing = await ctx.runQuery(api.titles.getTitleByTmdbId, {
+          tmdbId: result.tmdbId,
+        });
+
+        if (!existing || existing.type !== result.type) {
+          return result;
+        }
+
+        const existingHasRatings =
+          existing.status === "rated" ||
+          existing.status === "reviewed" ||
+          existing.status === "disputed";
+
+        return {
+          ...result,
+          existingTitleId: String(existing._id),
+          existingTitleStatus: existing.status,
+          existingHasRatings,
+        };
+      })
+    );
+
+    return withExistingTitles;
   },
 });
 
@@ -2142,13 +2174,26 @@ export const updateTitleMetadata = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { titleId, ...fields } = args;
+    const { titleId, streamingProviders, ...fields } = args;
+    const existingTitle = await ctx.db.get(titleId);
+    if (!existingTitle) throw new Error("Title not found");
+
+    const mergedProviders =
+      streamingProviders !== undefined
+        ? mergeStreamingProvidersWithAffiliates(
+            streamingProviders.map((p) => ({
+              name: p.name,
+              logoPath: p.logoPath,
+            })),
+            existingTitle.streamingProviders
+          )
+        : undefined;
+
     await ctx.db.patch(titleId, {
       ...fields,
-      streamingProviders: fields.streamingProviders?.map((p) => ({
-        name: p.name,
-        logoPath: p.logoPath,
-      })),
+      ...(mergedProviders !== undefined
+        ? { streamingProviders: mergedProviders }
+        : {}),
     });
   },
 });

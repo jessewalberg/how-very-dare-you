@@ -5,7 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { FilterSidebar } from "@/components/browse/FilterSidebar";
-import { TitleGrid } from "@/components/browse/TitleGrid";
+import { TitleGrid, type TitleData } from "@/components/browse/TitleGrid";
+import {
+  applyBrowseClientFilters,
+  parseMaxSeverityFilters,
+} from "@/lib/browseFilters";
+import { getEffectiveCategoryWeights } from "@/lib/userWeights";
 
 export default function BrowsePage() {
   return (
@@ -17,6 +22,7 @@ export default function BrowsePage() {
 
 function BrowseContent() {
   const searchParams = useSearchParams();
+  const profile = useQuery(api.users.getMyProfile);
   const typeParam = searchParams.get("type") as
     | "movie"
     | "tv"
@@ -25,6 +31,11 @@ function BrowseContent() {
   const noFlagsOnly = searchParams.get("noFlags") === "true";
   const ageFilters = searchParams.getAll("age");
   const serviceFilters = searchParams.getAll("service");
+  const maxSeverityByCategory = parseMaxSeverityFilters(
+    new URLSearchParams(searchParams.toString())
+  );
+  const isPaid = profile?.tier === "paid";
+  const effectiveWeights = getEffectiveCategoryWeights(profile);
 
   // Use the appropriate Convex query
   const browseResults = useQuery(
@@ -36,30 +47,18 @@ function BrowseContent() {
     noFlagsOnly ? { type: typeParam ?? undefined, limit: 50 } : "skip"
   );
   const rawResults = noFlagsOnly ? noFlagResults : browseResults;
-
-  // Client-side filtering for age rating and streaming services
-  const titles = rawResults?.filter((title: NonNullable<typeof rawResults>[number]) => {
-    if (
-      ageFilters.length > 0 &&
-      (!title.ageRating || !ageFilters.includes(title.ageRating))
-    ) {
-      return false;
+  const titles = applyBrowseClientFilters<TitleData>(
+    rawResults as TitleData[] | undefined,
+    {
+      ageFilters,
+      serviceFilters,
+      maxSeverityByCategory,
     }
-    if (serviceFilters.length > 0) {
-      const titleServices =
-        title.streamingProviders?.map(
-          (p: NonNullable<typeof title.streamingProviders>[number]) => p.name
-        ) ?? [];
-      if (!serviceFilters.some((s) => titleServices.includes(s))) {
-        return false;
-      }
-    }
-    return true;
-  });
+  );
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:gap-8">
-      <FilterSidebar />
+      <FilterSidebar isPaid={isPaid} />
 
       <div className="flex-1 min-w-0 space-y-4">
         {/* Page header */}
@@ -80,6 +79,7 @@ function BrowseContent() {
         <TitleGrid
           titles={titles}
           isLoading={rawResults === undefined}
+          weights={effectiveWeights}
           emptyState={{
             title: "No titles match your filters",
             description:

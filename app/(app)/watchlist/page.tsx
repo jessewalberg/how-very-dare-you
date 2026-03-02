@@ -13,6 +13,7 @@ import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { TitleGrid } from "@/components/browse/TitleGrid";
 import type { CategoryRatings } from "@/lib/scoring";
+import { getEffectiveCategoryWeights } from "@/lib/userWeights";
 
 export default function WatchlistPage() {
   const { isSignedIn, isLoaded } = useUser();
@@ -73,6 +74,7 @@ export default function WatchlistPage() {
 
   const isLoading = watchlist === undefined;
   const isEmpty = watchlist && watchlist.length === 0;
+  const effectiveWeights = getEffectiveCategoryWeights(profile);
   type WatchlistItem = Exclude<NonNullable<typeof watchlist>[number], null>;
 
   return (
@@ -118,6 +120,7 @@ export default function WatchlistPage() {
             }))
         }
         isLoading={isLoading}
+        weights={effectiveWeights}
       />
     </div>
   );

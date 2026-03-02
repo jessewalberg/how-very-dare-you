@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
-import { Menu, Search, Settings, Shield, X } from "lucide-react";
+import { Menu, Search, Settings, X } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -38,20 +39,25 @@ export function Navbar() {
         "supports-[backdrop-filter]:bg-background/60"
       )}
     >
-      <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4">
         {/* Logo */}
         <Link
           href="/"
-          className="flex items-center gap-2 shrink-0 group"
+          aria-label="How Very Dare You home"
+          className="flex items-center gap-2.5 shrink-0 group"
         >
-          <div
-            className={cn(
-              "flex items-center justify-center size-7 rounded-lg",
-              "bg-foreground text-background",
-              "transition-transform duration-200 group-hover:scale-105"
-            )}
-          >
-            <Shield className="size-4" strokeWidth={2.5} />
+          <div className="flex size-10 items-center justify-center rounded-xl border border-border/50 bg-muted/40">
+            <Image
+              src="/brand/howverydareyou-mark-192.png"
+              alt=""
+              width={32}
+              height={32}
+              className={cn(
+                "size-8 rounded-lg object-cover",
+                "transition-transform duration-200 group-hover:scale-105"
+              )}
+              priority
+            />
           </div>
           <span className="text-base font-bold tracking-tight hidden sm:inline">
             How Very Dare You
@@ -163,7 +169,15 @@ export function Navbar() {
         <SheetContent side="left" className="w-72">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
-              <Shield className="size-4" strokeWidth={2.5} />
+              <div className="flex size-6 items-center justify-center rounded-md border border-border/50 bg-muted/40">
+                <Image
+                  src="/brand/howverydareyou-mark-192.png"
+                  alt=""
+                  width={20}
+                  height={20}
+                  className="size-5 rounded-[4px] object-cover"
+                />
+              </div>
               How Very Dare You
             </SheetTitle>
             <SheetDescription className="sr-only">

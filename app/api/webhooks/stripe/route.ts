@@ -2,12 +2,51 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { isPaidSubscriptionStatus } from "@/lib/subscription";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-01-28.clover",
 });
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+async function syncCustomerSubscription(
+  customerId: string,
+  preferredSubscriptionId?: string
+) {
+  let subscription: Stripe.Subscription | null = null;
+
+  if (preferredSubscriptionId) {
+    try {
+      subscription = await stripe.subscriptions.retrieve(preferredSubscriptionId);
+    } catch {
+      subscription = null;
+    }
+  }
+
+  if (!subscription) {
+    const list = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 1,
+    });
+    subscription = list.data[0] ?? null;
+  }
+
+  const tier =
+    subscription && isPaidSubscriptionStatus(subscription.status)
+      ? "paid"
+      : "free";
+  const periodEnd = subscription?.items?.data?.[0]?.current_period_end;
+
+  await convex.mutation(api.users.updateSubscription, {
+    stripeCustomerId: customerId,
+    stripeSubscriptionId: tier === "paid" ? subscription?.id : undefined,
+    tier,
+    subscriptionExpiresAt: tier === "paid" && periodEnd ? periodEnd * 1000 : undefined,
+  });
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.text();
@@ -28,7 +67,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
+  const posthog = getPostHogClient();
+
   switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      if (session.mode !== "subscription" || !session.customer) break;
+
+      const customerId =
+        typeof session.customer === "string"
+          ? session.customer
+          : session.customer.id;
+      const subscriptionId =
+        typeof session.subscription === "string"
+          ? session.subscription
+          : session.subscription?.id;
+
+      await syncCustomerSubscription(customerId, subscriptionId);
+
+      posthog?.capture({
+        distinctId: customerId,
+        event: "checkout_completed",
+        properties: {
+          stripe_customer_id: customerId,
+          stripe_subscription_id: subscriptionId,
+          payment_status: session.payment_status,
+          currency: session.currency,
+          amount_total: session.amount_total,
+        },
+      });
+      break;
+    }
+
     case "customer.subscription.created":
     case "customer.subscription.updated": {
       const subscription = event.data.object as Stripe.Subscription;
@@ -36,20 +106,7 @@ export async function POST(req: NextRequest) {
         typeof subscription.customer === "string"
           ? subscription.customer
           : subscription.customer.id;
-
-      // Period end is on items in newer Stripe API versions
-      const periodEnd = subscription.items?.data?.[0]?.current_period_end;
-
-      await convex.mutation(api.users.updateSubscription, {
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: subscription.id,
-        tier:
-          subscription.status === "active" ||
-          subscription.status === "trialing"
-            ? "paid"
-            : "free",
-        subscriptionExpiresAt: periodEnd ? periodEnd * 1000 : undefined,
-      });
+      await syncCustomerSubscription(customerId, subscription.id);
       break;
     }
 
@@ -65,6 +122,16 @@ export async function POST(req: NextRequest) {
         stripeSubscriptionId: undefined,
         tier: "free",
         subscriptionExpiresAt: undefined,
+      });
+
+      posthog?.capture({
+        distinctId: customerId,
+        event: "subscription_cancelled",
+        properties: {
+          stripe_customer_id: customerId,
+          stripe_subscription_id: subscription.id,
+          cancel_at_period_end: subscription.cancel_at_period_end,
+        },
       });
       break;
     }

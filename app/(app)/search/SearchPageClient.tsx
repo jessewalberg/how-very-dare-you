@@ -2,12 +2,15 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import {
   Search,
   Sparkles,
   Crown,
+  LogIn,
   AlertCircle,
   Film,
   Tv,
@@ -19,8 +22,11 @@ import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { TitleGrid } from "@/components/browse/TitleGrid";
 import type { CategoryRatings } from "@/lib/scoring";
+import { getEffectiveCategoryWeights } from "@/lib/userWeights";
+import posthog from "posthog-js";
 
 export default function SearchPageClient() {
+  const { isSignedIn } = useUser();
   const searchParams = useSearchParams();
   const router = useRouter();
   const q = searchParams.get("q") ?? "";
@@ -30,6 +36,7 @@ export default function SearchPageClient() {
     api.search.searchTitles,
     q.length >= 2 ? { searchTerm: q } : "skip"
   );
+  const profile = useQuery(api.users.getMyProfile);
 
   const rateLimit = useQuery(api.users.getRateLimitStatus);
   const isAdmin = useQuery(api.admin.isCurrentUserAdmin);
@@ -44,6 +51,9 @@ export default function SearchPageClient() {
       year: number;
       posterPath: string | null;
       overview: string;
+      existingTitleId?: string;
+      existingTitleStatus?: string;
+      existingHasRatings?: boolean;
     }[]
   >([]);
   const [tmdbLoading, setTmdbLoading] = useState(false);
@@ -51,12 +61,15 @@ export default function SearchPageClient() {
   const [requestingId, setRequestingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tmdbRetryNonce, setTmdbRetryNonce] = useState(0);
+  const trackedSearchQueryRef = useRef<string | null>(null);
+  const trackedResultsQueryRef = useRef<string | null>(null);
 
   const isLoading = dbResults === undefined && q.length >= 2;
-  const hasDbResults = dbResults && dbResults.length > 0;
   const remaining = rateLimit ? rateLimit.limit - rateLimit.used : null;
   const canAdminAdd = isAdmin === true;
-  const canRequestFromSearch = canAdminAdd || (remaining !== null && remaining > 0);
+  const canRequestFromSearch =
+    canAdminAdd || (isSignedIn && remaining !== null && remaining > 0);
+  const effectiveWeights = getEffectiveCategoryWeights(profile);
 
   // Always search TMDB for additional candidates, then de-duplicate against DB hits.
   useEffect(() => {
@@ -93,6 +106,56 @@ export default function SearchPageClient() {
   const tmdbAdditionalResults = tmdbResults.filter(
     (r) => !dbKeys.has(`${r.type}-${r.tmdbId}`)
   );
+  const existingFromTmdbCount = tmdbAdditionalResults.filter(
+    (r) => r.existingTitleId
+  ).length;
+  const totalMatchedCount = (dbResults?.length ?? 0) + existingFromTmdbCount;
+  const isSearching = isLoading || tmdbLoading;
+
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) {
+      trackedSearchQueryRef.current = null;
+      trackedResultsQueryRef.current = null;
+      return;
+    }
+
+    if (trackedSearchQueryRef.current === query) return;
+    trackedSearchQueryRef.current = query;
+
+    posthog.capture("search_submitted", {
+      source: "search_page",
+      query,
+      query_length: query.length,
+      signed_in: isSignedIn,
+    });
+  }, [q, isSignedIn]);
+
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2 || dbResults === undefined || tmdbLoading) {
+      return;
+    }
+    if (trackedResultsQueryRef.current === query) return;
+    trackedResultsQueryRef.current = query;
+
+    posthog.capture("search_results_viewed", {
+      source: "search_page",
+      query,
+      db_results_count: dbResults.length,
+      tmdb_additional_results_count: tmdbAdditionalResults.length,
+      tmdb_existing_results_count: existingFromTmdbCount,
+      total_results_count: dbResults.length + tmdbAdditionalResults.length,
+      tmdb_error: tmdbError,
+    });
+  }, [
+    q,
+    dbResults,
+    tmdbLoading,
+    tmdbAdditionalResults.length,
+    existingFromTmdbCount,
+    tmdbError,
+  ]);
 
   async function handleRequestRating(
     tmdbId: number,
@@ -103,9 +166,23 @@ export default function SearchPageClient() {
     setRequestingId(tmdbId);
     try {
       const titleId = await requestRating({ tmdbId, title, type });
+      posthog.capture("rating_requested", {
+        tmdb_id: tmdbId,
+        title,
+        type,
+        search_query: q,
+        is_admin: canAdminAdd,
+      });
       router.push(`/title/${titleId}`);
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Sign in required")) {
+        setError("Sign in to request ratings.");
+      } else {
+        posthog.captureException(err instanceof Error ? err : new Error(String(err)), {
+          properties: { tmdb_id: tmdbId, title, type },
+        });
+        setError("Something went wrong. Please try again.");
+      }
     } finally {
       setRequestingId(null);
     }
@@ -118,17 +195,34 @@ export default function SearchPageClient() {
         <h1 className="text-2xl font-bold tracking-tight">Search Results</h1>
         {q && (
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {isLoading
+            {isSearching
               ? "Searching..."
-              : hasDbResults
-                ? `${dbResults.length} result${dbResults.length !== 1 ? "s" : ""} for "${q}"`
+              : totalMatchedCount > 0
+                ? `${totalMatchedCount} result${totalMatchedCount !== 1 ? "s" : ""} for "${q}"`
                 : `No rated results for "${q}"`}
           </p>
         )}
       </div>
 
+      {/* Signed-out gate for on-demand requests */}
+      {!isSignedIn && !canAdminAdd && (
+        <div className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <LogIn className="size-3.5" />
+          <span>Sign in to request up to 3 ratings per day.</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto px-1.5 py-0.5 text-[10px] font-semibold gap-1"
+            onClick={() => router.push("/sign-in")}
+          >
+            Sign In
+            <ArrowRight className="size-3" />
+          </Button>
+        </div>
+      )}
+
       {/* Rate limit indicator */}
-      {rateLimit && (
+      {rateLimit && isSignedIn && (
         <div
           className={cn(
             "inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs",
@@ -159,7 +253,7 @@ export default function SearchPageClient() {
         </div>
       )}
 
-      {!canAdminAdd && rateLimit && remaining === 0 && (
+      {!canAdminAdd && isSignedIn && rateLimit && remaining === 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <Crown className="size-4 shrink-0" />
           {rateLimit.tier === "free" ? (
@@ -225,13 +319,20 @@ export default function SearchPageClient() {
             }))
           }
           isLoading={isLoading}
+          weights={effectiveWeights}
           emptyState={
             q
-              ? {
+              ? existingFromTmdbCount > 0
+                ? {
+                    title: "No exact index matches",
+                    description:
+                      "We found related titles below that already exist in our database.",
+                  }
+                : {
                   title: `No results for "${q}"`,
                   description:
                     "Check your spelling or try a different title.",
-                }
+                  }
               : undefined
           }
         />
@@ -250,7 +351,7 @@ export default function SearchPageClient() {
                   More titles from TMDB
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Titles not yet in our database can be added from here.
+                  View existing matches or add titles not yet in our database.
                 </p>
               </div>
             </div>
@@ -294,6 +395,7 @@ export default function SearchPageClient() {
                 {tmdbAdditionalResults.map((result) => {
                   const TypeIcon = result.type === "tv" ? Tv : Film;
                   const isRequesting = requestingId === result.tmdbId;
+                  const canViewExisting = Boolean(result.existingTitleId);
 
                   return (
                     <div
@@ -337,7 +439,18 @@ export default function SearchPageClient() {
                       </div>
 
                       {/* Request button */}
-                      {canRequestFromSearch ? (
+                      {canViewExisting ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          className="w-full shrink-0 gap-1.5 sm:ml-auto sm:w-auto"
+                        >
+                          <Link href={`/title/${result.existingTitleId}`}>
+                            {result.existingHasRatings ? "View Advisory" : "View Title"}
+                          </Link>
+                        </Button>
+                      ) : canRequestFromSearch ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -362,6 +475,17 @@ export default function SearchPageClient() {
                               {canAdminAdd ? "Add" : "Rate"}
                             </>
                           )}
+                        </Button>
+                      ) : !isSignedIn ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full shrink-0 gap-1 text-xs sm:ml-auto sm:w-auto"
+                          onClick={() => router.push("/sign-in")}
+                        >
+                          <LogIn className="size-3" />
+                          Sign In to Rate
+                          <ArrowRight className="size-3" />
                         </Button>
                       ) : (
                         <Button

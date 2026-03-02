@@ -6,6 +6,7 @@ import {
   getTVDetails,
   extractStreamingProviders,
 } from "../lib/tmdb";
+import { mergeStreamingProvidersWithAffiliates } from "../lib/streamingProviders";
 import {
   assertCategoryRatings,
   assertConfidence,
@@ -42,8 +43,6 @@ export const browse = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 50;
-
     const results = await ctx.db
       .query("titles")
       .withIndex("by_status", (q) =>
@@ -51,7 +50,7 @@ export const browse = query({
       )
       .collect();
 
-    return results
+    const filtered = results
       .filter((title) => {
         if (isSeedTitle(title)) return false;
         if (args.type && title.type !== args.type) return false;
@@ -61,8 +60,13 @@ export const browse = query({
           if (!Object.values(title.ratings).every((v) => v === 0)) return false;
         }
         return true;
-      })
-      .slice(0, limit);
+      });
+
+    if (typeof args.limit === "number") {
+      return filtered.slice(0, args.limit);
+    }
+
+    return filtered;
   },
 });
 
@@ -344,11 +348,25 @@ export const aggregateShowRatings = internalMutation({
     const avgConfidence = totalConfidence / ratedEpisodes.length;
     const totalEpisodeCount = allEpisodes.length;
     const notes = `Based on ${ratedEpisodes.length} of ${totalEpisodeCount} episodes. Average severity per category across rated episodes.`;
+    const nonSeedEpisodeModels = Array.from(
+      new Set(
+        ratedEpisodes
+          .map((ep) => ep.ratingModel)
+          .filter((model): model is string => Boolean(model) && model !== "seed-data")
+      )
+    );
+    const aggregateRatingModel =
+      nonSeedEpisodeModels.length === 0
+        ? title.ratingModel
+        : nonSeedEpisodeModels.length === 1
+          ? `episode-aggregate:${nonSeedEpisodeModels[0]}`
+          : "episode-aggregate:mixed";
 
     await ctx.db.patch(args.titleId, {
       ratings: aggregated,
       ratingConfidence: Math.round(avgConfidence * 100) / 100,
       ratingNotes: notes,
+      ratingModel: aggregateRatingModel,
       ratedAt: Date.now(),
       status: "rated",
       ratedEpisodeCount: ratedEpisodes.length,
@@ -474,8 +492,16 @@ export const patchStreamingProviders = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    const title = await ctx.db.get(args.titleId);
+    if (!title) throw new Error("Title not found");
+
+    const mergedProviders = mergeStreamingProvidersWithAffiliates(
+      args.streamingProviders,
+      title.streamingProviders
+    );
+
     await ctx.db.patch(args.titleId, {
-      streamingProviders: args.streamingProviders,
+      streamingProviders: mergedProviders,
     });
   },
 });

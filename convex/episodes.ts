@@ -293,29 +293,28 @@ export const requestEpisodeRating = mutation({
 
     // Check rate limits
     const identity = await ctx.auth.getUserIdentity();
-    let user = null;
-    if (identity) {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-        .first();
-    }
+    if (!identity) throw new Error("Sign in required");
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
 
     const today = new Date().toISOString().split("T")[0];
-    const tier = user?.tier ?? "free";
+    const tier = user.tier;
     const limit = tier === "paid" ? 10 : 3;
     const used =
-      user?.onDemandRatingsDate === today
-        ? user?.onDemandRatingsToday ?? 0
+      user.onDemandRatingsDate === today
+        ? user.onDemandRatingsToday ?? 0
         : 0;
 
-    const isAdmin = user?.isAdmin === true;
+    const isAdmin = user.isAdmin === true;
     if (!isAdmin && used >= limit) {
       throw new Error("Daily on-demand rating limit reached");
     }
 
     // Update rate limit counter (skip for admins)
-    if (user && !isAdmin) {
+    if (!isAdmin) {
       await ctx.db.patch(user._id, {
         onDemandRatingsToday: used + 1,
         onDemandRatingsDate: today,

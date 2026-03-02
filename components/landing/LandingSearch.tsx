@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { useState } from "react";
+import posthog from "posthog-js";
 
 export function LandingSearch() {
   const router = useRouter();
@@ -11,6 +12,11 @@ export function LandingSearch() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (query.trim()) {
+      posthog.capture("search_submitted", {
+        source: "landing",
+        query: query.trim(),
+        query_length: query.trim().length,
+      });
       router.push(`/search?q=${encodeURIComponent(query.trim())}`);
     }
   }

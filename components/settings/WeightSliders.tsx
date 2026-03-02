@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useMutation } from "convex/react";
 import { RotateCcw, Lock, Crown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,12 @@ import { Button } from "@/components/ui/button";
 import { CATEGORIES, DEFAULT_WEIGHTS, type CategoryKey } from "@/lib/constants";
 import { calculateCompositeScore, type CategoryRatings } from "@/lib/scoring";
 import { CompositeScore } from "@/components/rating/CompositeScore";
+import {
+  normalizeCategoryWeights,
+  serializeCategoryWeights,
+  areCategoryWeightsEqual,
+} from "@/lib/userWeights";
+import posthog from "posthog-js";
 
 // Sample title for live preview
 const SAMPLE_RATINGS: CategoryRatings = {
@@ -68,6 +74,8 @@ function SliderRow({
         </span>
       </div>
       <Slider
+        data-testid={`weight-slider-${category.key}`}
+        aria-label={`${category.label} weight`}
         value={[value]}
         onValueChange={(v) => onChange(category.key, v)}
         min={0}
@@ -80,33 +88,42 @@ function SliderRow({
 }
 
 export function WeightSliders({ isPaid, currentWeights }: WeightSlidersProps) {
-  const [weights, setWeights] = useState<Weights>(
-    currentWeights ?? { ...DEFAULT_WEIGHTS }
+  const serverWeights = useMemo(
+    () => normalizeCategoryWeights(currentWeights),
+    [currentWeights]
+  );
+  const [weights, setWeights] = useState<Weights>(serverWeights);
+  const lastSyncedServerSnapshotRef = useRef(
+    serializeCategoryWeights(serverWeights)
   );
   const [saving, setSaving] = useState(false);
   const updateWeights = useMutation(api.users.updateCategoryWeights);
 
-  // Sync from props when they change
+  // Sync from server only when the server values actually change.
   useEffect(() => {
-    if (currentWeights) {
-      setWeights(currentWeights);
+    const nextSnapshot = serializeCategoryWeights(serverWeights);
+    if (nextSnapshot === lastSyncedServerSnapshotRef.current) {
+      return;
     }
-  }, [currentWeights]);
+
+    lastSyncedServerSnapshotRef.current = nextSnapshot;
+    setWeights(serverWeights);
+  }, [serverWeights]);
 
   // Debounced save
   useEffect(() => {
-    if (!isPaid || !currentWeights) return;
+    if (!isPaid) return;
 
-    // Don't save if weights haven't changed from server value
-    const changed = Object.keys(weights).some(
-      (k) => weights[k as CategoryKey] !== currentWeights[k as CategoryKey]
-    );
-    if (!changed) return;
+    // Don't save if weights haven't changed from the latest server value.
+    if (areCategoryWeightsEqual(weights, serverWeights)) return;
 
     const timer = setTimeout(async () => {
       setSaving(true);
       try {
         await updateWeights({ weights });
+        posthog.capture("category_weights_saved", {
+          weights,
+        });
       } catch {
         // Silently handle - user will see stale weights
       } finally {
@@ -115,7 +132,7 @@ export function WeightSliders({ isPaid, currentWeights }: WeightSlidersProps) {
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [weights, isPaid, currentWeights, updateWeights]);
+  }, [weights, isPaid, serverWeights, updateWeights]);
 
   const handleChange = useCallback((key: CategoryKey, value: number[]) => {
     setWeights((prev) => ({ ...prev, [key]: value[0] }));
@@ -141,11 +158,15 @@ export function WeightSliders({ isPaid, currentWeights }: WeightSlidersProps) {
             ignore a category entirely.
           </p>
         </div>
-        {saving && (
-          <span className="text-xs text-muted-foreground animate-pulse">
-            Saving...
-          </span>
-        )}
+        <span
+          aria-live="polite"
+          className={cn(
+            "min-w-[64px] text-right text-xs text-muted-foreground transition-opacity",
+            saving ? "animate-pulse opacity-100" : "opacity-0"
+          )}
+        >
+          Saving...
+        </span>
       </div>
 
       {/* Locked overlay for free users */}
@@ -228,13 +249,17 @@ export function WeightSliders({ isPaid, currentWeights }: WeightSlidersProps) {
             <p className="text-[10px] text-muted-foreground mb-1">
               Your Score
             </p>
-            <CompositeScore score={previewScore} compact />
+            <div data-testid="weights-preview-your-score">
+              <CompositeScore score={previewScore} compact />
+            </div>
           </div>
           <div className="text-center">
             <p className="text-[10px] text-muted-foreground mb-1">Default</p>
-            <CompositeScore score={defaultScore} compact />
+            <div data-testid="weights-preview-default-score">
+              <CompositeScore score={defaultScore} compact />
+            </div>
           </div>
-          <div className="flex-1 text-xs text-muted-foreground">
+          <div className="min-h-[2.25rem] flex-1 text-xs text-muted-foreground">
             Sample title: &ldquo;Elemental&rdquo; — your weights{" "}
             {previewScore < defaultScore
               ? "lower"

@@ -14,7 +14,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { EpisodeCard } from "./EpisodeCard";
 import { EpisodeDetailSheet } from "./EpisodeDetailSheet";
-import type { CategoryRatings } from "@/lib/scoring";
+import type { CategoryRatings, CategoryWeights } from "@/lib/scoring";
 
 interface SeasonAccordionProps {
   titleId: Id<"titles">;
@@ -23,6 +23,7 @@ interface SeasonAccordionProps {
   seasonName?: string;
   episodeCount: number;
   showTitle: string;
+  weights?: CategoryWeights;
 }
 
 export function SeasonAccordion({
@@ -32,6 +33,7 @@ export function SeasonAccordion({
   seasonName,
   episodeCount,
   showTitle,
+  weights,
 }: SeasonAccordionProps) {
   const [open, setOpen] = useState(false);
   const [fetched, setFetched] = useState(false);
@@ -151,6 +153,7 @@ export function SeasonAccordion({
                   stillPath={ep.stillPath ?? undefined}
                   status={ep.status}
                   ratings={ep.ratings as CategoryRatings | undefined}
+                  weights={weights}
                   onRate={() => handleRate(ep._id)}
                   onClick={() => handleEpisodeClick(ep._id)}
                 />

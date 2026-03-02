@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Shield,
   Search,
@@ -58,6 +59,9 @@ export const metadata: Metadata = {
       "Know what your kids are watching. AI-powered cultural and ideological theme ratings for movies and TV shows.",
     images: [`${BASE_URL}/og-default.png`],
   },
+  other: {
+    "impact-site-verification": "556d8bcd-bfcb-4603-a870-b1b7a574f618",
+  },
 };
 
 const HOME_JSON_LD = {
@@ -98,10 +102,17 @@ export default function HomePage() {
 
       {/* Top nav */}
       <header className="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="flex items-center justify-center size-7 rounded-lg bg-foreground text-background transition-transform duration-200 group-hover:scale-105">
-              <Shield className="size-4" strokeWidth={2.5} />
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
+          <Link href="/" aria-label="How Very Dare You home" className="flex items-center gap-2.5 group">
+            <div className="flex size-10 items-center justify-center rounded-xl border border-border/50 bg-muted/40">
+              <Image
+                src="/brand/howverydareyou-mark-192.png"
+                alt=""
+                width={32}
+                height={32}
+                className="size-8 rounded-lg object-cover transition-transform duration-200 group-hover:scale-105"
+                priority
+              />
             </div>
             <span className="text-base font-bold tracking-tight">
               How Very Dare You
@@ -141,9 +152,9 @@ export default function HomePage() {
             </h1>
 
             <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              AI-powered ratings across 8 cultural and ideological categories.
-              See detailed breakdowns, find clean content, and make confident
-              decisions for your family.
+              Get a clear 0-4 advisory score plus category-by-category flags
+              before your kids watch. Fast, parent-first guidance for movies
+              and TV shows.
             </p>
 
             {/* Search bar */}
@@ -152,7 +163,8 @@ export default function HomePage() {
             </div>
 
             <p className="mt-3 text-xs text-muted-foreground/60">
-              Search any movie or TV show — free, no account required
+              Search rated titles instantly with no account. Sign in to request up
+              to 3 new ratings per day.
             </p>
           </div>
         </div>
@@ -177,21 +189,21 @@ export default function HomePage() {
                 step: "1",
                 title: "Search",
                 description:
-                  "Look up any movie or TV show. If it's not in our database, we'll rate it on the spot.",
+                  "Look up any movie or show. If it isn't in our database yet, sign in to request an on-demand rating.",
               },
               {
                 icon: Eye,
                 step: "2",
                 title: "See Ratings",
                 description:
-                  "Get a detailed breakdown across 8 categories — from LGBT themes to age-inappropriate content.",
+                  "See the overall score plus category-level themes like political messaging, sexuality, and overstimulation.",
               },
               {
                 icon: CheckCircle2,
                 step: "3",
                 title: "Decide",
                 description:
-                  "Make confident choices for your family with clear, at-a-glance severity ratings.",
+                  "Decide faster with simple labels from None to Core Theme and detailed notes when you need context.",
               },
             ].map((item) => (
               <div key={item.step} className="flex flex-col items-center text-center">
@@ -304,7 +316,7 @@ export default function HomePage() {
                   "Full 8-category breakdown",
                   "Browse No Flags content",
                   "Filter by age range",
-                  "3 on-demand ratings/day",
+                  "3 on-demand ratings/day (with free account)",
                 ].map((feature) => (
                   <li
                     key={feature}
@@ -371,8 +383,8 @@ export default function HomePage() {
             Start Making Informed Decisions Today
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed opacity-70">
-            Search thousands of rated titles or request a rating for any movie
-            or show — completely free.
+            Search thousands of rated titles with no account, then sign in when
+            you want to request up to 3 new ratings per day.
           </p>
           <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <LandingAuthButtons />
@@ -384,8 +396,16 @@ export default function HomePage() {
       <footer className="border-t border-border/40 bg-muted/20">
         <div className="mx-auto max-w-7xl px-4 py-8">
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Shield className="size-4" strokeWidth={2} />
+            <div className="flex items-center gap-2.5 text-muted-foreground">
+              <div className="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-muted/40">
+                <Image
+                  src="/brand/howverydareyou-mark-192.png"
+                  alt=""
+                  width={24}
+                  height={24}
+                  className="size-6 rounded-md object-cover"
+                />
+              </div>
               <span className="text-sm font-medium">How Very Dare You</span>
             </div>
             <nav className="flex items-center gap-4">
