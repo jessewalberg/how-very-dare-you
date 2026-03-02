@@ -1,5 +1,6 @@
 import { action, mutation, internalMutation, internalQuery } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import {
@@ -1102,6 +1103,7 @@ export const rateTitle = action({
   args: {
     tmdbId: v.number(),
     type: v.union(v.literal("movie"), v.literal("tv")),
+    queueItemId: v.optional(v.id("ratingQueue")),
   },
   handler: async (ctx, args): Promise<void> => {
     const { data, result, model, pipelineMetrics } = await runRatingPipeline(
@@ -1171,14 +1173,25 @@ export const rateTitle = action({
     });
 
     // Update queue with metrics
-    await ctx.runMutation(internal.ratings.updateQueueStatus, {
-      tmdbId: args.tmdbId,
-      status: "completed",
-      completedAt: Date.now(),
-      durationMs: pipelineMetrics.durationMs,
-      tokenUsage: pipelineMetrics.tokenUsage,
-      estimatedCostCents: pipelineMetrics.estimatedCostCents,
-    });
+    if (args.queueItemId) {
+      await ctx.runMutation(internal.ratings.updateQueueStatusById, {
+        queueItemId: args.queueItemId,
+        status: "completed",
+        completedAt: Date.now(),
+        durationMs: pipelineMetrics.durationMs,
+        tokenUsage: pipelineMetrics.tokenUsage,
+        estimatedCostCents: pipelineMetrics.estimatedCostCents,
+      });
+    } else {
+      await ctx.runMutation(internal.ratings.updateQueueStatus, {
+        tmdbId: args.tmdbId,
+        status: "completed",
+        completedAt: Date.now(),
+        durationMs: pipelineMetrics.durationMs,
+        tokenUsage: pipelineMetrics.tokenUsage,
+        estimatedCostCents: pipelineMetrics.estimatedCostCents,
+      });
+    }
 
     // Queue overstimulation analysis (non-blocking — runs after cultural rating)
     const ratedTitle = await ctx.runQuery(api.titles.getTitleByTmdbId, {
@@ -1210,6 +1223,7 @@ export const rateTitleOnDemand = action({
   args: {
     tmdbId: v.number(),
     type: v.union(v.literal("movie"), v.literal("tv")),
+    queueItemId: v.optional(v.id("ratingQueue")),
   },
   handler: async (ctx, args): Promise<void> => {
     console.log(
@@ -1330,14 +1344,25 @@ export const rateTitleOnDemand = action({
       }
 
       // Mark queue item as completed with metrics
-      await ctx.runMutation(internal.ratings.updateQueueStatus, {
-        tmdbId: args.tmdbId,
-        status: "completed",
-        completedAt: Date.now(),
-        durationMs: pipelineMetrics.durationMs,
-        tokenUsage: pipelineMetrics.tokenUsage,
-        estimatedCostCents: pipelineMetrics.estimatedCostCents,
-      });
+      if (args.queueItemId) {
+        await ctx.runMutation(internal.ratings.updateQueueStatusById, {
+          queueItemId: args.queueItemId,
+          status: "completed",
+          completedAt: Date.now(),
+          durationMs: pipelineMetrics.durationMs,
+          tokenUsage: pipelineMetrics.tokenUsage,
+          estimatedCostCents: pipelineMetrics.estimatedCostCents,
+        });
+      } else {
+        await ctx.runMutation(internal.ratings.updateQueueStatus, {
+          tmdbId: args.tmdbId,
+          status: "completed",
+          completedAt: Date.now(),
+          durationMs: pipelineMetrics.durationMs,
+          tokenUsage: pipelineMetrics.tokenUsage,
+          estimatedCostCents: pipelineMetrics.estimatedCostCents,
+        });
+      }
 
       // Queue overstimulation analysis (non-blocking — runs after cultural rating)
       const ratedTitle = await ctx.runQuery(api.titles.getTitleByTmdbId, {
@@ -1354,11 +1379,19 @@ export const rateTitleOnDemand = action({
     } catch (e) {
       // On failure, mark queue item as failed
       const errorMsg = e instanceof Error ? e.message : String(e);
-      await ctx.runMutation(internal.ratings.updateQueueStatus, {
-        tmdbId: args.tmdbId,
-        status: "failed",
-        error: errorMsg,
-      });
+      if (args.queueItemId) {
+        await ctx.runMutation(internal.ratings.updateQueueStatusById, {
+          queueItemId: args.queueItemId,
+          status: "failed",
+          error: errorMsg,
+        });
+      } else {
+        await ctx.runMutation(internal.ratings.updateQueueStatus, {
+          tmdbId: args.tmdbId,
+          status: "failed",
+          error: errorMsg,
+        });
+      }
 
       // Reset title to pending so it can be retried
       if (existing) {
@@ -1375,7 +1408,10 @@ export const rateTitleOnDemand = action({
 
 /** Rate a single episode on demand. */
 export const rateEpisodeOnDemand = action({
-  args: { episodeId: v.id("episodes") },
+  args: {
+    episodeId: v.id("episodes"),
+    queueItemId: v.optional(v.id("ratingQueue")),
+  },
   handler: async (ctx, args): Promise<void> => {
     const episode = await ctx.runQuery(internal.episodes.getEpisodeInternal, {
       episodeId: args.episodeId,
@@ -1472,14 +1508,25 @@ export const rateEpisodeOnDemand = action({
       });
 
       // Update queue with metrics
-      await ctx.runMutation(internal.ratings.updateQueueStatus, {
-        tmdbId: episode.tmdbShowId,
-        status: "completed",
-        completedAt: Date.now(),
-        durationMs: pipelineMetrics.durationMs,
-        tokenUsage: pipelineMetrics.tokenUsage,
-        estimatedCostCents: pipelineMetrics.estimatedCostCents,
-      });
+      if (args.queueItemId) {
+        await ctx.runMutation(internal.ratings.updateQueueStatusById, {
+          queueItemId: args.queueItemId,
+          status: "completed",
+          completedAt: Date.now(),
+          durationMs: pipelineMetrics.durationMs,
+          tokenUsage: pipelineMetrics.tokenUsage,
+          estimatedCostCents: pipelineMetrics.estimatedCostCents,
+        });
+      } else {
+        await ctx.runMutation(internal.ratings.updateQueueStatus, {
+          tmdbId: episode.tmdbShowId,
+          status: "completed",
+          completedAt: Date.now(),
+          durationMs: pipelineMetrics.durationMs,
+          tokenUsage: pipelineMetrics.tokenUsage,
+          estimatedCostCents: pipelineMetrics.estimatedCostCents,
+        });
+      }
 
       // Aggregate show-level ratings from all rated episodes
       await ctx.runMutation(internal.titles.aggregateShowRatings, {
@@ -1511,7 +1558,11 @@ function compareSeasonNumber(a: number, b: number): number {
 
 async function rateFirstUnratedEpisodeForTvShow(
   ctx: ActionCtx,
-  args: { tmdbId: number; queueTitle: string }
+  args: {
+    tmdbId: number;
+    queueTitle: string;
+    queueItemId: Id<"ratingQueue">;
+  }
 ): Promise<void> {
   const show = await ctx.runQuery(api.titles.getTitleByTmdbId, {
     tmdbId: args.tmdbId,
@@ -1524,6 +1575,7 @@ async function rateFirstUnratedEpisodeForTvShow(
     await ctx.runAction(api.ratings.rateTitleOnDemand, {
       tmdbId: args.tmdbId,
       type: "tv",
+      queueItemId: args.queueItemId,
     });
     return;
   }
@@ -1569,6 +1621,7 @@ async function rateFirstUnratedEpisodeForTvShow(
     await ctx.runAction(api.ratings.rateTitleOnDemand, {
       tmdbId: args.tmdbId,
       type: "tv",
+      queueItemId: args.queueItemId,
     });
     return;
   }
@@ -1622,6 +1675,7 @@ async function rateFirstUnratedEpisodeForTvShow(
       );
       await ctx.runAction(api.ratings.rateEpisodeOnDemand, {
         episodeId: firstUnrated._id,
+        queueItemId: args.queueItemId,
       });
       return;
     }
@@ -1676,6 +1730,7 @@ export const processQueueItem = action({
         console.log("[processQueueItem] Rating episode:", item.title, "episodeId:", item.episodeId);
         await ctx.runAction(api.ratings.rateEpisodeOnDemand, {
           episodeId: item.episodeId,
+          queueItemId: args.queueItemId,
         });
         console.log("[processQueueItem] Episode rating complete:", item.title);
       } else if (item.type === "tv" && item.source === "user_request") {
@@ -1686,6 +1741,7 @@ export const processQueueItem = action({
         await rateFirstUnratedEpisodeForTvShow(ctx, {
           tmdbId: item.tmdbId,
           queueTitle: item.title,
+          queueItemId: args.queueItemId,
         });
         console.log(
           "[processQueueItem] TV user request episode routing complete:",
@@ -1696,6 +1752,7 @@ export const processQueueItem = action({
         await ctx.runAction(api.ratings.rateTitleOnDemand, {
           tmdbId: item.tmdbId,
           type: item.type as "movie" | "tv",
+          queueItemId: args.queueItemId,
         });
         console.log("[processQueueItem] On-demand rating complete:", item.title);
       } else {
@@ -1703,6 +1760,7 @@ export const processQueueItem = action({
         await ctx.runAction(api.ratings.rateTitle, {
           tmdbId: item.tmdbId,
           type: item.type as "movie" | "tv",
+          queueItemId: args.queueItemId,
         });
         console.log("[processQueueItem] Batch rating complete:", item.title);
       }
@@ -2247,6 +2305,34 @@ export const updateQueueStatus = internalMutation({
     } else {
       console.log(`[updateQueueStatus] No queue item found for tmdbId=${args.tmdbId} (${items.length} items total)`);
     }
+  },
+});
+
+export const updateQueueStatusById = internalMutation({
+  args: {
+    queueItemId: v.id("ratingQueue"),
+    status: v.union(v.literal("completed"), v.literal("failed")),
+    error: v.optional(v.string()),
+    completedAt: v.optional(v.number()),
+    durationMs: v.optional(v.number()),
+    tokenUsage: v.optional(v.object({
+      promptTokens: v.number(),
+      completionTokens: v.number(),
+      totalTokens: v.number(),
+    })),
+    estimatedCostCents: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const item = await ctx.db.get(args.queueItemId);
+    if (!item) return;
+    await ctx.db.patch(args.queueItemId, {
+      status: args.status,
+      lastError: args.error,
+      completedAt: args.completedAt,
+      durationMs: args.durationMs,
+      tokenUsage: args.tokenUsage,
+      estimatedCostCents: args.estimatedCostCents,
+    });
   },
 });
 
