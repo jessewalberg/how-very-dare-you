@@ -42,8 +42,6 @@ export const browse = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 50;
-
     const results = await ctx.db
       .query("titles")
       .withIndex("by_status", (q) =>
@@ -51,7 +49,7 @@ export const browse = query({
       )
       .collect();
 
-    return results
+    const filtered = results
       .filter((title) => {
         if (isSeedTitle(title)) return false;
         if (args.type && title.type !== args.type) return false;
@@ -61,8 +59,13 @@ export const browse = query({
           if (!Object.values(title.ratings).every((v) => v === 0)) return false;
         }
         return true;
-      })
-      .slice(0, limit);
+      });
+
+    if (typeof args.limit === "number") {
+      return filtered.slice(0, args.limit);
+    }
+
+    return filtered;
   },
 });
 

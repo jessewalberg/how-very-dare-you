@@ -32,7 +32,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const titles = await fetchQuery(api.titles.browse, {
       status: "rated",
-      limit: 1000,
     });
 
     titlePages = titles.map((title: (typeof titles)[number]) => ({

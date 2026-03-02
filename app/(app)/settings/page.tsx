@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useQuery } from "convex/react";
 import { useAction } from "convex/react";
 import { useUser, RedirectToSignIn } from "@clerk/nextjs";
@@ -23,6 +23,27 @@ const WeightSliders = dynamic(
 );
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<SettingsPageSkeleton />}>
+      <SettingsPageContent />
+    </Suspense>
+  );
+}
+
+function SettingsPageSkeleton() {
+  return (
+    <div className="mx-auto max-w-2xl space-y-8">
+      <div>
+        <Skeleton className="h-7 w-32" />
+        <Skeleton className="mt-1 h-4 w-64" />
+      </div>
+      <WeightSlidersSkeleton />
+      <Skeleton className="h-48 w-full rounded-2xl" />
+    </div>
+  );
+}
+
+function SettingsPageContent() {
   const { isSignedIn, isLoaded } = useUser();
   const profile = useQuery(api.users.getMyProfile);
   const syncMySubscriptionStatus = useAction(api.stripe.syncMySubscriptionStatus);
@@ -74,16 +95,7 @@ export default function SettingsPage() {
   }, [checkoutState, isLoaded, isSignedIn, router, syncMySubscriptionStatus]);
 
   if (!isLoaded) {
-    return (
-      <div className="mx-auto max-w-2xl space-y-8">
-        <div>
-          <Skeleton className="h-7 w-32" />
-          <Skeleton className="mt-1 h-4 w-64" />
-        </div>
-        <WeightSlidersSkeleton />
-        <Skeleton className="h-48 w-full rounded-2xl" />
-      </div>
-    );
+    return <SettingsPageSkeleton />;
   }
 
   if (!isSignedIn) {
@@ -91,16 +103,7 @@ export default function SettingsPage() {
   }
 
   if (profile === undefined) {
-    return (
-      <div className="mx-auto max-w-2xl space-y-8">
-        <div>
-          <Skeleton className="h-7 w-32" />
-          <Skeleton className="mt-1 h-4 w-64" />
-        </div>
-        <WeightSlidersSkeleton />
-        <Skeleton className="h-48 w-full rounded-2xl" />
-      </div>
-    );
+    return <SettingsPageSkeleton />;
   }
 
   const isPaid = profile?.tier === "paid";
