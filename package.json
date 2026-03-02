@@ -5,11 +5,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:timed": "bun scripts/build-with-timeout.mjs",
     "start": "next start",
     "brand:favicon": "bun scripts/generate-favicon-ico.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:unit": "bun tests/unit/ratingQuality.unit.ts && bun tests/unit/sidebarBehavior.unit.ts && bun tests/unit/adminSubtitleViewer.unit.ts && bun tests/unit/seo.unit.ts && bun tests/unit/browseFilters.unit.ts && bun tests/unit/subscriptionStatus.unit.ts && bun tests/unit/userWeights.unit.ts",
+    "test:unit": "bun tests/unit/ratingQuality.unit.ts && bun tests/unit/sidebarBehavior.unit.ts && bun tests/unit/adminSubtitleViewer.unit.ts && bun tests/unit/seo.unit.ts && bun tests/unit/browseFilters.unit.ts && bun tests/unit/subscriptionStatus.unit.ts && bun tests/unit/userWeights.unit.ts && bun tests/unit/affiliateTracking.unit.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
@@ -17,6 +18,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.38.1",
+    "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
     "@sentry/nextjs": "^10",
     "@stripe/stripe-js": "^8.8.0",

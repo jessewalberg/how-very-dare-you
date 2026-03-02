@@ -307,7 +307,13 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {/* Streaming links — below poster on desktop */}
           {title.streamingProviders && title.streamingProviders.length > 0 && (
             <div className="mt-4 hidden lg:block">
-              <StreamingLinks providers={title.streamingProviders} />
+              <StreamingLinks
+                titleId={title._id}
+                tmdbId={title.tmdbId}
+                titleType={title.type}
+                providers={title.streamingProviders}
+                surface="title_detail"
+              />
             </div>
           )}
         </div>
@@ -374,7 +380,13 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
           {/* Streaming links — inline on mobile */}
           {title.streamingProviders && title.streamingProviders.length > 0 && (
             <div className="lg:hidden">
-              <StreamingLinks providers={title.streamingProviders} />
+              <StreamingLinks
+                titleId={title._id}
+                tmdbId={title.tmdbId}
+                titleType={title.type}
+                providers={title.streamingProviders}
+                surface="title_detail"
+              />
             </div>
           )}
 

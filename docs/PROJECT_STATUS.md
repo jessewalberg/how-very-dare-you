@@ -73,7 +73,7 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 | ~~Product name~~ | ~~"How Very Dare You"~~ | ✅ Decided |
 | ~~Domain name~~ | ~~howverydareyou.com~~ | ✅ Purchased |
 | Dark mode | Add in polish pass or post-launch? | ⬜ Decide |
-| Affiliate links | Which streaming services? Setup needed? | ⬜ Research |
+| Affiliate links | Which streaming services? Setup needed? | 🟡 In progress (US-first hybrid routing/tracking shipped) |
 | Launch strategy | Soft launch → Product Hunt? Beta users first? | ⬜ Decide |
 
 ---
@@ -108,6 +108,7 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 - [x] Weight scoring coverage: added `tests/unit/userWeights.unit.ts` and `tests/e2e/specs/settings-weights.spec.ts` (premium-auth dependent; gracefully skips when unavailable)
 - [x] Verification for this pass: `bun run typecheck`, `bun run lint`, `bun run test:unit` passed; `bun run build` blocked in sandbox by Google Fonts fetch restriction
 - [x] Auth gating update: signed-out users can browse/search/view rated titles, but requesting new on-demand ratings now requires sign-in (titles + episodes), with updated search/detail/landing copy and unauthenticated e2e coverage
+- [x] Affiliate click tracking: provider links now route through `/go/[titleId]` with server-side PostHog events (`watch_provider_clicked` / `watch_provider_click_failed`), anonymized distinct-id fallback, and new unit/e2e coverage
 
 ---
 
