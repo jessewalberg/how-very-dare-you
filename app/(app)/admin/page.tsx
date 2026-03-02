@@ -296,6 +296,7 @@ export default function AdminDashboardPage() {
                 { label: "queued", value: stats.overstimQueueStats.queued },
                 { label: "processing", value: stats.overstimQueueStats.processing },
                 { label: "completed", value: stats.overstimQueueStats.completed },
+                { label: "skipped", value: stats.overstimQueueStats.skipped },
                 { label: "failed", value: stats.overstimQueueStats.failed, className: "text-red-600" },
               ]}
             />

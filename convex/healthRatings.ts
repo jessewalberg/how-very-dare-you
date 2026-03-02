@@ -175,14 +175,14 @@ async function rateMetrics(
 async function runOverstimulationForTitle(
   ctx: ActionCtx,
   args: { titleId: Id<"titles">; force?: boolean }
-): Promise<void> {
+): Promise<"analyzed" | "skipped_already_analyzed" | "skipped_no_trailer"> {
   const title = await ctx.runQuery(api.titles.getTitle, { titleId: args.titleId });
   if (!title) throw new Error("Title not found");
 
   // Skip redundant analyses unless explicitly forced (e.g. admin re-rate).
   if (!args.force && title.videoAnalysis && title.ratings?.overstimulation !== undefined) {
     console.log(`[Overstim] Skipping "${title.title}" (already analyzed)`);
-    return;
+    return "skipped_already_analyzed";
   }
 
   const serviceUrl = process.env.VIDEO_ANALYSIS_SERVICE_URL;
@@ -204,7 +204,7 @@ async function runOverstimulationForTitle(
   const trailerId = await searchTrailer(title.title, title.year, title.type as "movie" | "tv");
   if (!trailerId) {
     console.log(`[Overstim] No trailer found for "${title.title}" — skipping`);
-    return;
+    return "skipped_no_trailer";
   }
 
   console.log(`[Overstim] Found trailer ${trailerId} for "${title.title}"`);
@@ -323,6 +323,89 @@ async function runOverstimulationForTitle(
   });
 
   console.log(`[Overstim] Saved score ${severity} for "${title.title}"`);
+  return "analyzed";
+}
+
+async function runOverstimulationForEpisode(
+  ctx: ActionCtx,
+  args: { episodeId: Id<"episodes"> }
+): Promise<
+  "analyzed" | "skipped_episode_unrated" | "skipped_no_episode_video"
+> {
+  const episode = await ctx.runQuery(internal.episodes.getEpisodeInternal, {
+    episodeId: args.episodeId,
+  });
+  if (!episode) throw new Error("Episode not found");
+
+  const title = await ctx.runQuery(api.titles.getTitle, {
+    titleId: episode.titleId,
+  });
+  if (!title) throw new Error("Parent title not found");
+  if (!episode.ratings) return "skipped_episode_unrated";
+
+  const serviceUrl = process.env.VIDEO_ANALYSIS_SERVICE_URL;
+  const apiSecret = process.env.VIDEO_ANALYSIS_API_SECRET;
+  const openRouterKey = process.env.OPENROUTER_API_KEY!;
+
+  if (!serviceUrl || !apiSecret) {
+    throw new Error("VIDEO_ANALYSIS_SERVICE_URL or VIDEO_ANALYSIS_API_SECRET not set");
+  }
+
+  const videoId = await searchEpisodeVideo(
+    title.title,
+    episode.seasonNumber,
+    episode.episodeNumber,
+    episode.name ?? undefined
+  );
+  if (!videoId) {
+    console.log(`[Overstim] No episode video found for "${title.title}" S${episode.seasonNumber}E${episode.episodeNumber}`);
+    return "skipped_no_episode_video";
+  }
+
+  const label = `${title.title} S${episode.seasonNumber}E${episode.episodeNumber}`;
+  const metrics = await analyzeVideo(videoId, label, title.type, serviceUrl, apiSecret);
+  const result = await rateMetrics(
+    {
+      title: label,
+      type: title.type as "movie" | "tv" | "youtube",
+      year: title.year,
+      ageRating: title.ageRating,
+    },
+    metrics,
+    openRouterKey
+  );
+
+  await ctx.runMutation(internal.episodes.saveEpisodeOverstimulation, {
+    episodeId: args.episodeId,
+    overstimulation: result.severity,
+    analysis: {
+      methodVersion: OVERSTIM_METHOD_VERSION,
+      videoId,
+      analyzedAt: Date.now(),
+      metrics: {
+        cutsPerMinute: metrics.cuts_per_minute,
+        avgCutDuration: metrics.avg_cut_duration_seconds,
+        avgSaturation: metrics.avg_saturation,
+        avgBrightness: metrics.avg_brightness,
+        brightnessVariance: metrics.brightness_variance,
+        flashCount: metrics.flash_count,
+      },
+      ai: {
+        severity: result.severity,
+        confidence: result.confidence,
+        note: result.note,
+        model: result.model,
+      },
+    },
+  });
+
+  // Recompute show-level ratings from the updated episode set.
+  await ctx.runMutation(internal.titles.aggregateShowRatings, {
+    titleId: episode.titleId,
+  });
+
+  console.log(`[Overstim] Saved episode score ${result.severity} for "${label}"`);
+  return "analyzed";
 }
 
 /** Public entrypoint: enqueue title overstimulation analysis for background processing. */
@@ -355,13 +438,35 @@ export const processOverstimulationJob = action({
     });
 
     try {
-      await runOverstimulationForTitle(ctx, {
-        titleId: job.titleId,
-        force: job.force,
-      });
-      await ctx.runMutation(internal.healthRatings.markOverstimulationJobCompleted, {
-        jobId: args.jobId,
-      });
+      const result = job.episodeId
+        ? await runOverstimulationForEpisode(ctx, {
+          episodeId: job.episodeId,
+        })
+        : await runOverstimulationForTitle(ctx, {
+          titleId: job.titleId,
+          force: job.force,
+        });
+      if (result === "analyzed") {
+        await ctx.runMutation(internal.healthRatings.markOverstimulationJobCompleted, {
+          jobId: args.jobId,
+        });
+      } else {
+        await ctx.runMutation(internal.healthRatings.markOverstimulationJobSkipped, {
+          jobId: args.jobId,
+          reason: (() => {
+            if (result === "skipped_already_analyzed") {
+              return "Skipped: title already has overstimulation analysis";
+            }
+            if (result === "skipped_no_trailer") {
+              return "Skipped: no trailer found";
+            }
+            if (result === "skipped_episode_unrated") {
+              return "Skipped: episode is not rated yet";
+            }
+            return "Skipped: no episode video found";
+          })(),
+        });
+      }
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       if (attempts + 1 >= OVERSTIM_MAX_ATTEMPTS) {
@@ -388,79 +493,15 @@ export const processOverstimulationJob = action({
 export const analyzeEpisodeOverstimulation = action({
   args: { episodeId: v.id("episodes") },
   handler: async (ctx, args): Promise<void> => {
-    const episode = await ctx.runQuery(internal.episodes.getEpisodeInternal, {
-      episodeId: args.episodeId,
-    });
-    if (!episode) throw new Error("Episode not found");
-
-    const title = await ctx.runQuery(api.titles.getTitle, {
-      titleId: episode.titleId,
-    });
-    if (!title) throw new Error("Parent title not found");
-    if (!episode.ratings) return;
-
-    const serviceUrl = process.env.VIDEO_ANALYSIS_SERVICE_URL;
-    const apiSecret = process.env.VIDEO_ANALYSIS_API_SECRET;
-    const openRouterKey = process.env.OPENROUTER_API_KEY!;
-
-    if (!serviceUrl || !apiSecret) {
-      throw new Error("VIDEO_ANALYSIS_SERVICE_URL or VIDEO_ANALYSIS_API_SECRET not set");
-    }
-
-    const videoId = await searchEpisodeVideo(
-      title.title,
-      episode.seasonNumber,
-      episode.episodeNumber,
-      episode.name ?? undefined
-    );
-    if (!videoId) {
-      console.log(`[Overstim] No episode video found for "${title.title}" S${episode.seasonNumber}E${episode.episodeNumber}`);
-      return;
-    }
-
-    const label = `${title.title} S${episode.seasonNumber}E${episode.episodeNumber}`;
-    const metrics = await analyzeVideo(videoId, label, title.type, serviceUrl, apiSecret);
-    const result = await rateMetrics(
+    const jobId = await ctx.runMutation(
+      internal.healthRatings.enqueueEpisodeOverstimulationJob,
       {
-        title: label,
-        type: title.type as "movie" | "tv" | "youtube",
-        year: title.year,
-        ageRating: title.ageRating,
-      },
-      metrics,
-      openRouterKey
+        episodeId: args.episodeId,
+      }
     );
-
-    await ctx.runMutation(internal.episodes.saveEpisodeOverstimulation, {
-      episodeId: args.episodeId,
-      overstimulation: result.severity,
-      analysis: {
-        methodVersion: OVERSTIM_METHOD_VERSION,
-        videoId,
-        analyzedAt: Date.now(),
-        metrics: {
-          cutsPerMinute: metrics.cuts_per_minute,
-          avgCutDuration: metrics.avg_cut_duration_seconds,
-          avgSaturation: metrics.avg_saturation,
-          avgBrightness: metrics.avg_brightness,
-          brightnessVariance: metrics.brightness_variance,
-          flashCount: metrics.flash_count,
-        },
-        ai: {
-          severity: result.severity,
-          confidence: result.confidence,
-          note: result.note,
-          model: result.model,
-        },
-      },
+    await ctx.scheduler.runAfter(0, api.healthRatings.processOverstimulationJob, {
+      jobId,
     });
-
-    // Recompute show-level ratings from the updated episode set.
-    await ctx.runMutation(internal.titles.aggregateShowRatings, {
-      titleId: episode.titleId,
-    });
-
-    console.log(`[Overstim] Saved episode score ${result.severity} for "${label}"`);
   },
 });
 
@@ -512,7 +553,9 @@ export const enqueueOverstimulationJob = internalMutation({
       .withIndex("by_titleId", (q) => q.eq("titleId", args.titleId))
       .collect();
     const activeJob = existing.find(
-      (job) => job.status === "queued" || job.status === "processing"
+      (job) =>
+        job.episodeId === undefined &&
+        (job.status === "queued" || job.status === "processing")
     );
     if (activeJob) {
       if (args.force && !activeJob.force) {
@@ -527,7 +570,38 @@ export const enqueueOverstimulationJob = internalMutation({
     const now = Date.now();
     return await ctx.db.insert("overstimulationQueue", {
       titleId: args.titleId,
+      targetType: "title",
       force: args.force,
+      status: "queued",
+      attempts: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const enqueueEpisodeOverstimulationJob = internalMutation({
+  args: { episodeId: v.id("episodes") },
+  handler: async (ctx, args) => {
+    const episode = await ctx.db.get(args.episodeId);
+    if (!episode) throw new Error("Episode not found");
+
+    const existing = await ctx.db
+      .query("overstimulationQueue")
+      .withIndex("by_episodeId", (q) => q.eq("episodeId", args.episodeId))
+      .collect();
+    const activeJob = existing.find(
+      (job) => job.status === "queued" || job.status === "processing"
+    );
+    if (activeJob) {
+      return activeJob._id;
+    }
+
+    const now = Date.now();
+    return await ctx.db.insert("overstimulationQueue", {
+      titleId: episode.titleId,
+      episodeId: args.episodeId,
+      targetType: "episode",
       status: "queued",
       attempts: 0,
       createdAt: now,
@@ -565,6 +639,21 @@ export const markOverstimulationJobCompleted = internalMutation({
       completedAt: Date.now(),
       updatedAt: Date.now(),
       lastError: undefined,
+    });
+  },
+});
+
+export const markOverstimulationJobSkipped = internalMutation({
+  args: {
+    jobId: v.id("overstimulationQueue"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: "skipped",
+      completedAt: Date.now(),
+      updatedAt: Date.now(),
+      lastError: args.reason,
     });
   },
 });

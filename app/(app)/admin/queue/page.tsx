@@ -47,6 +47,7 @@ type OverstimStatusFilter =
   | "queued"
   | "processing"
   | "completed"
+  | "skipped"
   | "failed"
   | undefined;
 
@@ -63,6 +64,7 @@ const OVERSTIM_STATUS_OPTIONS: { value: OverstimStatusFilter; label: string }[] 
   { value: "queued", label: "Queued" },
   { value: "processing", label: "Processing" },
   { value: "completed", label: "Completed" },
+  { value: "skipped", label: "Skipped" },
   { value: "failed", label: "Failed" },
 ];
 
@@ -70,6 +72,7 @@ const STATUS_COLORS: Record<string, string> = {
   queued: "bg-slate-100 text-slate-700 border-slate-200",
   processing: "bg-blue-50 text-blue-700 border-blue-200",
   completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  skipped: "bg-amber-50 text-amber-700 border-amber-200",
   failed: "bg-red-50 text-red-700 border-red-200",
 };
 
@@ -450,6 +453,20 @@ export default function AdminQueuePage() {
             {overstimJobs.map((job) => {
               const jobActionKey = `overstim:${job._id}`;
               const isJobActing = acting === jobActionKey;
+              const episodeCode =
+                job.seasonNumber != null && job.episodeNumber != null
+                  ? `S${String(job.seasonNumber).padStart(2, "0")}E${String(
+                    job.episodeNumber
+                  ).padStart(2, "0")}`
+                  : undefined;
+              const targetLabel =
+                job.targetType === "episode"
+                  ? `episode${episodeCode ? ` ${episodeCode}` : ""}`
+                  : "title";
+              const displayName =
+                job.targetType === "episode" && job.episodeName
+                  ? `${job.titleName}${job.titleYear ? ` (${job.titleYear})` : ""} · ${job.episodeName}`
+                  : `${job.titleName}${job.titleYear ? ` (${job.titleYear})` : ""}`;
 
               return (
                 <div
@@ -459,11 +476,11 @@ export default function AdminQueuePage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">
-                        {job.titleName}
-                        {job.titleYear ? ` (${job.titleYear})` : ""}
+                        {displayName}
                       </p>
                       <p className="text-[11px] text-muted-foreground">
-                        tmdb {job.tmdbId ?? "unknown"} · attempts {job.attempts ?? 0}
+                        {targetLabel} · tmdb {job.tmdbId ?? "unknown"} · attempts{" "}
+                        {job.attempts ?? 0}
                         {job.force ? " · force" : ""}
                       </p>
                     </div>
