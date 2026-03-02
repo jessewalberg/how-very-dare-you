@@ -59,6 +59,9 @@ export const metadata: Metadata = {
       "Know what your kids are watching. AI-powered cultural and ideological theme ratings for movies and TV shows.",
     images: [`${BASE_URL}/og-default.png`],
   },
+  other: {
+    "impact-site-verification": "556d8bcd-bfcb-4603-a870-b1b7a574f618",
+  },
 };
 
 const HOME_JSON_LD = {

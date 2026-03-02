@@ -109,6 +109,7 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 - [x] Verification for this pass: `bun run typecheck`, `bun run lint`, `bun run test:unit` passed; `bun run build` blocked in sandbox by Google Fonts fetch restriction
 - [x] Auth gating update: signed-out users can browse/search/view rated titles, but requesting new on-demand ratings now requires sign-in (titles + episodes), with updated search/detail/landing copy and unauthenticated e2e coverage
 - [x] Affiliate click tracking: provider links now route through `/go/[titleId]` with server-side PostHog events (`watch_provider_clicked` / `watch_provider_click_failed`), anonymized distinct-id fallback, and new unit/e2e coverage
+- [x] Affiliate URL preservation: TMDB metadata refreshes now preserve existing `streamingProviders[].affiliateUrl` values by provider-name merge logic in title metadata/update mutations, with unit coverage
 
 ---
 

@@ -25,6 +25,7 @@ import {
   type R2TranscriptStorage,
 } from "../lib/r2";
 import { assessRatingQuality } from "../lib/ratingQuality";
+import { mergeStreamingProvidersWithAffiliates } from "../lib/streamingProviders";
 import {
   assertCategoryRatings,
   assertConfidence,
@@ -2173,13 +2174,26 @@ export const updateTitleMetadata = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { titleId, ...fields } = args;
+    const { titleId, streamingProviders, ...fields } = args;
+    const existingTitle = await ctx.db.get(titleId);
+    if (!existingTitle) throw new Error("Title not found");
+
+    const mergedProviders =
+      streamingProviders !== undefined
+        ? mergeStreamingProvidersWithAffiliates(
+            streamingProviders.map((p) => ({
+              name: p.name,
+              logoPath: p.logoPath,
+            })),
+            existingTitle.streamingProviders
+          )
+        : undefined;
+
     await ctx.db.patch(titleId, {
       ...fields,
-      streamingProviders: fields.streamingProviders?.map((p) => ({
-        name: p.name,
-        logoPath: p.logoPath,
-      })),
+      ...(mergedProviders !== undefined
+        ? { streamingProviders: mergedProviders }
+        : {}),
     });
   },
 });

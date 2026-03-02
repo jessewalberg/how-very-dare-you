@@ -6,6 +6,7 @@ import {
   getTVDetails,
   extractStreamingProviders,
 } from "../lib/tmdb";
+import { mergeStreamingProvidersWithAffiliates } from "../lib/streamingProviders";
 import {
   assertCategoryRatings,
   assertConfidence,
@@ -491,8 +492,16 @@ export const patchStreamingProviders = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    const title = await ctx.db.get(args.titleId);
+    if (!title) throw new Error("Title not found");
+
+    const mergedProviders = mergeStreamingProvidersWithAffiliates(
+      args.streamingProviders,
+      title.streamingProviders
+    );
+
     await ctx.db.patch(args.titleId, {
-      streamingProviders: args.streamingProviders,
+      streamingProviders: mergedProviders,
     });
   },
 });
