@@ -283,6 +283,25 @@ export default defineSchema({
     .index("by_status_priority", ["status", "priority"])
     .index("by_tmdbId", ["tmdbId"]),
 
+  overstimulationQueue: defineTable({
+    titleId: v.id("titles"),
+    force: v.optional(v.boolean()),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    attempts: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_titleId", ["titleId"])
+    .index("by_status_createdAt", ["status", "createdAt"]),
+
   adminConfig: defineTable({
     key: v.string(),
     value: v.string(),

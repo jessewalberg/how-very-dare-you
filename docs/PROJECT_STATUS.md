@@ -1,6 +1,6 @@
 # Project Status — How Very Dare You
 
-> **Last Updated:** 2026-03-01
+> **Last Updated:** 2026-03-02
 > **Purpose:** Living document tracking what's done, what's next, and open decisions. Add this to project knowledge so Claude always has current context.
 
 ---
@@ -110,6 +110,7 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 - [x] Auth gating update: signed-out users can browse/search/view rated titles, but requesting new on-demand ratings now requires sign-in (titles + episodes), with updated search/detail/landing copy and unauthenticated e2e coverage
 - [x] Affiliate click tracking: provider links now route through `/go/[titleId]` with server-side PostHog events (`watch_provider_clicked` / `watch_provider_click_failed`), anonymized distinct-id fallback, and new unit/e2e coverage
 - [x] Affiliate URL preservation: TMDB metadata refreshes now preserve existing `streamingProviders[].affiliateUrl` values by provider-name merge logic in title metadata/update mutations, with unit coverage
+- [x] Overstimulation analysis moved to background queue (`overstimulationQueue`): dedupes active jobs per title, retries failed jobs (max 3 attempts with backoff), and prevents duplicate concurrent analysis storms for the same title
 
 ---
 
@@ -134,3 +135,4 @@ Critical for organic discovery ("is [movie] appropriate for kids" searches).
 | 2026-03-01 | Deployment update: production deployment confirmed by user; deployment phase moved to partial pending final production checklist verification. |
 | 2026-03-01 | Personalized weights follow-up: fixed settings live preview sync/save behavior, propagated paid category weights through score surfaces (browse/search/watchlist/detail/episodes), and added unit + premium-auth e2e coverage. |
 | 2026-03-01 | Access model update: on-demand rating requests now require authentication (free accounts get 3/day), signed-out users still browse/search rated content, and unauthenticated search gate behavior is covered in Playwright. |
+| 2026-03-02 | Overstimulation pipeline hardening: introduced dedicated background `overstimulationQueue` with per-title dedupe and retry scheduling, and changed `analyzeOverstimulation` to enqueue work instead of running heavy analysis inline. |

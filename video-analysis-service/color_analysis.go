@@ -22,11 +22,13 @@ type ColorResult struct {
 }
 
 func analyzeColors(ctx context.Context, videoPath string) (ColorResult, error) {
+	log := logFor(ctx)
 	frameDir, err := os.MkdirTemp("", "frames-*")
 	if err != nil {
 		return ColorResult{}, fmt.Errorf("failed to create frame temp dir: %w", err)
 	}
 	defer os.RemoveAll(frameDir)
+	log.Info("color analysis frame extraction starting", "video_path", videoPath, "frame_dir", frameDir)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-i", videoPath,
@@ -35,6 +37,7 @@ func analyzeColors(ctx context.Context, videoPath string) (ColorResult, error) {
 		filepath.Join(frameDir, "frame_%04d.jpg"),
 	)
 	if err := cmd.Run(); err != nil {
+		log.Error("color analysis frame extraction failed", "video_path", videoPath, "error", err)
 		return ColorResult{}, fmt.Errorf("frame extraction failed: %w", err)
 	}
 
@@ -79,8 +82,14 @@ func analyzeColors(ctx context.Context, videoPath string) (ColorResult, error) {
 	}
 
 	if len(saturations) == 0 {
+		log.Error("color analysis found no frames", "video_path", videoPath)
 		return ColorResult{}, fmt.Errorf("no frames analyzed")
 	}
+
+	log.Info("color analysis frame extraction complete",
+		"video_path", videoPath,
+		"frame_count", len(saturations),
+	)
 
 	return ColorResult{
 		AvgSaturation:      round1(mean(saturations)),

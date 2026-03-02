@@ -1,7 +1,7 @@
 // OpenSubtitles API client
 // Docs: https://ai.opensubtitles.com/docs
 
-import { logExternalRequest, logExternalResponse } from "@/lib/externalApiLogs";
+import { logExternalRequest, logExternalResponse } from "./externalApiLogs";
 
 const BASE_URL = "https://api.opensubtitles.com/api/v1";
 const DEFAULT_USER_AGENT = "HowVeryDareYou v1";

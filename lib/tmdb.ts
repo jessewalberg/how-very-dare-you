@@ -1,7 +1,7 @@
 // TMDB API client
 // Docs: https://developer.themoviedb.org/docs
 
-import { logExternalRequest, logExternalResponse } from "@/lib/externalApiLogs";
+import { logExternalRequest, logExternalResponse } from "./externalApiLogs";
 
 const BASE_URL = "https://api.themoviedb.org/3";
 
