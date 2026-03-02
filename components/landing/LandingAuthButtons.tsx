@@ -26,7 +26,7 @@ export function LandingAuthButtons() {
         <Button
           size="lg"
           variant="outline"
-          className="min-w-[160px] border-background/20 text-background hover:bg-background/10 hover:text-background"
+          className="min-w-[160px]"
         >
           Create Account
         </Button>

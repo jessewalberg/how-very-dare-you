@@ -347,11 +347,25 @@ export const aggregateShowRatings = internalMutation({
     const avgConfidence = totalConfidence / ratedEpisodes.length;
     const totalEpisodeCount = allEpisodes.length;
     const notes = `Based on ${ratedEpisodes.length} of ${totalEpisodeCount} episodes. Average severity per category across rated episodes.`;
+    const nonSeedEpisodeModels = Array.from(
+      new Set(
+        ratedEpisodes
+          .map((ep) => ep.ratingModel)
+          .filter((model): model is string => Boolean(model) && model !== "seed-data")
+      )
+    );
+    const aggregateRatingModel =
+      nonSeedEpisodeModels.length === 0
+        ? title.ratingModel
+        : nonSeedEpisodeModels.length === 1
+          ? `episode-aggregate:${nonSeedEpisodeModels[0]}`
+          : "episode-aggregate:mixed";
 
     await ctx.db.patch(args.titleId, {
       ratings: aggregated,
       ratingConfidence: Math.round(avgConfidence * 100) / 100,
       ratingNotes: notes,
+      ratingModel: aggregateRatingModel,
       ratedAt: Date.now(),
       status: "rated",
       ratedEpisodeCount: ratedEpisodes.length,

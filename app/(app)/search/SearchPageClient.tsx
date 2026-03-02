@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import {
   Search,
@@ -50,6 +51,9 @@ export default function SearchPageClient() {
       year: number;
       posterPath: string | null;
       overview: string;
+      existingTitleId?: string;
+      existingTitleStatus?: string;
+      existingHasRatings?: boolean;
     }[]
   >([]);
   const [tmdbLoading, setTmdbLoading] = useState(false);
@@ -61,7 +65,6 @@ export default function SearchPageClient() {
   const trackedResultsQueryRef = useRef<string | null>(null);
 
   const isLoading = dbResults === undefined && q.length >= 2;
-  const hasDbResults = dbResults && dbResults.length > 0;
   const remaining = rateLimit ? rateLimit.limit - rateLimit.used : null;
   const canAdminAdd = isAdmin === true;
   const canRequestFromSearch =
@@ -103,6 +106,11 @@ export default function SearchPageClient() {
   const tmdbAdditionalResults = tmdbResults.filter(
     (r) => !dbKeys.has(`${r.type}-${r.tmdbId}`)
   );
+  const existingFromTmdbCount = tmdbAdditionalResults.filter(
+    (r) => r.existingTitleId
+  ).length;
+  const totalMatchedCount = (dbResults?.length ?? 0) + existingFromTmdbCount;
+  const isSearching = isLoading || tmdbLoading;
 
   useEffect(() => {
     const query = q.trim();
@@ -125,7 +133,9 @@ export default function SearchPageClient() {
 
   useEffect(() => {
     const query = q.trim();
-    if (query.length < 2 || dbResults === undefined || tmdbLoading) return;
+    if (query.length < 2 || dbResults === undefined || tmdbLoading) {
+      return;
+    }
     if (trackedResultsQueryRef.current === query) return;
     trackedResultsQueryRef.current = query;
 
@@ -134,10 +144,18 @@ export default function SearchPageClient() {
       query,
       db_results_count: dbResults.length,
       tmdb_additional_results_count: tmdbAdditionalResults.length,
+      tmdb_existing_results_count: existingFromTmdbCount,
       total_results_count: dbResults.length + tmdbAdditionalResults.length,
       tmdb_error: tmdbError,
     });
-  }, [q, dbResults, tmdbLoading, tmdbAdditionalResults.length, tmdbError]);
+  }, [
+    q,
+    dbResults,
+    tmdbLoading,
+    tmdbAdditionalResults.length,
+    existingFromTmdbCount,
+    tmdbError,
+  ]);
 
   async function handleRequestRating(
     tmdbId: number,
@@ -177,10 +195,10 @@ export default function SearchPageClient() {
         <h1 className="text-2xl font-bold tracking-tight">Search Results</h1>
         {q && (
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {isLoading
+            {isSearching
               ? "Searching..."
-              : hasDbResults
-                ? `${dbResults.length} result${dbResults.length !== 1 ? "s" : ""} for "${q}"`
+              : totalMatchedCount > 0
+                ? `${totalMatchedCount} result${totalMatchedCount !== 1 ? "s" : ""} for "${q}"`
                 : `No rated results for "${q}"`}
           </p>
         )}
@@ -304,11 +322,17 @@ export default function SearchPageClient() {
           weights={effectiveWeights}
           emptyState={
             q
-              ? {
+              ? existingFromTmdbCount > 0
+                ? {
+                    title: "No exact index matches",
+                    description:
+                      "We found related titles below that already exist in our database.",
+                  }
+                : {
                   title: `No results for "${q}"`,
                   description:
                     "Check your spelling or try a different title.",
-                }
+                  }
               : undefined
           }
         />
@@ -327,7 +351,7 @@ export default function SearchPageClient() {
                   More titles from TMDB
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Titles not yet in our database can be added from here.
+                  View existing matches or add titles not yet in our database.
                 </p>
               </div>
             </div>
@@ -371,6 +395,7 @@ export default function SearchPageClient() {
                 {tmdbAdditionalResults.map((result) => {
                   const TypeIcon = result.type === "tv" ? Tv : Film;
                   const isRequesting = requestingId === result.tmdbId;
+                  const canViewExisting = Boolean(result.existingTitleId);
 
                   return (
                     <div
@@ -414,7 +439,18 @@ export default function SearchPageClient() {
                       </div>
 
                       {/* Request button */}
-                      {canRequestFromSearch ? (
+                      {canViewExisting ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          className="w-full shrink-0 gap-1.5 sm:ml-auto sm:w-auto"
+                        >
+                          <Link href={`/title/${result.existingTitleId}`}>
+                            {result.existingHasRatings ? "View Advisory" : "View Title"}
+                          </Link>
+                        </Button>
+                      ) : canRequestFromSearch ? (
                         <Button
                           size="sm"
                           variant="outline"
