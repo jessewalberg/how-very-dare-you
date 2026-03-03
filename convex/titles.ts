@@ -48,6 +48,22 @@ function calculateDefaultCompositeFromRatings(ratings: {
   return Math.min(4, Math.max(0, Math.round(raw * 10) / 10));
 }
 
+function getEpisodeDenominator(
+  title: { seasonData?: Array<{ episodeCount: number }> },
+  indexedEpisodeCount: number
+): number {
+  const seasonEpisodeCount = (title.seasonData ?? []).reduce((sum, season) => {
+    const count = Number.isFinite(season.episodeCount) ? season.episodeCount : 0;
+    return sum + Math.max(0, count);
+  }, 0);
+
+  if (seasonEpisodeCount <= 0) {
+    return indexedEpisodeCount;
+  }
+
+  return Math.max(indexedEpisodeCount, seasonEpisodeCount);
+}
+
 export const getTitle = query({
   args: { titleId: v.id("titles") },
   handler: async (ctx, args) => {
@@ -408,7 +424,7 @@ export const aggregateShowRatings = internalMutation({
     };
 
     const avgConfidence = totalConfidence / ratedEpisodes.length;
-    const totalEpisodeCount = allEpisodes.length;
+    const totalEpisodeCount = getEpisodeDenominator(title, allEpisodes.length);
     const notes = `Based on ${ratedEpisodes.length} of ${totalEpisodeCount} episodes. Average severity per category across rated episodes.`;
     const nonSeedEpisodeModels = Array.from(
       new Set(
@@ -457,7 +473,8 @@ export const refreshEpisodeRatingNotes = internalMutation({
 
     if (ratedEpisodeCount === 0) return;
 
-    const notes = `Based on ${ratedEpisodeCount} of ${allEpisodes.length} episodes. Average severity per category across rated episodes.`;
+    const totalEpisodeCount = getEpisodeDenominator(title, allEpisodes.length);
+    const notes = `Based on ${ratedEpisodeCount} of ${totalEpisodeCount} episodes. Average severity per category across rated episodes.`;
 
     await ctx.db.patch(args.titleId, {
       ratedEpisodeCount,
