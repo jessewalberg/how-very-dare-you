@@ -1,6 +1,14 @@
-import { query, mutation, action, internalQuery, internalMutation } from "./_generated/server";
+import {
+  query,
+  mutation,
+  action,
+  internalQuery,
+  internalMutation,
+  type QueryCtx,
+} from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireAdmin } from "./lib/adminAuth";
 import { extractSupportedCatalogModels } from "../lib/openrouterModels";
@@ -44,6 +52,94 @@ function resolveFallbackRatingModel(): string {
     process.env.OPENROUTER_RATING_MODEL ??
     process.env.OPENROUTER_MODEL ??
     DEFAULT_OPENROUTER_RATING_MODEL
+  );
+}
+
+async function enrichQueueItems(
+  ctx: QueryCtx,
+  queueItems: Doc<"ratingQueue">[]
+) {
+  const titleByTmdbType = new Map<string, Doc<"titles"> | null>();
+  const episodeTitleIdByEpisodeId = new Map<string, Doc<"titles">["_id"] | null>();
+  const enriched: Array<(typeof queueItems)[number] & { titleId?: Doc<"titles">["_id"] }> = [];
+
+  for (const item of queueItems) {
+    let resolvedTitleId = item.titleId;
+
+    // Episode rows should always open the parent title. Resolve through episodeId first.
+    if (!resolvedTitleId && item.type === "episode" && item.episodeId) {
+      const cacheKey = String(item.episodeId);
+      if (!episodeTitleIdByEpisodeId.has(cacheKey)) {
+        const episode = await ctx.db.get(item.episodeId);
+        episodeTitleIdByEpisodeId.set(cacheKey, episode?.titleId ?? null);
+      }
+      resolvedTitleId = episodeTitleIdByEpisodeId.get(cacheKey) ?? undefined;
+    }
+
+    // Backfill for legacy queue rows without titleId by matching tmdbId + type.
+    if (!resolvedTitleId) {
+      const matchType = item.type === "episode" ? "tv" : item.type;
+      const cacheKey = `${matchType}:${item.tmdbId}`;
+      if (!titleByTmdbType.has(cacheKey)) {
+        const candidates = await ctx.db
+          .query("titles")
+          .withIndex("by_tmdbId", (q) => q.eq("tmdbId", item.tmdbId))
+          .collect();
+        const exact = candidates.find((candidate) => candidate.type === matchType) ?? null;
+        titleByTmdbType.set(cacheKey, exact);
+      }
+      resolvedTitleId = titleByTmdbType.get(cacheKey)?._id;
+    }
+
+    enriched.push({
+      ...item,
+      titleId: resolvedTitleId,
+    });
+  }
+
+  return enriched;
+}
+
+async function enrichOverstimulationJobs(
+  ctx: QueryCtx,
+  jobs: Doc<"overstimulationQueue">[]
+) {
+  const titleCache = new Map<string, Doc<"titles"> | null>();
+  const episodeCache = new Map<string, Doc<"episodes"> | null>();
+
+  return await Promise.all(
+    jobs.map(async (job) => {
+      const titleKey = String(job.titleId);
+      if (!titleCache.has(titleKey)) {
+        const title = await ctx.db.get(job.titleId);
+        titleCache.set(titleKey, title ?? null);
+      }
+      const title = titleCache.get(titleKey);
+      const targetType = job.episodeId ? "episode" : "title";
+      let episode:
+        | Doc<"episodes">
+        | null
+        | undefined = undefined;
+      if (job.episodeId) {
+        const episodeKey = String(job.episodeId);
+        if (!episodeCache.has(episodeKey)) {
+          episodeCache.set(episodeKey, (await ctx.db.get(job.episodeId)) ?? null);
+        }
+        episode = episodeCache.get(episodeKey);
+      }
+
+      return {
+        ...job,
+        targetType,
+        titleName: title?.title ?? "Unknown title",
+        titleYear: title?.year ?? undefined,
+        tmdbId: title?.tmdbId ?? undefined,
+        episodeId: job.episodeId,
+        seasonNumber: episode?.seasonNumber ?? undefined,
+        episodeNumber: episode?.episodeNumber ?? undefined,
+        episodeName: episode?.name ?? undefined,
+      };
+    })
   );
 }
 
@@ -430,45 +526,41 @@ export const getQueueItems = query({
         .take(200)
       : await ctx.db.query("ratingQueue").order("desc").take(200);
 
-    const titleByTmdbType = new Map<string, Doc<"titles"> | null>();
-    const episodeTitleIdByEpisodeId = new Map<string, Doc<"titles">["_id"] | null>();
-    const enriched: Array<(typeof queueItems)[number] & { titleId?: Doc<"titles">["_id"] }> = [];
+    return await enrichQueueItems(ctx, queueItems);
+  },
+});
 
-    for (const item of queueItems) {
-      let resolvedTitleId = item.titleId;
+export const getQueueItemsPaginated = query({
+  args: {
+    status: v.optional(
+      v.union(
+        v.literal("queued"),
+        v.literal("processing"),
+        v.literal("completed"),
+        v.literal("failed")
+      )
+    ),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
 
-      // Episode rows should always open the parent title. Resolve through episodeId first.
-      if (!resolvedTitleId && item.type === "episode" && item.episodeId) {
-        const cacheKey = String(item.episodeId);
-        if (!episodeTitleIdByEpisodeId.has(cacheKey)) {
-          const episode = await ctx.db.get(item.episodeId);
-          episodeTitleIdByEpisodeId.set(cacheKey, episode?.titleId ?? null);
-        }
-        resolvedTitleId = episodeTitleIdByEpisodeId.get(cacheKey) ?? undefined;
-      }
+    const result = args.status
+      ? await ctx.db
+        .query("ratingQueue")
+        .withIndex("by_status_priority", (q) => q.eq("status", args.status!))
+        .order("desc")
+        .paginate(args.paginationOpts)
+      : await ctx.db
+        .query("ratingQueue")
+        .order("desc")
+        .paginate(args.paginationOpts);
 
-      // Backfill for legacy queue rows without titleId by matching tmdbId + type.
-      if (!resolvedTitleId) {
-        const matchType = item.type === "episode" ? "tv" : item.type;
-        const cacheKey = `${matchType}:${item.tmdbId}`;
-        if (!titleByTmdbType.has(cacheKey)) {
-          const candidates = await ctx.db
-            .query("titles")
-            .withIndex("by_tmdbId", (q) => q.eq("tmdbId", item.tmdbId))
-            .collect();
-          const exact = candidates.find((candidate) => candidate.type === matchType) ?? null;
-          titleByTmdbType.set(cacheKey, exact);
-        }
-        resolvedTitleId = titleByTmdbType.get(cacheKey)?._id;
-      }
-
-      enriched.push({
-        ...item,
-        titleId: resolvedTitleId,
-      });
-    }
-
-    return enriched;
+    const page = await enrichQueueItems(ctx, result.page);
+    return {
+      ...result,
+      page,
+    };
   },
 });
 
@@ -497,43 +589,42 @@ export const getOverstimulationJobs = query({
         .take(limit)
       : await ctx.db.query("overstimulationQueue").order("desc").take(limit);
 
-    const titleCache = new Map<string, Doc<"titles"> | null>();
-    const episodeCache = new Map<string, Doc<"episodes"> | null>();
+    return await enrichOverstimulationJobs(ctx, jobs);
+  },
+});
 
-    return await Promise.all(
-      jobs.map(async (job) => {
-        const titleKey = String(job.titleId);
-        if (!titleCache.has(titleKey)) {
-          const title = await ctx.db.get(job.titleId);
-          titleCache.set(titleKey, title ?? null);
-        }
-        const title = titleCache.get(titleKey);
-        const targetType = job.episodeId ? "episode" : "title";
-        let episode:
-          | Doc<"episodes">
-          | null
-          | undefined = undefined;
-        if (job.episodeId) {
-          const episodeKey = String(job.episodeId);
-          if (!episodeCache.has(episodeKey)) {
-            episodeCache.set(episodeKey, (await ctx.db.get(job.episodeId)) ?? null);
-          }
-          episode = episodeCache.get(episodeKey);
-        }
+export const getOverstimulationJobsPaginated = query({
+  args: {
+    status: v.optional(
+      v.union(
+        v.literal("queued"),
+        v.literal("processing"),
+        v.literal("completed"),
+        v.literal("skipped"),
+        v.literal("failed")
+      )
+    ),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
 
-        return {
-          ...job,
-          targetType,
-          titleName: title?.title ?? "Unknown title",
-          titleYear: title?.year ?? undefined,
-          tmdbId: title?.tmdbId ?? undefined,
-          episodeId: job.episodeId,
-          seasonNumber: episode?.seasonNumber ?? undefined,
-          episodeNumber: episode?.episodeNumber ?? undefined,
-          episodeName: episode?.name ?? undefined,
-        };
-      })
-    );
+    const result = args.status
+      ? await ctx.db
+        .query("overstimulationQueue")
+        .withIndex("by_status_createdAt", (q) => q.eq("status", args.status!))
+        .order("desc")
+        .paginate(args.paginationOpts)
+      : await ctx.db
+        .query("overstimulationQueue")
+        .order("desc")
+        .paginate(args.paginationOpts);
+
+    const page = await enrichOverstimulationJobs(ctx, result.page);
+    return {
+      ...result,
+      page,
+    };
   },
 });
 
