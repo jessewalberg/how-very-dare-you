@@ -21,7 +21,7 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const NAV_LINKS = [
   { href: "/browse", label: "Browse" },
-  { href: "/browse/no-flags", label: "No Flags" },
+  { href: "/browse/low-scores", label: "Low Advisory" },
   { href: "/watchlist", label: "Watchlist" },
 ] as const;
 

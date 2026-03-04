@@ -10,6 +10,7 @@ import type { CategoryWeights } from "@/lib/scoring";
 
 interface SeasonListProps {
   titleId: Id<"titles">;
+  titlePath: string;
   tmdbShowId: number;
   showTitle: string;
   weights?: CategoryWeights;
@@ -17,6 +18,7 @@ interface SeasonListProps {
 
 export function SeasonList({
   titleId,
+  titlePath,
   tmdbShowId,
   showTitle,
   weights,
@@ -83,6 +85,7 @@ export function SeasonList({
           <SeasonAccordion
             key={season.seasonNumber}
             titleId={titleId}
+            titlePath={titlePath}
             tmdbShowId={tmdbShowId}
             seasonNumber={season.seasonNumber}
             seasonName={season.name ?? undefined}

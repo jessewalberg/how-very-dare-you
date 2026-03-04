@@ -41,6 +41,7 @@ import { RatingLoading } from "@/components/title/RatingLoading";
 import { SeasonList } from "@/components/title/SeasonList";
 import { CorrectionForm } from "@/components/corrections/CorrectionForm";
 import { CorrectionsList } from "@/components/corrections/CorrectionsList";
+import { SimilarTitles } from "@/components/title/SimilarTitles";
 import {
   calculateCompositeScore,
   isNoFlags,
@@ -415,6 +416,20 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               categoryEvidence={title.categoryEvidence ?? undefined}
             />
           )}
+          {ratings && !isPaid && (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Want this score tuned to your family? Premium lets you set category
+              priorities.
+              {" "}
+              <Link
+                href="/settings#weights"
+                className="font-medium underline underline-offset-2 hover:text-foreground"
+              >
+                Configure weights
+              </Link>
+              .
+            </p>
+          )}
 
           {/* Per-episode ratings (new system) */}
           {canOpenEpisodeSidebar && title.tmdbId && (
@@ -422,6 +437,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               <Separator />
               <SeasonList
                 titleId={title._id}
+                titlePath={title.slug ?? title._id}
                 tmdbShowId={title.tmdbId}
                 showTitle={title.title}
                 weights={effectiveWeights}
@@ -566,6 +582,9 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
 
           {/* Community corrections */}
           <CorrectionsList titleId={title._id} />
+
+          {/* Similar titles */}
+          <SimilarTitles titleId={title._id} />
         </div>
       </div>
 

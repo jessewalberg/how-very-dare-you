@@ -2182,8 +2182,32 @@ export const createTitleFromData = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    // Generate unique slug
+    const { generateSlug } = await import("./titles");
+    let slug = generateSlug(args.title, args.year);
+    const existing = await ctx.db
+      .query("titles")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+    if (existing) {
+      let suffix = 2;
+      while (true) {
+        const candidate = `${slug}-${suffix}`;
+        const check = await ctx.db
+          .query("titles")
+          .withIndex("by_slug", (q) => q.eq("slug", candidate))
+          .first();
+        if (!check) {
+          slug = candidate;
+          break;
+        }
+        suffix++;
+      }
+    }
+
     return await ctx.db.insert("titles", {
       tmdbId: args.tmdbId,
+      slug,
       title: args.title,
       type: args.type,
       year: args.year,
@@ -2247,11 +2271,38 @@ export const updateTitleMetadata = internalMutation({
           )
         : undefined;
 
+    // Generate slug if missing and year is now known
+    let slug: string | undefined;
+    if (!existingTitle.slug && args.year > 0) {
+      const { generateSlug } = await import("./titles");
+      slug = generateSlug(existingTitle.title, args.year);
+      const slugConflict = await ctx.db
+        .query("titles")
+        .withIndex("by_slug", (q) => q.eq("slug", slug!))
+        .first();
+      if (slugConflict && slugConflict._id !== titleId) {
+        let suffix = 2;
+        while (true) {
+          const candidate = `${slug}-${suffix}`;
+          const check = await ctx.db
+            .query("titles")
+            .withIndex("by_slug", (q) => q.eq("slug", candidate))
+            .first();
+          if (!check) {
+            slug = candidate;
+            break;
+          }
+          suffix++;
+        }
+      }
+    }
+
     await ctx.db.patch(titleId, {
       ...fields,
       ...(mergedProviders !== undefined
         ? { streamingProviders: mergedProviders }
         : {}),
+      ...(slug ? { slug } : {}),
     });
   },
 });

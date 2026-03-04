@@ -7,8 +7,8 @@ export class AppShellPage {
     await this.page.goto("/browse");
   }
 
-  async gotoNoFlags() {
-    await this.page.goto("/browse/no-flags");
+  async gotoLowScores() {
+    await this.page.goto("/browse/low-scores");
   }
 
   async expectBrowseLoaded() {
@@ -17,15 +17,22 @@ export class AppShellPage {
     ).toBeVisible();
   }
 
-  async expectNoFlagsLoaded() {
+  async expectLowScoresLoaded() {
     await expect(
-      this.page.getByRole("heading", { name: "No Flags Content" })
+      this.page.getByRole("heading", { name: "Low Advisory Picks" })
     ).toBeVisible();
   }
 
   async expectTopNavVisible() {
-    await expect(this.page.getByRole("link", { name: "Browse" })).toBeVisible();
-    await expect(this.page.getByRole("link", { name: "No Flags" })).toBeVisible();
-    await expect(this.page.getByRole("link", { name: "Watchlist" })).toBeVisible();
+    const topHeader = this.page.locator("header").first();
+    await expect(
+      topHeader.getByRole("link", { name: "Browse", exact: true })
+    ).toBeVisible();
+    await expect(
+      topHeader.getByRole("link", { name: "Low Advisory", exact: true })
+    ).toBeVisible();
+    await expect(
+      topHeader.getByRole("link", { name: "Watchlist", exact: true })
+    ).toBeVisible();
   }
 }

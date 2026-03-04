@@ -1,0 +1,65 @@
+export const metadata = {
+  title: "How AI Content Ratings Work: Inside Our Analysis Process — How Very Dare You",
+  description: "A deep dive into how How Very Dare You uses AI to analyze movies and TV shows across 8 cultural and ideological categories.",
+  alternates: { canonical: "/blog/how-ai-content-ratings-work" },
+}
+
+# How AI Content Ratings Work: Inside Our Analysis Process
+
+*March 3, 2026*
+
+---
+
+Traditional content rating systems give parents a single label — PG, PG-13, TV-14 — and leave you guessing about what's actually in a movie or show. At How Very Dare You, we take a fundamentally different approach using artificial intelligence to analyze content across 8 specific cultural and ideological categories.
+
+## What We Analyze
+
+Every title that goes through our system is evaluated across these categories:
+
+- **LGBTQ+ Content** — Romantic or identity themes involving LGBTQ+ characters
+- **Climate & Environmental Messaging** — Environmental activism or ecological moral framing
+- **Racial Identity & Critical Race Theory** — Systemic racism themes or racial identity politics
+- **Gender Roles & Identity** — Content challenging or reinforcing traditional gender norms
+- **Anti-Authority & Anti-Institutional** — Authority figures portrayed as corrupt or oppressive
+- **Religious Content** — Religious themes, imagery, or messaging in any direction
+- **Political Messaging** — Overt political themes or partisan storylines
+- **Sexuality & Adult Content** — Sexual content or mature romantic themes
+
+Each category is scored on our 0-4 severity scale: **0** (None), **1** (Minimal), **2** (Moderate), **3** (Significant), **4** (Core Theme).
+
+## How the AI Works
+
+Our analysis pipeline starts with subtitle transcripts. We feed the complete dialogue from a movie or TV show episode into Claude, an advanced AI model from Anthropic, accessed through OpenRouter. The AI reads every line of dialogue and evaluates the themes, context, and narrative framing against each of our 8 categories.
+
+For movies, this is a single analysis of the full script. For TV shows, we analyze individual episodes and then aggregate the results to produce a show-level score.
+
+The AI doesn't just assign numbers — it produces detailed notes explaining *what* it found and *why* it assigned each score. This transparency is a core part of our approach. You can always read the reasoning behind every rating.
+
+## The Composite Score
+
+We combine the 8 category scores into a single composite score using a formula that weighs both the **peak severity** (highest category) and the **average** across all categories:
+
+> Composite = (Peak × 0.6) + (Average × 0.4)
+
+This means a title with one very high score in a single category will still show up as significant overall, even if other categories are low. We think this matches how most parents evaluate content — one major concern matters even if everything else is fine.
+
+## Premium: Personalized Weights
+
+Not every family cares equally about every category. Premium subscribers can adjust the weight of each category, so the composite score reflects *their* priorities. If sexuality is your main concern but political messaging isn't, you can weight accordingly and get a score tuned to your family's values.
+
+## Why AI Instead of Human Reviewers?
+
+Human review sites like Common Sense Media do valuable work, but they have inherent limitations:
+
+- **Speed** — Human reviewers take days or weeks. Our AI can analyze a title in minutes.
+- **Consistency** — Different reviewers have different biases. Our AI applies the same methodology every time.
+- **Coverage** — Human review sites can only cover popular titles. We can analyze anything with available subtitles.
+- **Cost** — We can offer free access because AI analysis scales affordably.
+
+The tradeoff is that AI can miss visual-only themes or subtle cultural context not present in dialogue. We're transparent about this limitation and accept community corrections to improve accuracy.
+
+## What's Next
+
+We're continually improving our analysis. Recent additions include **overstimulation scoring** based on video analysis (editing pace, color saturation, flash frequency) and **per-episode ratings** for TV shows so parents can evaluate individual episodes rather than just the show as a whole.
+
+Have questions about how our ratings work? Visit our [About page](/about) or search for any title to see a real example.

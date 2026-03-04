@@ -15,6 +15,101 @@ import {
 } from "./lib/ratingValidation";
 import { isSeedTitle } from "./lib/seedData";
 
+// ── Slug utilities ──────────────────────────────────────
+
+export function generateSlug(title: string, year: number): string {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return `${base || "untitled"}-${year}`;
+}
+
+export const getTitleBySlug = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const title = await ctx.db
+      .query("titles")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .first();
+    if (!title) return null;
+
+    // Same episode aggregation logic as getTitle
+    if (!(title.type === "tv" && title.hasEpisodeRatings)) {
+      return title;
+    }
+
+    const episodes = await ctx.db
+      .query("episodes")
+      .withIndex("by_titleId", (q) => q.eq("titleId", title._id))
+      .collect();
+
+    const ratedEpisodes = episodes.filter((ep) => ep.status === "rated" && ep.ratings);
+    if (ratedEpisodes.length === 0) {
+      return {
+        ...title,
+        episodeCompositeScore: undefined as number | undefined,
+      };
+    }
+
+    const avgEpisodeComposite =
+      ratedEpisodes.reduce(
+        (sum, ep) => sum + calculateDefaultCompositeFromRatings(ep.ratings!),
+        0
+      ) / ratedEpisodes.length;
+
+    return {
+      ...title,
+      episodeCompositeScore: Math.round(avgEpisodeComposite * 10) / 10,
+    };
+  },
+});
+
+export const backfillSlugs = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const titles = await ctx.db
+      .query("titles")
+      .collect();
+
+    let updated = 0;
+    for (const title of titles) {
+      if (title.slug) continue;
+
+      let slug = generateSlug(title.title, title.year);
+
+      // Check for collisions
+      const existing = await ctx.db
+        .query("titles")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .first();
+
+      if (existing) {
+        // Append suffix to make unique
+        let suffix = 2;
+        while (true) {
+          const candidate = `${slug}-${suffix}`;
+          const check = await ctx.db
+            .query("titles")
+            .withIndex("by_slug", (q) => q.eq("slug", candidate))
+            .first();
+          if (!check) {
+            slug = candidate;
+            break;
+          }
+          suffix++;
+        }
+      }
+
+      await ctx.db.patch(title._id, { slug });
+      updated++;
+    }
+
+    return { updated };
+  },
+});
+
 function calculateDefaultCompositeFromRatings(ratings: {
   lgbtq: number;
   climate: number;
@@ -46,6 +141,62 @@ function calculateDefaultCompositeFromRatings(ratings: {
   const raw = peak * 0.6 + avg * 0.4;
 
   return Math.min(4, Math.max(0, Math.round(raw * 10) / 10));
+}
+
+function getEpisodeDenominator(
+  title: { seasonData?: Array<{ episodeCount: number }> },
+  indexedEpisodeCount: number
+): number {
+  const seasonEpisodeCount = (title.seasonData ?? []).reduce((sum, season) => {
+    const count = Number.isFinite(season.episodeCount) ? season.episodeCount : 0;
+    return sum + Math.max(0, count);
+  }, 0);
+
+  if (seasonEpisodeCount <= 0) {
+    return indexedEpisodeCount;
+  }
+
+  return Math.max(indexedEpisodeCount, seasonEpisodeCount);
+}
+
+function isLowAdvisoryTitle(
+  title: {
+    ratings?: {
+      lgbtq: number;
+      climate: number;
+      racialIdentity: number;
+      genderRoles: number;
+      antiAuthority: number;
+      religious: number;
+      political: number;
+      sexuality: number;
+      overstimulation?: number;
+    };
+  },
+  maxComposite: number,
+  maxCategorySeverity: number
+): boolean {
+  if (!title.ratings) return false;
+
+  const categoryValues = [
+    title.ratings.lgbtq,
+    title.ratings.climate,
+    title.ratings.racialIdentity,
+    title.ratings.genderRoles,
+    title.ratings.antiAuthority,
+    title.ratings.religious,
+    title.ratings.political,
+    title.ratings.sexuality,
+    ...(title.ratings.overstimulation === undefined
+      ? []
+      : [title.ratings.overstimulation]),
+  ];
+
+  const maxCategory = Math.max(...categoryValues);
+  if (maxCategory > maxCategorySeverity) return false;
+
+  const composite = calculateDefaultCompositeFromRatings(title.ratings);
+  return composite <= maxComposite;
 }
 
 export const getTitle = query({
@@ -156,6 +307,39 @@ export const browseNoFlags = query({
   },
 });
 
+export const browseLowScores = query({
+  args: {
+    type: v.optional(
+      v.union(v.literal("movie"), v.literal("tv"), v.literal("youtube"))
+    ),
+    maxComposite: v.optional(v.number()),
+    maxCategorySeverity: v.optional(v.number()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const maxComposite = Math.min(Math.max(args.maxComposite ?? 1, 0), 4);
+    const maxCategorySeverity = Math.min(
+      Math.max(Math.floor(args.maxCategorySeverity ?? 1), 0),
+      4
+    );
+
+    const results = await ctx.db
+      .query("titles")
+      .withIndex("by_status", (q) => q.eq("status", "rated"))
+      .collect();
+
+    return results
+      .filter((title) => {
+        if (isSeedTitle(title)) return false;
+        if (!title.ratings) return false;
+        if (args.type && title.type !== args.type) return false;
+        return isLowAdvisoryTitle(title, maxComposite, maxCategorySeverity);
+      })
+      .sort((a, b) => (b.ratedAt ?? b._creationTime) - (a.ratedAt ?? a._creationTime))
+      .slice(0, args.limit ?? 50);
+  },
+});
+
 export const getFeaturedRatedTitles = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -168,6 +352,23 @@ export const getFeaturedRatedTitles = query({
       .filter((title) => !isSeedTitle(title) && !!title.ratings && !!title.ratingNotes)
       .sort((a, b) => (b.ratedAt ?? b._creationTime) - (a.ratedAt ?? a._creationTime))
       .slice(0, args.limit ?? 3);
+  },
+});
+
+export const getStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const results = await ctx.db
+      .query("titles")
+      .withIndex("by_status", (q) => q.eq("status", "rated"))
+      .collect();
+
+    const ratedCount = results.filter((t) => !isSeedTitle(t)).length;
+
+    const users = await ctx.db.query("users").collect();
+    const userCount = users.length;
+
+    return { ratedCount, userCount };
   },
 });
 
@@ -187,6 +388,61 @@ export const getNoFlagsPreview = query({
       })
       .sort((a, b) => (b.ratedAt ?? b._creationTime) - (a.ratedAt ?? a._creationTime))
       .slice(0, args.limit ?? 4);
+  },
+});
+
+export const getLowAdvisoryPreview = query({
+  args: {
+    limit: v.optional(v.number()),
+    maxComposite: v.optional(v.number()),
+    maxCategorySeverity: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const maxComposite = Math.min(Math.max(args.maxComposite ?? 1, 0), 4);
+    const maxCategorySeverity = Math.min(
+      Math.max(Math.floor(args.maxCategorySeverity ?? 1), 0),
+      4
+    );
+
+    const results = await ctx.db
+      .query("titles")
+      .withIndex("by_status", (q) => q.eq("status", "rated"))
+      .collect();
+
+    return results
+      .filter((title) => {
+        if (isSeedTitle(title)) return false;
+        if (!title.ratings) return false;
+        return isLowAdvisoryTitle(title, maxComposite, maxCategorySeverity);
+      })
+      .sort((a, b) => (b.ratedAt ?? b._creationTime) - (a.ratedAt ?? a._creationTime))
+      .slice(0, args.limit ?? 8);
+  },
+});
+
+export const getSimilarTitles = query({
+  args: {
+    titleId: v.id("titles"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const title = await ctx.db.get(args.titleId);
+    if (!title) return [];
+
+    const results = await ctx.db
+      .query("titles")
+      .withIndex("by_status", (q) => q.eq("status", "rated"))
+      .collect();
+
+    return results
+      .filter((t) => {
+        if (t._id === args.titleId) return false;
+        if (isSeedTitle(t)) return false;
+        if (t.type !== title.type) return false;
+        return true;
+      })
+      .sort((a, b) => (b.ratedAt ?? b._creationTime) - (a.ratedAt ?? a._creationTime))
+      .slice(0, args.limit ?? 6);
   },
 });
 
@@ -260,6 +516,31 @@ export const saveRating = internalMutation({
     const episodeFlags =
       title.type === "tv" ? sanitizeEpisodeFlags(args.episodeFlags) : undefined;
 
+    // Generate slug if missing and we have valid year
+    let slug = title.slug;
+    if (!slug && title.year > 0) {
+      slug = generateSlug(title.title, title.year);
+      const existing = await ctx.db
+        .query("titles")
+        .withIndex("by_slug", (q) => q.eq("slug", slug!))
+        .first();
+      if (existing && existing._id !== title._id) {
+        let suffix = 2;
+        while (true) {
+          const candidate = `${slug}-${suffix}`;
+          const check = await ctx.db
+            .query("titles")
+            .withIndex("by_slug", (q) => q.eq("slug", candidate))
+            .first();
+          if (!check) {
+            slug = candidate;
+            break;
+          }
+          suffix++;
+        }
+      }
+    }
+
     await ctx.db.patch(title._id, {
       ratings: { ...args.ratings, overstimulation: title.ratings?.overstimulation },
       ratingConfidence: args.confidence,
@@ -270,6 +551,7 @@ export const saveRating = internalMutation({
       status: "rated",
       episodeFlags,
       subtitleInfo: args.subtitleInfo,
+      ...(slug && !title.slug ? { slug } : {}),
     });
   },
 });
@@ -408,7 +690,7 @@ export const aggregateShowRatings = internalMutation({
     };
 
     const avgConfidence = totalConfidence / ratedEpisodes.length;
-    const totalEpisodeCount = allEpisodes.length;
+    const totalEpisodeCount = getEpisodeDenominator(title, allEpisodes.length);
     const notes = `Based on ${ratedEpisodes.length} of ${totalEpisodeCount} episodes. Average severity per category across rated episodes.`;
     const nonSeedEpisodeModels = Array.from(
       new Set(
@@ -457,7 +739,8 @@ export const refreshEpisodeRatingNotes = internalMutation({
 
     if (ratedEpisodeCount === 0) return;
 
-    const notes = `Based on ${ratedEpisodeCount} of ${allEpisodes.length} episodes. Average severity per category across rated episodes.`;
+    const totalEpisodeCount = getEpisodeDenominator(title, allEpisodes.length);
+    const notes = `Based on ${ratedEpisodeCount} of ${totalEpisodeCount} episodes. Average severity per category across rated episodes.`;
 
     await ctx.db.patch(args.titleId, {
       ratedEpisodeCount,

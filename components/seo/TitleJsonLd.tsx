@@ -11,6 +11,7 @@ interface StreamingProvider {
 interface TitleJsonLdProps {
   title: {
     _id: string;
+    slug?: string;
     title: string;
     year: number;
     type: "movie" | "tv" | "youtube";
@@ -31,12 +32,13 @@ interface TitleJsonLdProps {
 export function TitleJsonLd({ title }: TitleJsonLdProps) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
   const schemaType = title.type === "tv" ? "TVSeries" : "Movie";
+  const titlePath = title.slug ?? title._id;
 
   const jsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": schemaType,
     name: title.title,
-    url: `${baseUrl}/title/${title._id}`,
+    url: `${baseUrl}/title/${titlePath}`,
     datePublished: String(title.year),
   };
 
@@ -111,10 +113,41 @@ export function TitleJsonLd({ title }: TitleJsonLdProps) {
     }
   }
 
+  const breadcrumbLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Home",
+        item: baseUrl,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "Browse",
+        item: `${baseUrl}/browse`,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: `${title.title} (${title.year})`,
+        item: `${baseUrl}/title/${titlePath}`,
+      },
+    ],
+  };
+
   return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+      />
+    </>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { SignInButton } from "@clerk/nextjs";
 import { Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ interface EpisodeCardProps {
   episodeNumber: number;
   name?: string;
   stillPath?: string;
+  episodeHref?: string;
   status: "unrated" | "rating" | "rated" | "failed";
   ratings?: CategoryRatings;
   weights?: CategoryWeights;
@@ -33,6 +35,7 @@ export function EpisodeCard({
   episodeNumber,
   name,
   stillPath,
+  episodeHref,
   status,
   ratings,
   weights,
@@ -98,6 +101,15 @@ export function EpisodeCard({
           </p>
           {name && (
             <p className="text-sm font-medium truncate">{name}</p>
+          )}
+          {isRated && episodeHref && (
+            <Link
+              href={episodeHref}
+              className="mt-0.5 inline-flex text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+              onClick={(event) => event.stopPropagation()}
+            >
+              View advisory page
+            </Link>
           )}
         </div>
 

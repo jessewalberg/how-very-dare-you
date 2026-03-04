@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 
 export interface TitleData {
   _id: Id<"titles">;
+  slug?: string;
   title: string;
   year: number;
   type: "movie" | "tv" | "youtube";
@@ -93,6 +94,7 @@ export function TitleGrid({
         <TitleCard
           key={title._id}
           id={title._id}
+          slug={title.slug}
           title={title.title}
           year={title.year}
           type={title.type}

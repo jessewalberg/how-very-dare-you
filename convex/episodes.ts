@@ -7,6 +7,7 @@ import {
 } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
+import { isSeedTitle } from "./lib/seedData";
 import {
   assertCategoryRatings,
   assertConfidence,
@@ -47,6 +48,88 @@ export const getEpisode = query({
   args: { episodeId: v.id("episodes") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.episodeId);
+  },
+});
+
+export const getEpisodeByTitleSeasonEpisode = query({
+  args: {
+    titleId: v.id("titles"),
+    seasonNumber: v.number(),
+    episodeNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const seasonEpisodes = await ctx.db
+      .query("episodes")
+      .withIndex("by_titleId_season", (q) =>
+        q.eq("titleId", args.titleId).eq("seasonNumber", args.seasonNumber)
+      )
+      .collect();
+
+    return (
+      seasonEpisodes.find((episode) => episode.episodeNumber === args.episodeNumber) ??
+      null
+    );
+  },
+});
+
+export const listRatedForSeo = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const allEpisodes = await ctx.db.query("episodes").collect();
+    const ratedEpisodes = allEpisodes
+      .filter((episode) => episode.status === "rated")
+      .sort(
+        (a, b) => (b.ratedAt ?? b._creationTime) - (a.ratedAt ?? a._creationTime)
+      );
+
+    const titleCache = new Map<
+      string,
+      { _id: string; slug?: string; type: "movie" | "tv" | "youtube" } | null
+    >();
+
+    const rows: Array<{
+      episodeId: string;
+      titleId: string;
+      titleSlug?: string;
+      seasonNumber: number;
+      episodeNumber: number;
+      ratedAt?: number;
+    }> = [];
+
+    for (const episode of ratedEpisodes) {
+      const titleKey = String(episode.titleId);
+      if (!titleCache.has(titleKey)) {
+        const title = await ctx.db.get(episode.titleId);
+        if (!title || title.type !== "tv" || title.status !== "rated" || isSeedTitle(title)) {
+          titleCache.set(titleKey, null);
+        } else {
+          titleCache.set(titleKey, {
+            _id: String(title._id),
+            slug: title.slug,
+            type: title.type,
+          });
+        }
+      }
+
+      const title = titleCache.get(titleKey);
+      if (!title) continue;
+
+      rows.push({
+        episodeId: String(episode._id),
+        titleId: title._id,
+        titleSlug: title.slug,
+        seasonNumber: episode.seasonNumber,
+        episodeNumber: episode.episodeNumber,
+        ratedAt: episode.ratedAt,
+      });
+    }
+
+    if (typeof args.limit === "number") {
+      return rows.slice(0, args.limit);
+    }
+    return rows;
   },
 });
 

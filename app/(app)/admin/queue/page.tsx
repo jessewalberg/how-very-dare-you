@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { usePaginatedQuery, useQuery, useMutation, useAction } from "convex/react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -98,6 +98,9 @@ interface QualityReviewItem {
   displayTitle: string;
 }
 
+const QUEUE_PAGE_SIZE = 25;
+const OVERSTIM_PAGE_SIZE = 25;
+
 export default function AdminQueuePage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(undefined);
   const [overstimStatusFilter, setOverstimStatusFilter] =
@@ -105,11 +108,24 @@ export default function AdminQueuePage() {
   const [qualitySeverityFilter, setQualitySeverityFilter] =
     useState<QualitySeverityFilter>("all");
   const [acting, setActing] = useState<string | null>(null);
-  const items = useQuery(api.admin.getQueueItems, { status: statusFilter });
-  const overstimJobs = useQuery(api.admin.getOverstimulationJobs, {
-    status: overstimStatusFilter,
-    limit: 100,
-  });
+  const {
+    results: items,
+    status: queuePaginationStatus,
+    loadMore: loadMoreQueueItems,
+  } = usePaginatedQuery(
+    api.admin.getQueueItemsPaginated,
+    { status: statusFilter },
+    { initialNumItems: QUEUE_PAGE_SIZE }
+  );
+  const {
+    results: overstimJobs,
+    status: overstimPaginationStatus,
+    loadMore: loadMoreOverstimJobs,
+  } = usePaginatedQuery(
+    api.admin.getOverstimulationJobsPaginated,
+    { status: overstimStatusFilter },
+    { initialNumItems: OVERSTIM_PAGE_SIZE }
+  );
   const qualityItems = useQuery(api.admin.getQualityReviewItems, {
     severity:
       qualitySeverityFilter === "all" ? undefined : qualitySeverityFilter,
@@ -258,11 +274,9 @@ export default function AdminQueuePage() {
             </button>
           ))}
         </div>
-        {items !== undefined && (
-          <span className="text-xs text-muted-foreground ml-2">
-            {items.length} item{items.length !== 1 ? "s" : ""}
-          </span>
-        )}
+        <span className="text-xs text-muted-foreground ml-2">
+          {items.length} item{items.length !== 1 ? "s" : ""}
+        </span>
       </div>
 
       {/* Quality review */}
@@ -410,11 +424,9 @@ export default function AdminQueuePage() {
               `request_id` when available.
             </p>
           </div>
-          {overstimJobs !== undefined && (
-            <span className="text-xs text-muted-foreground">
-              {overstimJobs.length} job{overstimJobs.length !== 1 ? "s" : ""}
-            </span>
-          )}
+          <span className="text-xs text-muted-foreground">
+            {overstimJobs.length} job{overstimJobs.length !== 1 ? "s" : ""}
+          </span>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -434,7 +446,7 @@ export default function AdminQueuePage() {
           ))}
         </div>
 
-        {overstimJobs === undefined && (
+        {overstimPaginationStatus === "LoadingFirstPage" && (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-16 w-full rounded-lg" />
@@ -442,13 +454,14 @@ export default function AdminQueuePage() {
           </div>
         )}
 
-        {overstimJobs && overstimJobs.length === 0 && (
+        {overstimPaginationStatus !== "LoadingFirstPage" &&
+          overstimJobs.length === 0 && (
           <p className="text-xs text-muted-foreground">
             No overstimulation jobs for this filter.
           </p>
-        )}
+          )}
 
-        {overstimJobs && overstimJobs.length > 0 && (
+        {overstimJobs.length > 0 && (
           <div className="space-y-2">
             {overstimJobs.map((job) => {
               const jobActionKey = `overstim:${job._id}`;
@@ -534,10 +547,33 @@ export default function AdminQueuePage() {
             })}
           </div>
         )}
+
+        {(overstimPaginationStatus === "CanLoadMore" ||
+          overstimPaginationStatus === "LoadingMore") && (
+          <div className="pt-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-1.5 sm:w-auto"
+              disabled={overstimPaginationStatus !== "CanLoadMore"}
+              onClick={() => loadMoreOverstimJobs(OVERSTIM_PAGE_SIZE)}
+            >
+              <RefreshCw
+                className={cn(
+                  "size-3",
+                  overstimPaginationStatus === "LoadingMore" && "animate-spin"
+                )}
+              />
+              {overstimPaginationStatus === "LoadingMore"
+                ? "Loading jobs..."
+                : "Load more jobs"}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Loading */}
-      {items === undefined && (
+      {queuePaginationStatus === "LoadingFirstPage" && (
         <div className="space-y-2">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-14 w-full rounded-lg" />
@@ -546,7 +582,7 @@ export default function AdminQueuePage() {
       )}
 
       {/* Empty */}
-      {items && items.length === 0 && (
+      {queuePaginationStatus !== "LoadingFirstPage" && items.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
             <ListOrdered className="size-6 text-muted-foreground/50" />
@@ -567,7 +603,7 @@ export default function AdminQueuePage() {
           Processing jobs for ratings. Click a row to open details in the sidebar.
         </p>
       </div>
-      {items && items.length > 0 && (
+      {items.length > 0 && (
         <div className="space-y-2">
           {/* Header */}
           <div className="hidden sm:grid grid-cols-[1fr_80px_100px_80px_80px_80px_120px_auto] gap-3 px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -581,7 +617,7 @@ export default function AdminQueuePage() {
             <span>Actions</span>
           </div>
 
-          {items.map((item: NonNullable<typeof items>[number]) => {
+          {items.map((item) => {
             const isActing = acting === item._id;
             const sidebarTarget = resolveAdminQueueSidebarTarget({
               type: item.type,
@@ -745,6 +781,29 @@ export default function AdminQueuePage() {
             </div>
             );
           })}
+
+          {(queuePaginationStatus === "CanLoadMore" ||
+            queuePaginationStatus === "LoadingMore") && (
+            <div className="pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-1.5 sm:w-auto"
+                disabled={queuePaginationStatus !== "CanLoadMore"}
+                onClick={() => loadMoreQueueItems(QUEUE_PAGE_SIZE)}
+              >
+                <RefreshCw
+                  className={cn(
+                    "size-3",
+                    queuePaginationStatus === "LoadingMore" && "animate-spin"
+                  )}
+                />
+                {queuePaginationStatus === "LoadingMore"
+                  ? "Loading queue items..."
+                  : "Load more queue items"}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { fetchQuery, preloadQuery } from "convex/nextjs";
 import { Suspense } from "react";
 import { api } from "@/convex/_generated/api";
@@ -11,18 +11,48 @@ import { TitleDetailSkeleton } from "@/components/title/TitleDetailSkeleton";
 import { TitleJsonLd } from "@/components/seo/TitleJsonLd";
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
+export const revalidate = 3600;
+
+/**
+ * Convex document IDs are base-64-ish strings that always contain characters
+ * like uppercase letters or digits without hyphens. Slugs are lowercase with
+ * hyphens (e.g. "inception-2010"). This heuristic lets us choose the right
+ * lookup strategy without a round-trip.
+ */
+function looksLikeSlug(param: string): boolean {
+  return /^[a-z0-9].*-.*[a-z0-9]$/.test(param);
+}
+
+async function resolveTitle(param: string) {
+  // Try slug lookup first if it looks like a slug
+  if (looksLikeSlug(param)) {
+    try {
+      const title = await fetchQuery(api.titles.getTitleBySlug, { slug: param });
+      if (title) return { title, fromSlug: true };
+    } catch {
+      // Fall through to ID lookup
+    }
+  }
+
+  // Try as Convex document ID
+  try {
+    const title = await fetchQuery(api.titles.getTitle, {
+      titleId: param as Id<"titles">,
+    });
+    return title ? { title, fromSlug: false } : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function generateMetadata(props: {
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await props.params;
 
-  let title;
-  try {
-    title = await fetchQuery(api.titles.getTitle, {
-      titleId: id as Id<"titles">,
-    });
-  } catch {
+  const result = await resolveTitle(id);
+
+  if (!result) {
     return {
       title: {
         absolute: "Title Not Found | How Very Dare You",
@@ -30,18 +60,12 @@ export async function generateMetadata(props: {
     };
   }
 
-  if (!title) {
-    return {
-      title: {
-        absolute: "Title Not Found | How Very Dare You",
-      },
-    };
-  }
-
+  const title = result.title;
   const ratings = title.status === "rated" ? title.ratings : undefined;
   const derivedEpisodeComposite =
     (title as { episodeCompositeScore?: number }).episodeCompositeScore;
   const typeLabel = title.type === "tv" ? "TV Show" : "Movie";
+  const canonicalParam = title.slug ?? title._id;
 
   let description: string;
   if (ratings) {
@@ -95,12 +119,12 @@ export async function generateMetadata(props: {
       "content ratings",
     ],
     alternates: {
-      canonical: `/title/${id}`,
+      canonical: `/title/${canonicalParam}`,
     },
     openGraph: {
       title: `${title.title} (${title.year}) — Content Advisory | How Very Dare You`,
       description,
-      url: `${baseUrl}/title/${id}`,
+      url: `${baseUrl}/title/${canonicalParam}`,
       siteName: "How Very Dare You",
       images: [
         {
@@ -126,23 +150,23 @@ export default async function TitlePage(props: {
 }) {
   const { id } = await props.params;
 
-  let preloadedTitle;
-  let titleData: Awaited<ReturnType<typeof fetchQuery<typeof api.titles.getTitle>>> = null;
+  const result = await resolveTitle(id);
+  if (!result) notFound();
 
+  const { title: titleData, fromSlug } = result;
+
+  // If accessed by old ID and title has a slug, redirect to slug URL
+  if (!fromSlug && titleData.slug) {
+    redirect(`/title/${titleData.slug}`);
+  }
+
+  let preloadedTitle;
   try {
     preloadedTitle = await preloadQuery(api.titles.getTitle, {
-      titleId: id as Id<"titles">,
+      titleId: titleData._id as Id<"titles">,
     });
   } catch {
     notFound();
-  }
-
-  try {
-    titleData = await fetchQuery(api.titles.getTitle, {
-      titleId: id as Id<"titles">,
-    });
-  } catch {
-    // Allow page render without JSON-LD if title query fails on this pass.
   }
 
   return (
