@@ -23,6 +23,7 @@ interface StreamingProvider {
 
 interface TitleCardProps {
   id: Id<"titles">;
+  slug?: string;
   title: string;
   year: number;
   type: "movie" | "tv" | "youtube";
@@ -43,6 +44,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 export function TitleCard({
   id,
+  slug,
   title,
   year,
   type,
@@ -60,7 +62,7 @@ export function TitleCard({
 
   return (
     <Link
-      href={`/title/${id}`}
+      href={`/title/${slug ?? id}`}
       className={cn(
         "group relative flex gap-3.5 rounded-2xl border border-border/60 bg-card/95 p-3.5",
         "transition-all duration-200 ease-out",

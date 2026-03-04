@@ -20,6 +20,7 @@ import { getEpisodeAnalysisActionLabel } from "@/lib/analysisCopy";
 
 interface SeasonAccordionProps {
   titleId: Id<"titles">;
+  titlePath: string;
   tmdbShowId: number;
   seasonNumber: number;
   seasonName?: string;
@@ -30,6 +31,7 @@ interface SeasonAccordionProps {
 
 export function SeasonAccordion({
   titleId,
+  titlePath,
   tmdbShowId,
   seasonNumber,
   seasonName,
@@ -154,6 +156,7 @@ export function SeasonAccordion({
                   episodeNumber={ep.episodeNumber}
                   name={ep.name ?? undefined}
                   stillPath={ep.stillPath ?? undefined}
+                  episodeHref={`/title/${titlePath}/season/${seasonNumber}/episode/${ep.episodeNumber}`}
                   status={ep.status}
                   ratings={ep.ratings as CategoryRatings | undefined}
                   weights={weights}

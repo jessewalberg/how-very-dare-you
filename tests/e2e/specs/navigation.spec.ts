@@ -7,9 +7,14 @@ test.describe("App navigation", () => {
     await appShellPage.expectTopNavVisible();
   });
 
-  test("loads no-flags route directly", async ({ appShellPage }) => {
-    await appShellPage.gotoNoFlags();
-    await appShellPage.expectNoFlagsLoaded();
+  test("loads low-scores route directly", async ({ appShellPage }) => {
+    await appShellPage.gotoLowScores();
+    await appShellPage.expectLowScoresLoaded();
+  });
+
+  test("legacy no-flags route redirects to low-scores", async ({ page }) => {
+    await page.goto("/browse/no-flags");
+    await expect(page).toHaveURL(/\/browse\/low-scores$/);
   });
 
   test("watchlist route renders a valid access state", async ({ page }) => {

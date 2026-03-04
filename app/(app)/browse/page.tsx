@@ -28,7 +28,9 @@ function BrowseContent() {
     | "tv"
     | "youtube"
     | null;
-  const noFlagsOnly = searchParams.get("noFlags") === "true";
+  const lowScoresOnly =
+    searchParams.get("lowScores") === "true" ||
+    searchParams.get("noFlags") === "true";
   const ageFilters = searchParams.getAll("age");
   const serviceFilters = searchParams.getAll("service");
   const maxSeverityByCategory = parseMaxSeverityFilters(
@@ -40,13 +42,20 @@ function BrowseContent() {
   // Use the appropriate Convex query
   const browseResults = useQuery(
     api.titles.browse,
-    noFlagsOnly ? "skip" : { type: typeParam ?? undefined, status: "rated", limit: 50 }
+    lowScoresOnly ? "skip" : { type: typeParam ?? undefined, status: "rated", limit: 50 }
   );
-  const noFlagResults = useQuery(
-    api.titles.browseNoFlags,
-    noFlagsOnly ? { type: typeParam ?? undefined, limit: 50 } : "skip"
+  const lowScoreResults = useQuery(
+    api.titles.browseLowScores,
+    lowScoresOnly
+      ? {
+          type: typeParam ?? undefined,
+          maxComposite: 1,
+          maxCategorySeverity: 1,
+          limit: 50,
+        }
+      : "skip"
   );
-  const rawResults = noFlagsOnly ? noFlagResults : browseResults;
+  const rawResults = lowScoresOnly ? lowScoreResults : browseResults;
   const titles = applyBrowseClientFilters<TitleData>(
     rawResults as TitleData[] | undefined,
     {
@@ -65,7 +74,7 @@ function BrowseContent() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              {noFlagsOnly ? "No Flags Content" : "Browse Titles"}
+              {lowScoresOnly ? "Low Advisory Picks" : "Browse Titles"}
             </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {titles !== undefined

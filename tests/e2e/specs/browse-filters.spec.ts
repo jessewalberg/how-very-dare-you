@@ -1,17 +1,17 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("Browse filters", () => {
-  test("content type and no-flags filters update URL and heading", async ({ page }) => {
+  test("content type and low-advisory filters update URL and heading", async ({ page }) => {
     await page.goto("/browse");
 
     await page.getByRole("button", { name: "Movies" }).click();
     await expect(page).toHaveURL(/\/browse\?.*type=movie/);
 
-    await page.getByRole("button", { name: "Show No Flags Only" }).click();
-    await expect(page).toHaveURL(/\/browse\?.*noFlags=true/);
+    await page.getByRole("button", { name: "Show Low Advisory Only" }).click();
+    await expect(page).toHaveURL(/\/browse\?.*lowScores=true/);
     expect(page.url()).toContain("type=movie");
     await expect(
-      page.getByRole("heading", { level: 1, name: "No Flags Content" })
+      page.getByRole("heading", { level: 1, name: "Low Advisory Picks" })
     ).toBeVisible();
 
     await page.getByRole("button", { name: /Clear all/i }).click();

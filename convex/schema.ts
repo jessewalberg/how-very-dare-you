@@ -35,6 +35,9 @@ export default defineSchema({
     tmdbId: v.number(),
     imdbId: v.optional(v.string()),
 
+    // URL slug (e.g. "inception-2010")
+    slug: v.optional(v.string()),
+
     // Core metadata
     title: v.string(),
     type: v.union(v.literal("movie"), v.literal("tv"), v.literal("youtube")),
@@ -186,6 +189,7 @@ export default defineSchema({
     requestCount: v.optional(v.number()),
   })
     .index("by_tmdbId", ["tmdbId"])
+    .index("by_slug", ["slug"])
     .index("by_imdbId", ["imdbId"])
     .index("by_status", ["status"])
     .index("by_type_and_year", ["type", "year"])

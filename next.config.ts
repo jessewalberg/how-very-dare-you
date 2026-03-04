@@ -1,7 +1,9 @@
+import createMDX from "@next/mdx";
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  pageExtensions: ["ts", "tsx", "md", "mdx"],
   async rewrites() {
     return [
       {
@@ -45,7 +47,9 @@ const nextConfig: NextConfig = {
 const sentryOrg = process.env.SENTRY_ORG ?? "sevro";
 const sentryProject = process.env.SENTRY_PROJECT ?? "how-very-dare-you-dev";
 
-export default withSentryConfig(nextConfig, {
+const withMDX = createMDX({});
+
+export default withSentryConfig(withMDX(nextConfig), {
   // For all available options, see:
   // https://www.npmjs.com/package/@sentry/webpack-plugin#options
 

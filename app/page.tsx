@@ -2,20 +2,25 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Shield,
-  Search,
   BarChart3,
   CheckCircle2,
-  Eye,
   Sparkles,
   ArrowRight,
   Check,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LandingSampleCards } from "@/components/landing/LandingSampleCards";
-import { LandingNoFlagsPreview } from "@/components/landing/LandingNoFlagsPreview";
+import { LandingLowAdvisoryPreview } from "@/components/landing/LandingNoFlagsPreview";
 import { LandingSearch } from "@/components/landing/LandingSearch";
+import { LandingTrendingTitles } from "@/components/landing/LandingTrendingTitles";
+import { LandingSocialProof } from "@/components/landing/LandingSocialProof";
+import { LandingTestimonials } from "@/components/landing/LandingTestimonials";
+import { LandingEmailCapture } from "@/components/landing/LandingEmailCapture";
 import { LandingAuthButtons, LandingNavAuth } from "@/components/landing/LandingAuthButtons";
+import { LandingHeroAdvisoryPreview } from "@/components/landing/LandingHeroAdvisoryPreview";
 import { BrandMark } from "@/components/layout/BrandMark";
+import { Footer } from "@/components/layout/Footer";
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
 
@@ -129,91 +134,242 @@ export default function HomePage() {
           }}
         />
 
-        <div className="relative mx-auto max-w-7xl px-4 py-20 md:py-28 lg:py-32">
-          <div className="mx-auto max-w-3xl text-center">
-            {/* Badge */}
-            <div className="mb-6 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
-              <Shield className="size-3.5 text-emerald-600" strokeWidth={2.5} />
-              <span className="text-xs font-semibold text-emerald-700 tracking-wide">
-                Content Advisory for Parents
-              </span>
+        <div className="relative mx-auto max-w-7xl px-4 py-14 md:py-20 lg:py-24">
+          <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-12">
+            <div className="mx-auto max-w-2xl text-center lg:mx-0 lg:text-left">
+              <div className="mb-6 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
+                <Shield className="size-3.5 text-emerald-600" strokeWidth={2.5} />
+                <span className="text-xs font-semibold text-emerald-700 tracking-wide">
+                  Content Advisory for Parents
+                </span>
+              </div>
+
+              <h1 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+                Know what your kids are watching{" "}
+                <span className="text-muted-foreground">
+                  before they watch it
+                </span>
+              </h1>
+
+              <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg lg:mx-0">
+                AI-powered movie content warnings and TV parental guide ratings,
+                with an 8-category breakdown on a transparent 0-4 severity
+                scale.
+              </p>
+
+              <div className="mx-auto mt-8 max-w-lg lg:mx-0">
+                <LandingSearch />
+              </div>
+
+              <p className="mt-3 text-xs text-muted-foreground/60">
+                Search analyzed titles instantly with no account. Sign in to
+                request up to 3 new AI analyses per day.
+              </p>
+
+              <div className="mt-6">
+                <LandingTrendingTitles />
+              </div>
             </div>
 
-            <h1 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-              Know what your kids are watching{" "}
-              <span className="text-muted-foreground">
-                before they watch it
-              </span>
-            </h1>
+            <div className="lg:pt-4">
+              <LandingHeroAdvisoryPreview />
+            </div>
+          </div>
+        </div>
+      </section>
 
-            <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              Get a clear 0-4 advisory score plus category-by-category flags
-              before your kids watch. Fast, parent-first guidance for movies
-              and TV shows.
+      {/* What Is HVDY — SEO copy */}
+      <section className="border-b border-border/30">
+        <div className="mx-auto max-w-7xl px-4 py-16 md:py-20">
+          <div className="mx-auto max-w-3xl space-y-4">
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              What Is How Very Dare You?
+            </h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              How Very Dare You is a free content advisory platform that gives
+              parents clear, detailed breakdowns of cultural and ideological
+              themes in movies and TV shows. Unlike traditional rating systems
+              that reduce complex content to a single label, we analyze every
+              title across 8 specific categories — including LGBTQ+ content,
+              political messaging, religious themes, sexuality, gender roles,
+              racial identity, anti-authority narratives, and climate messaging
+              — each scored on a transparent 0-4 severity scale.
             </p>
-
-            {/* Search bar */}
-            <div className="mx-auto mt-8 max-w-lg">
-              <LandingSearch />
-            </div>
-
-            <p className="mt-3 text-xs text-muted-foreground/60">
-              Search analyzed titles instantly with no account. Sign in to request up
-              to 3 new AI analyses per day.
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Every rating is generated by AI analysis of actual subtitle
+              transcripts, not marketing summaries or user opinions. The result
+              is fast, consistent, and independent — no editorial board, no
+              industry influence, and no paywall on search results. Whether you
+              want to find family-friendly movies with zero flags or understand
+              exactly what themes a trending show contains, How Very Dare You
+              gives you the information you need to decide for your family.
             </p>
           </div>
         </div>
       </section>
 
-      {/* How It Works */}
+      {/* Concrete flow */}
+      <section className="border-b border-border/30 bg-muted/20">
+        <div className="mx-auto max-w-7xl px-4 py-16 md:py-20">
+          <div className="mx-auto max-w-3xl text-center">
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              How a Real Advisory Works
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Example: a parent searches a title, reviews the breakdown, and
+              decides in under a minute.
+            </p>
+          </div>
+
+          <div className="mx-auto mt-10 grid max-w-5xl gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-border/60 bg-card p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                1. Search
+              </p>
+              <h3 className="mt-2 text-base font-bold">Find a title fast</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Search by movie or show name and open its advisory page
+                instantly.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-card p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                2. Review the breakdown
+              </p>
+              <h3 className="mt-2 text-base font-bold">
+                Read category-level flags
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Example output: Overall 1.6/4, with Political Messaging at
+                Notable and Gender Role Commentary at Brief.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-card p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                3. Decide
+              </p>
+              <h3 className="mt-2 text-base font-bold">
+                Choose what fits your family
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Use the Low Advisory collection, filter by age rating, or request a
+                new AI analysis if a title is missing.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Why Parents Choose HVDY — Competitor comparison */}
       <section className="border-b border-border/30 bg-muted/20">
         <div className="mx-auto max-w-7xl px-4 py-16 md:py-20">
           <div className="text-center">
             <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              How It Works
+              Why Parents Choose How Very Dare You
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Three steps to informed viewing decisions
+              See how we compare to traditional rating systems
             </p>
           </div>
 
-          <div className="mt-12 grid gap-8 sm:grid-cols-3">
-            {[
-              {
-                icon: Search,
-                step: "1",
-                title: "Search",
-                description:
-                  "Look up any movie or show. If it isn't in our database yet, sign in to request an on-demand AI analysis.",
-              },
-              {
-                icon: Eye,
-                step: "2",
-                title: "See Ratings",
-                description:
-                  "See the overall score plus category-level themes like political messaging, sexuality, and overstimulation.",
-              },
-              {
-                icon: CheckCircle2,
-                step: "3",
-                title: "Decide",
-                description:
-                  "Decide faster with simple labels from None to Core Theme and detailed notes when you need context.",
-              },
-            ].map((item) => (
-              <div key={item.step} className="flex flex-col items-center text-center">
-                <div className="flex size-14 items-center justify-center rounded-2xl bg-foreground text-background">
-                  <item.icon className="size-6" strokeWidth={1.8} />
+          <div className="mx-auto mt-12 grid max-w-4xl gap-6 md:grid-cols-2">
+            {/* MPAA comparison */}
+            <div className="rounded-2xl border border-border/60 bg-card p-6 space-y-4">
+              <h3 className="text-base font-bold">vs. MPAA Ratings</h3>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-start gap-2">
+                  <X className="mt-0.5 size-4 shrink-0 text-red-400" />
+                  <span className="text-muted-foreground">
+                    5 vague labels (G, PG, PG-13, R, NC-17) with no detail
+                  </span>
                 </div>
-                <span className="mt-4 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  Step {item.step}
-                </span>
-                <h3 className="mt-1.5 text-lg font-semibold">{item.title}</h3>
-                <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
-                  {item.description}
-                </p>
+                <div className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                  <span>
+                    8 specific categories, each scored 0-4 with explanations
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <X className="mt-0.5 size-4 shrink-0 text-red-400" />
+                  <span className="text-muted-foreground">
+                    Industry-controlled — studios influence their own ratings
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                  <span>
+                    Independent AI analysis — no editorial or industry bias
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <X className="mt-0.5 size-4 shrink-0 text-red-400" />
+                  <span className="text-muted-foreground">
+                    Same rating for every family regardless of values
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                  <span>
+                    Premium users weight categories to match their priorities
+                  </span>
+                </div>
               </div>
-            ))}
+            </div>
+
+            {/* CSM comparison */}
+            <div className="rounded-2xl border border-border/60 bg-card p-6 space-y-4">
+              <h3 className="text-base font-bold">vs. Common Sense Media</h3>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-start gap-2">
+                  <X className="mt-0.5 size-4 shrink-0 text-red-400" />
+                  <span className="text-muted-foreground">
+                    Human reviewers take days or weeks to publish
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                  <span>
+                    AI-analyzed instantly — request any title, get results fast
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <X className="mt-0.5 size-4 shrink-0 text-red-400" />
+                  <span className="text-muted-foreground">
+                    Subjective, editorial reviews vary by reviewer
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                  <span>
+                    Consistent 0-4 scale — same methodology every time
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <X className="mt-0.5 size-4 shrink-0 text-red-400" />
+                  <span className="text-muted-foreground">
+                    Metered paywall limits how much you can see
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                  <span>
+                    Free to search — no account needed to view ratings
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <X className="mt-0.5 size-4 shrink-0 text-red-400" />
+                  <span className="text-muted-foreground">
+                    No dedicated political or overstimulation categories
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                  <span>
+                    Explicit political messaging and overstimulation tracking
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -243,7 +399,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* No Flags Showcase */}
+      {/* Low advisory showcase */}
       <section className="border-b border-border/30 bg-muted/20">
         <div className="mx-auto max-w-7xl px-4 py-16 md:py-20">
           <div className="mx-auto max-w-2xl text-center">
@@ -253,27 +409,64 @@ export default function HomePage() {
                 strokeWidth={2.5}
               />
               <span className="text-xs font-semibold text-emerald-700 tracking-wide">
-                No Flags
+                Low Advisory
               </span>
             </div>
             <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
               Find Content You Can Trust
             </h2>
             <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
-              Titles with zero flags across all 8 categories.
-              Pure entertainment — no disclaimers needed.
+              Titles with lower concern scores and low-severity category
+              profiles across our tracked categories.
             </p>
           </div>
 
-          <LandingNoFlagsPreview />
+          <LandingLowAdvisoryPreview />
 
           <div className="mt-8 text-center">
             <Button variant="outline" asChild>
-              <Link href="/browse/no-flags">
-                Browse All No Flags Titles
+              <Link href="/browse/low-scores">
+                Browse Low Advisory Picks
                 <ArrowRight className="ml-1.5 size-4" />
               </Link>
             </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Social proof + stats */}
+      <section className="border-b border-border/30">
+        <div className="mx-auto max-w-7xl px-4 py-16 md:py-20">
+          <LandingSocialProof />
+        </div>
+      </section>
+
+      {/* Testimonials */}
+      <section className="border-b border-border/30 bg-muted/20">
+        <div className="mx-auto max-w-7xl px-4 py-16 md:py-20">
+          <LandingTestimonials />
+        </div>
+      </section>
+
+      {/* CTA + Pricing combined */}
+      <section className="bg-foreground text-background">
+        <div className="mx-auto max-w-7xl px-4 py-16 md:py-20 text-center">
+          <Sparkles className="mx-auto size-8 opacity-60" />
+          <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">
+            Start Making Informed Decisions Today
+          </h2>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed opacity-70">
+            Search thousands of analyzed titles with no account, then sign in when
+            you want to request up to 3 new AI analyses per day.
+          </p>
+          <div className="mt-8">
+            <LandingAuthButtons />
+          </div>
+          <div className="mx-auto mt-10 max-w-sm">
+            <p className="mb-3 text-xs font-medium opacity-60">
+              Or get updates delivered to your inbox
+            </p>
+            <LandingEmailCapture />
           </div>
         </div>
       </section>
@@ -309,7 +502,7 @@ export default function HomePage() {
                 {[
                   "Search any title",
                   "Full 8-category breakdown",
-                  "Browse No Flags content",
+                  "Browse low advisory picks",
                   "Filter by age range",
                   "3 on-demand AI analyses/day (with free account)",
                 ].map((feature) => (
@@ -341,14 +534,14 @@ export default function HomePage() {
                   <span className="text-sm text-muted-foreground">/month</span>
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Personalized analysis scoring tailored to your family.
+                  Scores tuned to your family&apos;s priorities.
                 </p>
               </div>
               <ul className="space-y-2.5">
                 {[
                   "Everything in Free",
-                  "Custom category weights",
-                  "Personalized composite score",
+                  "Weight categories that matter most to your family",
+                  "Get a single score tuned to your values",
                   "Advanced filters",
                   "Save to watchlist",
                   "10 on-demand AI analyses/day",
@@ -362,66 +555,28 @@ export default function HomePage() {
                   </li>
                 ))}
               </ul>
+              <p className="text-xs text-muted-foreground">
+                For families who want to prioritize specific categories — like
+                sexuality high and political lower — and get a personalized
+                composite score.
+                {" "}
+                <Link
+                  href="/settings#weights"
+                  className="font-medium underline underline-offset-2"
+                >
+                  See weighting controls
+                </Link>
+                .
+              </p>
               <Button className="w-full" asChild>
-                <Link href="/settings">Get Premium</Link>
+                <Link href="/settings#weights">Get Premium</Link>
               </Button>
             </div>
           </div>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="bg-foreground text-background">
-        <div className="mx-auto max-w-7xl px-4 py-16 md:py-20 text-center">
-          <Sparkles className="mx-auto size-8 opacity-60" />
-          <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">
-            Start Making Informed Decisions Today
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed opacity-70">
-            Search thousands of analyzed titles with no account, then sign in when
-            you want to request up to 3 new AI analyses per day.
-          </p>
-          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <LandingAuthButtons />
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-border/40 bg-muted/20">
-        <div className="mx-auto max-w-7xl px-4 py-8">
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
-            <div className="flex items-center gap-2.5 text-muted-foreground">
-              <BrandMark size={36} />
-              <span className="text-sm font-semibold text-foreground">
-                How Very Dare You
-              </span>
-            </div>
-            <nav className="flex items-center gap-4">
-              {["About", "Privacy", "Terms"].map((link) => (
-                <Link
-                  key={link}
-                  href={`/${link.toLowerCase()}`}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {link}
-                </Link>
-              ))}
-            </nav>
-          </div>
-          <div className="mt-6 space-y-2 text-center sm:text-left">
-            <p className="text-[11px] leading-relaxed text-muted-foreground/60">
-              Some streaming links may contain affiliate links. We may earn a
-              small commission at no extra cost to you.
-            </p>
-            <p className="text-[11px] text-muted-foreground/50">
-              &copy; {new Date().getFullYear()} How Very Dare You. All rights
-              reserved. Ratings are AI-generated and should be used as a guide,
-              not a definitive assessment.
-            </p>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

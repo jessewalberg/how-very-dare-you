@@ -1,5 +1,9 @@
 import { test, expect } from "@playwright/test";
 
+function extractSitemapLocations(xml: string): string[] {
+  return Array.from(xml.matchAll(/<loc>([^<]+)<\/loc>/g)).map((match) => match[1]);
+}
+
 test.describe("SEO — meta tags and structured data", () => {
   test("home page has correct title and meta description", async ({ page }) => {
     await page.goto("/");
@@ -47,9 +51,9 @@ test.describe("SEO — meta tags and structured data", () => {
     expect(h1Count).toBe(1);
   });
 
-  test("no-flags page has correct metadata", async ({ page }) => {
-    await page.goto("/browse/no-flags");
-    await expect(page).toHaveTitle(/No Flags/i);
+  test("low-scores page has correct metadata", async ({ page }) => {
+    await page.goto("/browse/low-scores");
+    await expect(page).toHaveTitle(/Low Advisory/i);
   });
 
   test("search page has noindex", async ({ page }) => {
@@ -97,5 +101,40 @@ test.describe("SEO — meta tags and structured data", () => {
     const text = await response!.text();
     expect(text).toContain("<urlset");
     expect(text).toContain("howverydareyou.com");
+  });
+
+  test("sitemap contains title advisory URLs", async ({ page }) => {
+    const response = await page.goto("/sitemap.xml");
+    expect(response?.status()).toBe(200);
+    const text = await response!.text();
+    const locations = extractSitemapLocations(text);
+    const titleUrls = locations.filter((url) =>
+      /\/title\/[^/]+$/.test(new URL(url).pathname)
+    );
+
+    expect(titleUrls.length).toBeGreaterThan(0);
+  });
+
+  test("episode advisory URLs from sitemap resolve when present", async ({ page }) => {
+    const response = await page.goto("/sitemap.xml");
+    expect(response?.status()).toBe(200);
+    const text = await response!.text();
+    const locations = extractSitemapLocations(text);
+    const episodeUrl = locations.find((url) =>
+      /\/title\/[^/]+\/season\/\d+\/episode\/\d+$/.test(new URL(url).pathname)
+    );
+
+    test.skip(!episodeUrl, "No rated episode advisory URLs in this dataset");
+
+    const path = new URL(episodeUrl!).pathname;
+    const episodeResponse = await page.goto(path);
+    expect(episodeResponse?.status()).toBe(200);
+
+    const canonical = page.locator('link[rel="canonical"]');
+    await expect(canonical).toHaveAttribute("href", new RegExp(`${path}$`));
+
+    const h1 = page.locator("h1").first();
+    await expect(h1).toBeVisible();
+    await expect(h1).toContainText(/S\d{2}E\d{2}/);
   });
 });

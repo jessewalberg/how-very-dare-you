@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { generateSlug } from "../../convex/titles";
 
 function runCase(name: string, fn: () => void) {
   try {
@@ -19,13 +20,11 @@ runCase("title format includes year and brand", () => {
   assert.equal(result, expected);
 });
 
-runCase("no-flags description mentions safe for all audiences", () => {
+runCase("low-advisory copy mentions lower concern ranges", () => {
   const description =
-    "Strange World (2022) has no cultural or ideological content flags. Safe for all audiences. AI-powered content advisory from How Very Dare You.";
-  assert.ok(
-    description.includes("no cultural or ideological content flags")
-  );
-  assert.ok(description.includes("Safe for all audiences"));
+    "Browse low advisory picks for movies and TV shows. Titles in this list stay at or below brief concern levels across categories, with low overall composite scores.";
+  assert.ok(description.includes("low advisory picks"));
+  assert.ok(description.includes("low overall composite scores"));
 });
 
 runCase("flagged title description includes severity and categories", () => {
@@ -49,4 +48,25 @@ runCase("JSON-LD uses correct schema type for movies vs TV", () => {
 runCase("canonical URLs are relative (resolve via metadataBase)", () => {
   const canonical = "/title/abc123";
   assert.equal(canonical.startsWith("/"), true);
+});
+
+runCase("episode advisory path uses title + season + episode params", () => {
+  const path = `/title/bluey-2018/season/1/episode/6`;
+  assert.equal(path, "/title/bluey-2018/season/1/episode/6");
+});
+
+runCase("slug generation normalizes punctuation and appends year", () => {
+  const slug = generateSlug(
+    "Dr. Strangelove or: How I Learned to Stop Worrying and Love the Bomb",
+    1964
+  );
+  assert.equal(
+    slug,
+    "dr-strangelove-or-how-i-learned-to-stop-worrying-and-love-the-bomb-1964"
+  );
+});
+
+runCase("slug generation falls back to untitled when title is punctuation-only", () => {
+  const slug = generateSlug("!!!", 2026);
+  assert.equal(slug, "untitled-2026");
 });

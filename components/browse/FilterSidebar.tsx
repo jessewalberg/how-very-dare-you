@@ -78,7 +78,9 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
   const currentType = searchParams.get("type") ?? "";
   const currentAgeRatings = searchParams.getAll("age");
   const currentServices = searchParams.getAll("service");
-  const noFlagsOnly = searchParams.get("noFlags") === "true";
+  const lowScoresOnly =
+    searchParams.get("lowScores") === "true" ||
+    searchParams.get("noFlags") === "true";
   const maxSeverityByCategory = parseMaxSeverityFilters(
     new URLSearchParams(searchParams.toString())
   );
@@ -105,6 +107,10 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
         params.set(key, value);
       } else {
         params.delete(key);
+      }
+      if (key === "lowScores") {
+        // Normalize legacy param so URLs stay canonical.
+        params.delete("noFlags");
       }
       pushBrowseParams(params);
     },
@@ -136,7 +142,7 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
     currentType ||
     currentAgeRatings.length > 0 ||
     currentServices.length > 0 ||
-    noFlagsOnly ||
+    lowScoresOnly ||
     hasMaxSeverityFilters(maxSeverityByCategory);
 
   return (
@@ -266,14 +272,26 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
           )}
         </div>
         {!isPaid && (
-          <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Lock className="size-3" />
-            Premium feature — $4.99/mo.
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <Lock className="size-3" />
+              Premium: set max severity per category and tune score weights to
+              your family priorities.
+            </span>
+            {" "}
+            <Link
+              href="/settings#weights"
+              className="font-medium underline underline-offset-2"
+            >
+              Configure weights
+            </Link>
+            {" "}
+            or{" "}
             <Link
               href="/settings#subscription"
               className="font-medium underline underline-offset-2"
             >
-              Upgrade
+              upgrade
             </Link>
           </p>
         )}
@@ -361,21 +379,21 @@ function FilterContent({ isPaid = false }: FilterSidebarProps) {
 
       <Separator />
 
-      {/* No Flags Toggle */}
+      {/* Low advisory toggle */}
       <button
         onClick={() =>
-          updateParam("noFlags", noFlagsOnly ? "" : "true")
+          updateParam("lowScores", lowScoresOnly ? "" : "true")
         }
         className={cn(
           "flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          noFlagsOnly
+          lowScoresOnly
             ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
             : "bg-muted/60 text-muted-foreground border border-transparent hover:bg-muted hover:text-foreground"
         )}
       >
         <CheckCircle2 className="size-4" />
-        Show No Flags Only
+        Show Low Advisory Only
       </button>
     </div>
   );

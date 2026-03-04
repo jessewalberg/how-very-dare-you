@@ -122,12 +122,14 @@ function SettingsPageContent() {
         )}
       </div>
 
-      <WeightSliders
-        isPaid={isPaid}
-        currentWeights={
-          profile?.categoryWeights as Record<CategoryKey, number> | undefined
-        }
-      />
+      <section id="weights" className="scroll-mt-24">
+        <WeightSliders
+          isPaid={isPaid}
+          currentWeights={
+            profile?.categoryWeights as Record<CategoryKey, number> | undefined
+          }
+        />
+      </section>
 
       <Separator />
 

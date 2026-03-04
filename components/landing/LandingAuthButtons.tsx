@@ -11,27 +11,29 @@ export function LandingAuthButtons() {
 
   if (isSignedIn) {
     return (
-      <Button size="lg" className="min-w-[160px]" asChild>
-        <Link href="/browse">Browse Titles</Link>
-      </Button>
+      <div className="flex w-full justify-center">
+        <Button size="lg" className="min-w-[180px]" asChild>
+          <Link href="/browse">Browse Titles</Link>
+        </Button>
+      </div>
     );
   }
 
   return (
-    <>
-      <Button size="lg" variant="secondary" className="min-w-[160px]" asChild>
+    <div className="flex w-full flex-col items-center gap-2 sm:w-auto sm:flex-row">
+      <Button size="lg" className="min-w-[180px]" asChild>
         <Link href="/browse">Browse Titles</Link>
       </Button>
       <SignUpButton mode="modal">
         <Button
-          size="lg"
-          variant="outline"
-          className="min-w-[160px] text-foreground"
+          size="sm"
+          variant="ghost"
+          className="text-muted-foreground hover:text-foreground"
         >
-          Create Account
+          Create free account
         </Button>
       </SignUpButton>
-    </>
+    </div>
   );
 }
 

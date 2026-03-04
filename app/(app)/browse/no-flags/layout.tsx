@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "No Flags Content — Movies & TV Shows With No Cultural Themes",
-  description:
-    "Movies and TV shows with zero cultural or ideological content flags. Verified safe for all audiences by AI-powered content analysis.",
+  title: "Low Advisory Picks",
+  description: "Redirecting to low advisory picks.",
   alternates: {
-    canonical: "/browse/no-flags",
+    canonical: "/browse/low-scores",
+  },
+  robots: {
+    index: false,
+    follow: true,
   },
 };
 
