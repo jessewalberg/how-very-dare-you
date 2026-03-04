@@ -18,7 +18,7 @@ import {
 } from "@/lib/scoring";
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
-export const revalidate = 60 * 60;
+export const revalidate = 3600;
 
 type EpisodePageParams = {
   id: string;

@@ -11,7 +11,7 @@ import { TitleDetailSkeleton } from "@/components/title/TitleDetailSkeleton";
 import { TitleJsonLd } from "@/components/seo/TitleJsonLd";
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
-export const revalidate = 60 * 60;
+export const revalidate = 3600;
 
 /**
  * Convex document IDs are base-64-ish strings that always contain characters
