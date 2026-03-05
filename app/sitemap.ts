@@ -62,23 +62,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       status: "rated",
     });
 
-    titlePages = titles.map((title: (typeof titles)[number]) => ({
-      url: `${baseUrl}/title/${title.slug ?? title._id}`,
-      lastModified: title.ratedAt ? new Date(title.ratedAt) : new Date(),
-      changeFrequency: "monthly" as const,
-      priority: 0.7,
-    }));
+    titlePages = titles
+      .filter((title: (typeof titles)[number]) => Boolean(title.slug))
+      .map((title: (typeof titles)[number]) => ({
+        url: `${baseUrl}/title/${title.slug}`,
+        lastModified: title.ratedAt ? new Date(title.ratedAt) : new Date(),
+        changeFrequency: "monthly" as const,
+        priority: 0.7,
+      }));
 
     const episodes = await fetchQuery(api.episodes.listRatedForSeo, {});
-    episodePages = episodes.map((episode: (typeof episodes)[number]) => {
-      const titlePath = episode.titleSlug ?? episode.titleId;
-      return {
-        url: `${baseUrl}/title/${titlePath}/season/${episode.seasonNumber}/episode/${episode.episodeNumber}`,
+    episodePages = episodes
+      .filter((episode: (typeof episodes)[number]) => Boolean(episode.titleSlug))
+      .map((episode: (typeof episodes)[number]) => ({
+        url: `${baseUrl}/title/${episode.titleSlug}/season/${episode.seasonNumber}/episode/${episode.episodeNumber}`,
         lastModified: episode.ratedAt ? new Date(episode.ratedAt) : new Date(),
         changeFrequency: "monthly" as const,
         priority: 0.6,
-      };
-    });
+      }));
   } catch {
     // Sitemap generation should not fail the build
   }

@@ -110,6 +110,14 @@ interface VideoAnalysisErrorResponse {
   request_id?: string;
 }
 
+function getSubtitleSourceVideoId(subtitleInfo: unknown): string | undefined {
+  if (!subtitleInfo || typeof subtitleInfo !== "object") return undefined;
+  const value = (subtitleInfo as { sourceVideoId?: unknown }).sourceVideoId;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /** Call the Go video analysis service for a single YouTube video. */
 async function analyzeVideo(
   videoId: string,
@@ -219,16 +227,25 @@ async function runOverstimulationForTitle(
     ageRating: title.ageRating,
   };
 
-  // 1. Find and analyze trailer
-  const trailerCandidates = await searchTrailerCandidates(
+  // 1. Find and analyze trailer. Prefer the exact video used for transcript capture.
+  const preferredVideoId = getSubtitleSourceVideoId(title.subtitleInfo);
+  const searchedTrailerCandidates = await searchTrailerCandidates(
     title.title,
     title.year,
     title.type as "movie" | "tv",
     4
   );
+  const trailerCandidates = preferredVideoId
+    ? Array.from(new Set([preferredVideoId, ...searchedTrailerCandidates]))
+    : searchedTrailerCandidates;
   if (trailerCandidates.length === 0) {
     console.log(`[Overstim] No trailer found for "${title.title}" — skipping`);
     return "skipped_no_trailer";
+  }
+  if (preferredVideoId) {
+    console.log(
+      `[Overstim] Prioritizing transcript source video ${preferredVideoId} for "${title.title}"`
+    );
   }
 
   let trailerId: string | null = null;
@@ -441,7 +458,8 @@ async function runOverstimulationForEpisode(
     throw new Error("VIDEO_ANALYSIS_SERVICE_URL or VIDEO_ANALYSIS_API_SECRET not set");
   }
 
-  const videoId = await searchEpisodeVideo(
+  const preferredVideoId = getSubtitleSourceVideoId(episode.subtitleInfo);
+  const videoId = preferredVideoId ?? await searchEpisodeVideo(
     title.title,
     episode.seasonNumber,
     episode.episodeNumber,
@@ -450,6 +468,11 @@ async function runOverstimulationForEpisode(
   if (!videoId) {
     console.log(`[Overstim] No episode video found for "${title.title}" S${episode.seasonNumber}E${episode.episodeNumber}`);
     return "skipped_no_episode_video";
+  }
+  if (preferredVideoId) {
+    console.log(
+      `[Overstim] Reusing transcript source video ${preferredVideoId} for "${title.title}" S${episode.seasonNumber}E${episode.episodeNumber}`
+    );
   }
 
   const label = `${title.title} S${episode.seasonNumber}E${episode.episodeNumber}`;

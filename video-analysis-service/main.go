@@ -245,6 +245,8 @@ func main() {
 	mux.HandleFunc("GET /metrics", handleMetrics)
 	mux.HandleFunc("POST /analyze", handleAnalyze(secret))
 	mux.HandleFunc("POST /analyze-url", handleAnalyze(secret))
+	mux.HandleFunc("POST /captions", handleCaptions(secret))
+	mux.HandleFunc("POST /captions-url", handleCaptions(secret))
 
 	slog.Info("starting video analysis service", "port", port)
 	if err := http.ListenAndServe(":"+port, requestLogger(mux)); err != nil {

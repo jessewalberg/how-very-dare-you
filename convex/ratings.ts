@@ -24,6 +24,11 @@ import {
   gatherTVEpisodeDialogue,
   gatherSingleEpisodeDialogue,
 } from "../lib/opensubtitles";
+import {
+  searchEpisodeClips,
+  searchEpisodeVideo,
+  searchTrailerCandidates,
+} from "../lib/youtube";
 import { chatCompletion, parseJSONResponse, estimateCostCents } from "../lib/openrouter";
 import {
   downloadTextFromR2,
@@ -297,6 +302,7 @@ function parseRatingResponse(
 interface SubtitleInfo {
   status: "success" | "failed" | "skipped" | "timeout";
   source?: string;
+  sourceVideoId?: string;
   language?: string;
   dialogueLines?: number;
   transcriptStorage?: R2TranscriptStorage;
@@ -435,12 +441,292 @@ async function maybeLoadArchivedTranscript(
   }
 }
 
+interface VideoServiceCaptionResponse {
+  transcript?: string;
+  language?: string;
+  source?: string;
+  dialogue_lines?: number;
+  char_count?: number;
+}
+
+interface VideoServiceCaptionErrorResponse {
+  error?: string;
+  code?: string;
+  retryable?: boolean;
+  request_id?: string;
+}
+
+interface YouTubeCaptionResult {
+  videoId: string;
+  transcript: string;
+  language?: string;
+  source: string;
+  dialogueLines: number;
+}
+
+function addUniqueVideoId(target: string[], videoId: string | null | undefined): void {
+  const normalized = videoId?.trim();
+  if (!normalized) return;
+  if (!target.includes(normalized)) target.push(normalized);
+}
+
+function getVideoAnalysisServiceConfig():
+  | { serviceUrl: string; apiSecret: string }
+  | undefined {
+  const serviceUrl = process.env.VIDEO_ANALYSIS_SERVICE_URL?.trim();
+  const apiSecret = process.env.VIDEO_ANALYSIS_API_SECRET?.trim();
+  if (!serviceUrl || !apiSecret) return undefined;
+  return {
+    serviceUrl: serviceUrl.replace(/\/+$/, ""),
+    apiSecret,
+  };
+}
+
+async function fetchYouTubeCaptionForVideoId(args: {
+  videoId: string;
+  title: string;
+  type: "movie" | "tv";
+}): Promise<Omit<YouTubeCaptionResult, "videoId"> | null> {
+  const config = getVideoAnalysisServiceConfig();
+  if (!config) return null;
+
+  const requestId = `captions-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const videoUrl = `https://youtube.com/watch?v=${args.videoId}`;
+  const response = await fetch(`${config.serviceUrl}/captions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiSecret}`,
+      "X-Request-ID": requestId,
+    },
+    body: JSON.stringify({
+      video_url: videoUrl,
+      title: args.title,
+      type: args.type,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    let parsed: VideoServiceCaptionErrorResponse | undefined;
+    try {
+      parsed = JSON.parse(body) as VideoServiceCaptionErrorResponse;
+    } catch {
+      // Keep raw body for logging.
+    }
+
+    const errorCode = parsed?.code;
+    if (errorCode === "youtube_captions_unavailable") {
+      return null;
+    }
+
+    console.warn(
+      `[YouTubeCaptions] Caption fetch failed for video_id=${args.videoId} status=${response.status} code=${errorCode ?? "unknown"} body=${(parsed?.error ?? body).slice(0, 300)}`
+    );
+    return null;
+  }
+
+  const payload = (await response.json()) as VideoServiceCaptionResponse;
+  const transcript = payload.transcript?.trim();
+  if (!transcript || transcript.length < 20) {
+    return null;
+  }
+
+  const dialogueLines =
+    payload.dialogue_lines ??
+    transcript.split("\n").filter((line) => line.trim().length > 0).length;
+
+  return {
+    transcript,
+    language: payload.language,
+    source: payload.source ?? "youtube_captions",
+    dialogueLines,
+  };
+}
+
+async function collectYouTubeCaptionCandidatesForTitle(args: {
+  title: string;
+  year: number;
+  type: "movie" | "tv";
+}): Promise<string[]> {
+  const ids: string[] = [];
+
+  if (args.type === "tv") {
+    try {
+      const episodeIds = await searchEpisodeClips(args.title, 2);
+      for (const id of episodeIds) addUniqueVideoId(ids, id);
+    } catch (e) {
+      console.warn(
+        `[YouTubeCaptions] Failed to search episode clips for "${args.title}" (non-fatal):`,
+        e
+      );
+    }
+  }
+
+  try {
+    const trailerIds = await searchTrailerCandidates(
+      args.title,
+      args.year,
+      args.type,
+      4
+    );
+    for (const id of trailerIds) addUniqueVideoId(ids, id);
+  } catch (e) {
+    console.warn(
+      `[YouTubeCaptions] Failed to search trailer candidates for "${args.title}" (non-fatal):`,
+      e
+    );
+  }
+
+  return ids.slice(0, 4);
+}
+
+async function collectYouTubeCaptionCandidatesForEpisode(args: {
+  title: string;
+  year: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  episodeName?: string;
+}): Promise<string[]> {
+  const ids: string[] = [];
+
+  try {
+    const episodeVideo = await searchEpisodeVideo(
+      args.title,
+      args.seasonNumber,
+      args.episodeNumber,
+      args.episodeName
+    );
+    addUniqueVideoId(ids, episodeVideo);
+  } catch (e) {
+    console.warn(
+      `[YouTubeCaptions] Failed to search direct episode video for "${args.title}" S${args.seasonNumber}E${args.episodeNumber} (non-fatal):`,
+      e
+    );
+  }
+
+  try {
+    const episodeClipIds = await searchEpisodeClips(args.title, 2);
+    for (const id of episodeClipIds) addUniqueVideoId(ids, id);
+  } catch (e) {
+    console.warn(
+      `[YouTubeCaptions] Failed to search episode clips for "${args.title}" (non-fatal):`,
+      e
+    );
+  }
+
+  try {
+    const trailerIds = await searchTrailerCandidates(args.title, args.year, "tv", 2);
+    for (const id of trailerIds) addUniqueVideoId(ids, id);
+  } catch (e) {
+    console.warn(
+      `[YouTubeCaptions] Failed to search trailer candidates for "${args.title}" (non-fatal):`,
+      e
+    );
+  }
+
+  return ids.slice(0, 4);
+}
+
+async function fetchFirstAvailableYouTubeCaption(args: {
+  candidateVideoIds: string[];
+  title: string;
+  type: "movie" | "tv";
+  logLabel: string;
+}): Promise<YouTubeCaptionResult | null> {
+  for (const videoId of args.candidateVideoIds) {
+    try {
+      const caption = await fetchYouTubeCaptionForVideoId({
+        videoId,
+        title: args.title,
+        type: args.type,
+      });
+      if (!caption) continue;
+
+      console.log(
+        `[YouTubeCaptions] Using captions for ${args.logLabel} video_id=${videoId} source=${caption.source} lines=${caption.dialogueLines}`
+      );
+      return { videoId, ...caption };
+    } catch (e) {
+      console.warn(
+        `[YouTubeCaptions] Caption fetch failed for ${args.logLabel} video_id=${videoId} (non-fatal):`,
+        e
+      );
+    }
+  }
+
+  return null;
+}
+
+async function maybeApplyYouTubeCaptionFallback(args: {
+  title: string;
+  year: number;
+  type: "movie" | "tv";
+  currentSubtitleTranscript?: string;
+  currentSubtitleInfo?: SubtitleInfo;
+  logLabel: string;
+  candidateVideoIds?: string[];
+}): Promise<{
+  subtitleTranscript?: string;
+  subtitleExcerpt?: string;
+  subtitleInfo?: SubtitleInfo;
+}> {
+  if (args.currentSubtitleTranscript?.trim()) {
+    return {
+      subtitleTranscript: args.currentSubtitleTranscript,
+      subtitleInfo: args.currentSubtitleInfo,
+      subtitleExcerpt: toTranscriptExcerpt(args.currentSubtitleTranscript),
+    };
+  }
+
+  const candidateVideoIds =
+    args.candidateVideoIds ??
+    (await collectYouTubeCaptionCandidatesForTitle({
+      title: args.title,
+      year: args.year,
+      type: args.type,
+    }));
+
+  if (candidateVideoIds.length === 0) {
+    return {
+      subtitleTranscript: args.currentSubtitleTranscript,
+      subtitleInfo: args.currentSubtitleInfo,
+    };
+  }
+
+  const caption = await fetchFirstAvailableYouTubeCaption({
+    candidateVideoIds,
+    title: args.title,
+    type: args.type,
+    logLabel: args.logLabel,
+  });
+  if (!caption) {
+    return {
+      subtitleTranscript: args.currentSubtitleTranscript,
+      subtitleInfo: args.currentSubtitleInfo,
+    };
+  }
+
+  return {
+    subtitleTranscript: caption.transcript,
+    subtitleExcerpt: toTranscriptExcerpt(caption.transcript),
+    subtitleInfo: {
+      status: "success",
+      source: caption.source,
+      sourceVideoId: caption.videoId,
+      language: caption.language ?? "en",
+      dialogueLines: caption.dialogueLines,
+    },
+  };
+}
+
 async function gatherMovieData(
   tmdbId: number,
   options: {
     includeSubtitles: boolean;
     archivedSubtitleText?: string;
     archivedTranscriptStorage?: R2TranscriptStorage;
+    archivedSourceVideoId?: string;
   }
 ): Promise<GatheredData> {
   const tmdbKey = process.env.TMDB_API_KEY!;
@@ -493,6 +779,7 @@ async function gatherMovieData(
     data.subtitleInfo = {
       status: "success",
       source: "r2_archive",
+      sourceVideoId: options.archivedSourceVideoId,
       language: "en",
       dialogueLines: archivedText.split("\n").length,
       transcriptStorage: options.archivedTranscriptStorage,
@@ -556,6 +843,23 @@ async function gatherMovieData(
     data.subtitleInfo = { status: "skipped" };
   }
 
+  if (options.includeSubtitles && !data.subtitleTranscript) {
+    const fallback = await maybeApplyYouTubeCaptionFallback({
+      title: data.title,
+      year: data.year,
+      type: "movie",
+      currentSubtitleTranscript: data.subtitleTranscript,
+      currentSubtitleInfo: data.subtitleInfo,
+      logLabel: `movie tmdbId=${tmdbId}`,
+    });
+    if (fallback.subtitleTranscript) {
+      data.subtitleTranscript = fallback.subtitleTranscript;
+      data.subtitleExcerpt =
+        fallback.subtitleExcerpt ?? toTranscriptExcerpt(fallback.subtitleTranscript);
+      data.subtitleInfo = fallback.subtitleInfo;
+    }
+  }
+
   return data;
 }
 
@@ -565,6 +869,7 @@ async function gatherTVData(
     includeSubtitles: boolean;
     archivedSubtitleText?: string;
     archivedTranscriptStorage?: R2TranscriptStorage;
+    archivedSourceVideoId?: string;
   }
 ): Promise<GatheredData> {
   const tmdbKey = process.env.TMDB_API_KEY!;
@@ -637,6 +942,7 @@ async function gatherTVData(
     data.subtitleInfo = {
       status: "success",
       source: "r2_archive",
+      sourceVideoId: options.archivedSourceVideoId,
       language: "en",
       dialogueLines: archivedText.split("\n").length,
       transcriptStorage: options.archivedTranscriptStorage,
@@ -676,6 +982,23 @@ async function gatherTVData(
     }
   } else if (!options.includeSubtitles) {
     data.subtitleInfo = { status: "skipped" };
+  }
+
+  if (options.includeSubtitles && !data.subtitleTranscript) {
+    const fallback = await maybeApplyYouTubeCaptionFallback({
+      title: data.title,
+      year: data.year,
+      type: "tv",
+      currentSubtitleTranscript: data.subtitleTranscript,
+      currentSubtitleInfo: data.subtitleInfo,
+      logLabel: `tv tmdbId=${tmdbId}`,
+    });
+    if (fallback.subtitleTranscript) {
+      data.subtitleTranscript = fallback.subtitleTranscript;
+      data.subtitleExcerpt =
+        fallback.subtitleExcerpt ?? toTranscriptExcerpt(fallback.subtitleTranscript);
+      data.subtitleInfo = fallback.subtitleInfo;
+    }
   }
 
   return data;
@@ -732,6 +1055,10 @@ async function runRatingPipeline(
   const archivedTranscriptStorage = archivedSubtitleText
     ? existingTitle?.subtitleInfo?.transcriptStorage
     : undefined;
+  const archivedSourceVideoId = archivedSubtitleText
+    ? (existingTitle?.subtitleInfo as { sourceVideoId?: string } | undefined)
+      ?.sourceVideoId
+    : undefined;
 
   // 1. Gather data
   const data =
@@ -740,11 +1067,13 @@ async function runRatingPipeline(
           ...options,
           archivedSubtitleText,
           archivedTranscriptStorage,
+          archivedSourceVideoId,
         })
       : await gatherTVData(tmdbId, {
           ...options,
           archivedSubtitleText,
           archivedTranscriptStorage,
+          archivedSourceVideoId,
         });
 
   const archivalText = pickSubtitleTextForArchival({
@@ -967,6 +1296,7 @@ async function runEpisodeRatingPipeline(
   options: {
     archivedSubtitleText?: string;
     archivedTranscriptStorage?: R2TranscriptStorage;
+    archivedSourceVideoId?: string;
   } = {}
 ): Promise<{
   result: EpisodeRatingResult;
@@ -993,6 +1323,7 @@ async function runEpisodeRatingPipeline(
     subtitleInfo = {
       status: "success",
       source: "r2_archive",
+      sourceVideoId: options.archivedSourceVideoId,
       language: "en",
       dialogueLines: archivedText.split("\n").length,
       transcriptStorage: options.archivedTranscriptStorage,
@@ -1032,6 +1363,31 @@ async function runEpisodeRatingPipeline(
     }
   } else {
     subtitleInfo = { status: "skipped" };
+  }
+
+  if (!subtitleTranscript) {
+    const candidateVideoIds = await collectYouTubeCaptionCandidatesForEpisode({
+      title: showContext.title,
+      year: showContext.year,
+      seasonNumber: episodeData.seasonNumber,
+      episodeNumber: episodeData.episodeNumber,
+      episodeName: episodeData.name,
+    });
+    const fallback = await maybeApplyYouTubeCaptionFallback({
+      title: showContext.title,
+      year: showContext.year,
+      type: "tv",
+      currentSubtitleTranscript: subtitleTranscript,
+      currentSubtitleInfo: subtitleInfo,
+      candidateVideoIds,
+      logLabel: `episode tmdbShowId=${showContext.tmdbShowId} S${episodeData.seasonNumber}E${episodeData.episodeNumber}`,
+    });
+    if (fallback.subtitleTranscript) {
+      subtitleTranscript = fallback.subtitleTranscript;
+      subtitleExcerpt =
+        fallback.subtitleExcerpt ?? toTranscriptExcerpt(fallback.subtitleTranscript);
+      subtitleInfo = fallback.subtitleInfo;
+    }
   }
 
   const archivalText = pickSubtitleTextForArchival({
@@ -1312,8 +1668,21 @@ export const rateTitleOnDemand = action({
         });
       }
 
-      // Update title metadata if it was created as a stub
-      if (existing && existing.year === 0) {
+      // Refresh metadata when the title was created as a stub, or when key
+      // SEO/display fields are still missing.
+      const needsMetadataRefresh =
+        !!existing &&
+        (
+          !existing.slug ||
+          existing.year <= 0 ||
+          !existing.posterPath ||
+          !existing.overview ||
+          !existing.ageRating ||
+          !existing.genre ||
+          (existing.type === "tv" &&
+            (!existing.seasonData || existing.seasonData.length === 0))
+        );
+      if (existing && needsMetadataRefresh) {
         await ctx.runMutation(internal.ratings.updateTitleMetadata, {
           titleId: existing._id,
           year: data.year,
@@ -1501,6 +1870,9 @@ export const rateEpisodeOnDemand = action({
             `episode ${episode._id}`
           ),
           archivedTranscriptStorage: episode.subtitleInfo?.transcriptStorage,
+          archivedSourceVideoId: (
+            episode.subtitleInfo as { sourceVideoId?: string } | undefined
+          )?.sourceVideoId,
         }
       );
       const quality = assessRatingQuality({
@@ -1599,6 +1971,43 @@ async function rateFirstUnratedEpisodeForTvShow(
       queueItemId: args.queueItemId,
     });
     return;
+  }
+
+  const needsTitleMetadataRefresh =
+    !show.slug ||
+    show.year <= 0 ||
+    !show.posterPath ||
+    !show.overview ||
+    !show.ageRating ||
+    !show.genre ||
+    !show.seasonData ||
+    show.seasonData.length === 0;
+
+  if (needsTitleMetadataRefresh) {
+    try {
+      const data = await gatherTVData(args.tmdbId, { includeSubtitles: false });
+      await ctx.runMutation(internal.ratings.updateTitleMetadata, {
+        titleId: show._id,
+        year: data.year,
+        imdbId: data.imdbId ?? undefined,
+        ageRating: data.ageRating,
+        genre: data.genre,
+        overview: data.overview,
+        posterPath: data.posterPath,
+        runtime: data.runtime,
+        streamingProviders: data.streamingProviders?.map((provider) => ({
+          name: provider.name,
+          logoPath: provider.logoPath,
+        })),
+        numberOfSeasons: data.numberOfSeasons,
+        seasonData: data.seasonData,
+      });
+    } catch (e) {
+      console.warn(
+        "[processQueueItem] TV metadata refresh failed (continuing with episode rating):",
+        e
+      );
+    }
   }
 
   // Ensure season metadata exists before selecting the first unrated episode.
@@ -1937,6 +2346,7 @@ export const searchTMDB = action({
       posterPath: string | null;
       overview: string;
       existingTitleId?: string;
+      existingTitleSlug?: string;
       existingTitleStatus?: string;
       existingHasRatings?: boolean;
     }[]
@@ -2013,6 +2423,7 @@ export const searchTMDB = action({
         return {
           ...result,
           existingTitleId: String(existing._id),
+          existingTitleSlug: existing.slug,
           existingTitleStatus: existing.status,
           existingHasRatings,
         };
@@ -2131,8 +2542,30 @@ export const requestOnDemandRating = mutation({
 
     // Create pending title if missing
     if (!titleId) {
+      let slug = generateTitleSlug(args.title, 0);
+      const slugConflict = await ctx.db
+        .query("titles")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .first();
+      if (slugConflict) {
+        let suffix = 2;
+        while (true) {
+          const candidate = `${slug}-${suffix}`;
+          const check = await ctx.db
+            .query("titles")
+            .withIndex("by_slug", (q) => q.eq("slug", candidate))
+            .first();
+          if (!check) {
+            slug = candidate;
+            break;
+          }
+          suffix++;
+        }
+      }
+
       titleId = await ctx.db.insert("titles", {
         tmdbId: args.tmdbId,
+        slug,
         title: args.title,
         type: args.type,
         year: 0,
@@ -2277,9 +2710,11 @@ export const updateTitleMetadata = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { titleId, streamingProviders, ...fields } = args;
+    const { titleId, streamingProviders } = args;
     const existingTitle = await ctx.db.get(titleId);
     if (!existingTitle) throw new Error("Title not found");
+
+    const normalizedYear = args.year > 0 ? args.year : existingTitle.year;
 
     const mergedProviders =
       streamingProviders !== undefined
@@ -2292,10 +2727,11 @@ export const updateTitleMetadata = internalMutation({
           )
         : undefined;
 
-    // Generate slug if missing and year is now known
+    // Generate slug if missing. Year can be 0 when unknown; we still want
+    // stable, human-readable paths instead of raw document IDs.
     let slug: string | undefined;
-    if (!existingTitle.slug && args.year > 0) {
-      slug = generateTitleSlug(existingTitle.title, args.year);
+    if (!existingTitle.slug) {
+      slug = generateTitleSlug(existingTitle.title, normalizedYear > 0 ? normalizedYear : 0);
       const slugConflict = await ctx.db
         .query("titles")
         .withIndex("by_slug", (q) => q.eq("slug", slug!))
@@ -2318,10 +2754,19 @@ export const updateTitleMetadata = internalMutation({
     }
 
     await ctx.db.patch(titleId, {
-      ...fields,
-      ...(mergedProviders !== undefined
-        ? { streamingProviders: mergedProviders }
-        : {}),
+      year: normalizedYear,
+      imdbId: args.imdbId ?? existingTitle.imdbId,
+      ageRating: args.ageRating ?? existingTitle.ageRating,
+      genre: args.genre ?? existingTitle.genre,
+      overview: args.overview ?? existingTitle.overview,
+      posterPath: args.posterPath ?? existingTitle.posterPath,
+      runtime: args.runtime ?? existingTitle.runtime,
+      numberOfSeasons: args.numberOfSeasons ?? existingTitle.numberOfSeasons,
+      seasonData:
+        args.seasonData && args.seasonData.length > 0
+          ? args.seasonData
+          : existingTitle.seasonData,
+      streamingProviders: mergedProviders ?? existingTitle.streamingProviders,
       ...(slug ? { slug } : {}),
     });
   },

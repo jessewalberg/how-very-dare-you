@@ -850,6 +850,7 @@ export const attachManualSubtitleArchive = internalMutation({
     subtitleInfo: v.object({
       status: v.literal("success"),
       source: v.string(),
+      sourceVideoId: v.optional(v.string()),
       language: v.optional(v.string()),
       dialogueLines: v.optional(v.number()),
       transcriptStorage: v.object({

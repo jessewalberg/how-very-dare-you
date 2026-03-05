@@ -57,6 +57,7 @@ export default function SearchPageClient() {
       posterPath: string | null;
       overview: string;
       existingTitleId?: string;
+      existingTitleSlug?: string;
       existingTitleStatus?: string;
       existingHasRatings?: boolean;
     }[]
@@ -195,6 +196,7 @@ export default function SearchPageClient() {
 
   function handleOpenExistingAdvisory(result: {
     existingTitleId?: string;
+    existingTitleSlug?: string;
     tmdbId: number;
     title: string;
     type: "movie" | "tv";
@@ -468,7 +470,7 @@ export default function SearchPageClient() {
                           className="w-full shrink-0 gap-1.5 sm:ml-auto sm:w-auto"
                         >
                           <Link
-                            href={`/title/${result.existingTitleId}`}
+                            href={`/title/${result.existingTitleSlug ?? result.existingTitleId}`}
                             onClick={() => handleOpenExistingAdvisory(result)}
                           >
                             {result.existingHasRatings ? "View Advisory" : "View Title"}
