@@ -207,14 +207,14 @@ export default function AdminDashboardPage() {
       </div>
 
       {!stats ? (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-7">
+          {Array.from({ length: 7 }).map((_, i) => (
             <Skeleton key={i} className="h-40 rounded-xl" />
           ))}
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-7">
             <StatCard
               title="Titles"
               icon={Film}
@@ -247,6 +247,16 @@ export default function AdminDashboardPage() {
                 { label: "pending", value: stats.correctionStats.pending },
                 { label: "accepted", value: stats.correctionStats.accepted },
                 { label: "rejected", value: stats.correctionStats.rejected },
+              ]}
+            />
+            <StatCard
+              title="Feedback"
+              icon={MessageSquare}
+              href="/admin/feedback"
+              total={stats.feedbackStats.total}
+              breakdowns={[
+                { label: "helpful", value: stats.feedbackStats.helpful },
+                { label: "needs work", value: stats.feedbackStats.notHelpful },
               ]}
             />
             <StatCard

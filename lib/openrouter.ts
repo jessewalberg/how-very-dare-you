@@ -5,6 +5,18 @@ const BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
+const DEFAULT_TEMPERATURE = resolveNumberInRange(
+  process.env.OPENROUTER_TEMPERATURE,
+  0,
+  2,
+  0
+);
+const DEFAULT_TOP_P = resolveOptionalNumberInRange(
+  process.env.OPENROUTER_TOP_P,
+  0,
+  1
+);
+const DEFAULT_SEED = resolveOptionalInteger(process.env.OPENROUTER_SEED);
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -50,10 +62,31 @@ export async function chatCompletion(
   options?: {
     model?: string;
     temperature?: number;
+    topP?: number;
+    seed?: number;
     maxTokens?: number;
+    requestLabel?: string;
   }
 ): Promise<ChatCompletionResult> {
   const model = options?.model ?? DEFAULT_MODEL;
+  const effectiveTemperature = resolveNumberInRange(
+    options?.temperature === undefined
+      ? undefined
+      : String(options.temperature),
+    0,
+    2,
+    DEFAULT_TEMPERATURE
+  );
+  const effectiveTopP =
+    options?.topP === undefined
+      ? DEFAULT_TOP_P
+      : resolveOptionalNumberInRange(String(options.topP), 0, 1);
+  const effectiveSeed =
+    options?.seed === undefined
+      ? DEFAULT_SEED
+      : resolveOptionalInteger(String(options.seed));
+  const effectiveMaxTokens = Math.max(1, Math.floor(options?.maxTokens ?? 4096));
+  const labelSuffix = options?.requestLabel ? ` [${options.requestLabel}]` : "";
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userMessage },
@@ -63,6 +96,25 @@ export async function chatCompletion(
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
+      const requestBody: Record<string, unknown> = {
+        model,
+        messages,
+        temperature: effectiveTemperature,
+        max_tokens: effectiveMaxTokens,
+      };
+      if (effectiveTopP !== undefined) {
+        requestBody.top_p = effectiveTopP;
+      }
+      if (effectiveSeed !== undefined) {
+        requestBody.seed = effectiveSeed;
+      }
+
+      if (attempt === 0) {
+        console.log(
+          `[OpenRouter] request${labelSuffix} model=${model} temperature=${effectiveTemperature} top_p=${effectiveTopP ?? "default"} seed=${effectiveSeed ?? "none"} max_tokens=${effectiveMaxTokens}`
+        );
+      }
+
       const res = await fetch(BASE_URL, {
         method: "POST",
         headers: {
@@ -71,12 +123,7 @@ export async function chatCompletion(
           "HTTP-Referer": "https://howverydareyou.com",
           "X-Title": "How Very Dare You",
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: options?.temperature ?? 0.3,
-          max_tokens: options?.maxTokens ?? 4096,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!res.ok) {
@@ -84,6 +131,9 @@ export async function chatCompletion(
 
         // Retry on rate limits and server errors
         if (res.status === 429 || res.status >= 500) {
+          console.warn(
+            `[OpenRouter] retryable response${labelSuffix} status=${res.status} attempt=${attempt + 1}/${MAX_RETRIES}`
+          );
           lastError = new Error(
             `OpenRouter ${res.status}: ${errorBody}`
           );
@@ -102,6 +152,10 @@ export async function chatCompletion(
         throw new Error("OpenRouter returned no choices");
       }
 
+      console.log(
+        `[OpenRouter] success${labelSuffix} model=${data.model || model} prompt_tokens=${data.usage?.prompt_tokens ?? 0} completion_tokens=${data.usage?.completion_tokens ?? 0}`
+      );
+
       return {
         content: data.choices[0].message.content,
         model: data.model,
@@ -109,6 +163,9 @@ export async function chatCompletion(
       };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
+      console.error(
+        `[OpenRouter] error${labelSuffix} attempt=${attempt + 1}/${MAX_RETRIES}: ${lastError.message}`
+      );
 
       // Don't retry on non-retriable errors
       if (
@@ -158,4 +215,33 @@ export function estimateCostCents(usage: { prompt_tokens: number; completion_tok
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveNumberInRange(
+  value: string | undefined,
+  min: number,
+  max: number,
+  fallback: number
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function resolveOptionalNumberInRange(
+  value: string | undefined,
+  min: number,
+  max: number
+): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function resolveOptionalInteger(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  return parsed;
 }

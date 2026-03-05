@@ -4,11 +4,11 @@ export const REQUEST_DAILY_ANALYSIS_SUFFIX =
   "to request up to 3 AI analyses per day.";
 
 export function getEpisodeAnalysisActionLabel(isSignedIn: boolean): string {
-  return isSignedIn ? "Analyze Episode" : "Sign In to Analyze";
+  return isSignedIn ? "Request AI Analysis" : "Sign In to Request";
 }
 
 export function getTitleAnalysisActionLabel(canReAnalyze: boolean): string {
-  return canReAnalyze ? "Re-Analyze Title" : "Analyze This Title";
+  return canReAnalyze ? "Re-Run AI Analysis" : "Request AI Analysis";
 }
 
 export function formatRemainingAnalyses(remaining: number, limit: number): string {

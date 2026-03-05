@@ -193,6 +193,25 @@ export default function SearchPageClient() {
     }
   }
 
+  function handleOpenExistingAdvisory(result: {
+    existingTitleId?: string;
+    tmdbId: number;
+    title: string;
+    type: "movie" | "tv";
+    existingHasRatings?: boolean;
+  }) {
+    if (!result.existingTitleId) return;
+    posthog.capture("search_result_clicked", {
+      source: "search_page_tmdb_existing",
+      title_id: result.existingTitleId,
+      tmdb_id: result.tmdbId,
+      title: result.title,
+      type: result.type,
+      has_ratings: Boolean(result.existingHasRatings),
+      query: q.trim(),
+    });
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -204,7 +223,7 @@ export default function SearchPageClient() {
               ? "Searching..."
               : totalMatchedCount > 0
                 ? `${totalMatchedCount} result${totalMatchedCount !== 1 ? "s" : ""} for "${q}"`
-                : `No analyzed results for "${q}"`}
+                : `No AI-analyzed results for "${q}"`}
           </p>
         )}
       </div>
@@ -353,7 +372,7 @@ export default function SearchPageClient() {
                   More titles from TMDB
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  View existing advisories or request AI analysis for new titles.
+                  View existing advisories or request a new AI analysis for missing titles.
                 </p>
               </div>
             </div>
@@ -448,7 +467,10 @@ export default function SearchPageClient() {
                           asChild
                           className="w-full shrink-0 gap-1.5 sm:ml-auto sm:w-auto"
                         >
-                          <Link href={`/title/${result.existingTitleId}`}>
+                          <Link
+                            href={`/title/${result.existingTitleId}`}
+                            onClick={() => handleOpenExistingAdvisory(result)}
+                          >
                             {result.existingHasRatings ? "View Advisory" : "View Title"}
                           </Link>
                         </Button>
@@ -474,7 +496,7 @@ export default function SearchPageClient() {
                           ) : (
                             <>
                               <Sparkles className="size-3.5" />
-                              {canAdminAdd ? "Add" : "Analyze"}
+                              {canAdminAdd ? "Add Title" : "Request AI Analysis"}
                             </>
                           )}
                         </Button>
@@ -486,7 +508,7 @@ export default function SearchPageClient() {
                             className="w-full shrink-0 gap-1 text-xs sm:ml-auto sm:w-auto"
                           >
                             <LogIn className="size-3" />
-                            Sign In to Analyze
+                            Sign In to Request
                             <ArrowRight className="size-3" />
                           </Button>
                         </SignInButton>

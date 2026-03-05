@@ -164,13 +164,14 @@ async function analyzeVideo(
 async function rateMetrics(
   title: { title: string; type: "movie" | "tv" | "youtube"; year: number; ageRating?: string },
   metrics: VideoAnalysisMetrics,
-  openRouterKey: string
+  openRouterKey: string,
+  requestLabel: string
 ): Promise<OverstimResult> {
   const completion = await chatCompletion(
     "You are a developmental health content analyst. Rate video overstimulation based on measured metrics. Respond with JSON only.",
     constructOverstimPrompt(title, metrics),
     openRouterKey,
-    { temperature: 0.3, maxTokens: 512 }
+    { maxTokens: 512, requestLabel }
   );
 
   const result = parseJSONResponse<OverstimLLMResult>(completion.content);
@@ -247,7 +248,12 @@ async function runOverstimulationForTitle(
         serviceUrl,
         apiSecret
       );
-      const rated = await rateMetrics(titleMeta, metrics, openRouterKey);
+      const rated = await rateMetrics(
+        titleMeta,
+        metrics,
+        openRouterKey,
+        `overstim:trailer:${title._id}:${candidate}`
+      );
       trailerId = candidate;
       trailerMetrics = metrics;
       trailerResult = rated;
@@ -311,7 +317,12 @@ async function runOverstimulationForTitle(
       for (const epId of episodeIds) {
         try {
           const epMetrics = await analyzeVideo(epId, title.title, title.type, serviceUrl, apiSecret);
-          const epResult = await rateMetrics(titleMeta, epMetrics, openRouterKey);
+          const epResult = await rateMetrics(
+            titleMeta,
+            epMetrics,
+            openRouterKey,
+            `overstim:episode-sample:${title._id}:${epId}`
+          );
           episodeResults.push({ videoId: epId, result: epResult });
         } catch (e) {
           const errorMessage = e instanceof Error ? e.message : String(e);
@@ -451,7 +462,8 @@ async function runOverstimulationForEpisode(
       ageRating: title.ageRating,
     },
     metrics,
-    openRouterKey
+    openRouterKey,
+    `overstim:episode:${episode._id}:${videoId}`
   );
 
   await ctx.runMutation(internal.episodes.saveEpisodeOverstimulation, {

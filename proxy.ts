@@ -47,7 +47,8 @@ export const config = {
      * - _next/image (image optimization)
      * - favicon and app icons
      * - metadata routes
+     * - analytics/sentry tunnels
      */
-    "/((?!_next/static|_next/image|favicon.ico|favicon-16x16.png|favicon-32x32.png|favicon-16x16-light.png|favicon-32x32-light.png|icon|apple-icon|opengraph|sitemap|robots|manifest.webmanifest).*)",
+    "/((?!_next/static|_next/image|favicon.ico|favicon-16x16.png|favicon-32x32.png|favicon-16x16-light.png|favicon-32x32-light.png|icon|apple-icon|opengraph|sitemap|robots|manifest.webmanifest|ingest|monitoring).*)",
   ],
 };

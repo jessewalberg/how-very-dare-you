@@ -12,6 +12,7 @@ import type * as admin from "../admin.js";
 import type * as corrections from "../corrections.js";
 import type * as crons from "../crons.js";
 import type * as episodes from "../episodes.js";
+import type * as feedback from "../feedback.js";
 import type * as healthRatings from "../healthRatings.js";
 import type * as lib_adminAuth from "../lib/adminAuth.js";
 import type * as lib_ratingValidation from "../lib/ratingValidation.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   corrections: typeof corrections;
   crons: typeof crons;
   episodes: typeof episodes;
+  feedback: typeof feedback;
   healthRatings: typeof healthRatings;
   "lib/adminAuth": typeof lib_adminAuth;
   "lib/ratingValidation": typeof lib_ratingValidation;

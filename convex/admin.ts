@@ -213,6 +213,13 @@ export const getDashboardStats = query({
       failed: allOverstimQueue.filter((q) => q.status === "failed").length,
     };
 
+    const allTitleFeedback = await ctx.db.query("titleFeedback").collect();
+    const feedbackStats = {
+      total: allTitleFeedback.length,
+      helpful: allTitleFeedback.filter((item) => item.helpful).length,
+      notHelpful: allTitleFeedback.filter((item) => !item.helpful).length,
+    };
+
     const titleQuality = allTitles.reduce(
       (acc, title) => {
         if (!title.ratings) return acc;
@@ -250,6 +257,7 @@ export const getDashboardStats = query({
       correctionStats,
       queueStats,
       overstimQueueStats,
+      feedbackStats,
       qualityStats: {
         titleNeedsReview: titleQuality.needsReview,
         titleCritical: titleQuality.critical,

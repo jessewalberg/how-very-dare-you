@@ -11,6 +11,7 @@ const BROWSE_LINKS = [
 const COMPANY_LINKS = [
   { href: "/about", label: "About" },
   { href: "/blog", label: "Blog" },
+  { href: "/#newsletter", label: "Newsletter" },
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },
 ] as const;

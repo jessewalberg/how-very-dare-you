@@ -42,6 +42,7 @@ import { SeasonList } from "@/components/title/SeasonList";
 import { CorrectionForm } from "@/components/corrections/CorrectionForm";
 import { CorrectionsList } from "@/components/corrections/CorrectionsList";
 import { SimilarTitles } from "@/components/title/SimilarTitles";
+import { AdvisoryFeedback } from "@/components/title/AdvisoryFeedback";
 import {
   calculateCompositeScore,
   isNoFlags,
@@ -259,7 +260,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               className="gap-1.5"
             >
               <Sparkles className={cn("size-4", requestingRating && "animate-pulse")} />
-              {requestingRating ? "Requesting analysis..." : "Analyze This Title"}
+              {requestingRating ? "Requesting analysis..." : "Request AI Analysis"}
             </Button>
           </div>
         )}
@@ -430,6 +431,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               .
             </p>
           )}
+          {ratings && <AdvisoryFeedback titleId={title._id} surface="title_detail" />}
 
           {/* Per-episode ratings (new system) */}
           {canOpenEpisodeSidebar && title.tmdbId && (
