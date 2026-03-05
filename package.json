@@ -10,7 +10,7 @@
     "brand:favicon": "bun scripts/generate-favicon-ico.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:unit": "bun tests/unit/ratingQuality.unit.ts && bun tests/unit/sidebarBehavior.unit.ts && bun tests/unit/adminSubtitleViewer.unit.ts && bun tests/unit/seo.unit.ts && bun tests/unit/browseFilters.unit.ts && bun tests/unit/subscriptionStatus.unit.ts && bun tests/unit/userWeights.unit.ts && bun tests/unit/analysisCopy.unit.ts && bun tests/unit/affiliateTracking.unit.ts && bun tests/unit/streamingProviders.unit.ts && bun tests/unit/socialProof.unit.ts && bun tests/unit/convexImports.unit.ts",
+    "test:unit": "bun tests/unit/ratingQuality.unit.ts && bun tests/unit/sidebarBehavior.unit.ts && bun tests/unit/adminSubtitleViewer.unit.ts && bun tests/unit/seo.unit.ts && bun tests/unit/browseFilters.unit.ts && bun tests/unit/subscriptionStatus.unit.ts && bun tests/unit/userWeights.unit.ts && bun tests/unit/analysisCopy.unit.ts && bun tests/unit/affiliateTracking.unit.ts && bun tests/unit/streamingProviders.unit.ts && bun tests/unit/socialProof.unit.ts && bun tests/unit/convexImports.unit.ts && bun tests/unit/videoAnalysisErrors.unit.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",

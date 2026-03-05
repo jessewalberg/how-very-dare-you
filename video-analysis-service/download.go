@@ -17,18 +17,101 @@ var (
 	cookiesPath string
 )
 
-// writeCookiesFile decodes the YOUTUBE_COOKIES env var (base64-encoded
-// Netscape cookies.txt) to a temp file once, and returns the path.
+type downloadError struct {
+	Code      string
+	Message   string
+	Retryable bool
+}
+
+func (e *downloadError) Error() string {
+	return e.Message
+}
+
+func classifyYtDlpFailure(output string, fallbackErr error) *downloadError {
+	normalized := strings.ToLower(output)
+
+	switch {
+	case strings.Contains(normalized, "sign in to confirm you're not a bot") ||
+		strings.Contains(normalized, "sign in to confirm you’re not a bot") ||
+		strings.Contains(normalized, "use --cookies-from-browser or --cookies"):
+		return &downloadError{
+			Code:      "youtube_auth_required",
+			Message:   "youtube download blocked; authentication cookies are required",
+			Retryable: false,
+		}
+	case strings.Contains(normalized, "http error 429") ||
+		strings.Contains(normalized, "too many requests"):
+		return &downloadError{
+			Code:      "youtube_rate_limited",
+			Message:   "youtube temporarily rate-limited this request",
+			Retryable: true,
+		}
+	case strings.Contains(normalized, "this video is unavailable") ||
+		strings.Contains(normalized, "video unavailable") ||
+		strings.Contains(normalized, "private video"):
+		return &downloadError{
+			Code:      "youtube_unavailable",
+			Message:   "youtube video is unavailable",
+			Retryable: false,
+		}
+	default:
+		return &downloadError{
+			Code:      "download_failed",
+			Message:   fmt.Sprintf("yt-dlp failed: %v", fallbackErr),
+			Retryable: true,
+		}
+	}
+}
+
+func looksLikeCookiesFile(value string) bool {
+	normalized := strings.ToLower(value)
+	return strings.Contains(normalized, "youtube.com") && strings.Contains(value, "\t")
+}
+
+func decodeCookiesEnv(value string) ([]byte, string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, "", fmt.Errorf("empty YOUTUBE_COOKIES")
+	}
+
+	if strings.HasPrefix(trimmed, "# Netscape HTTP Cookie File") || looksLikeCookiesFile(trimmed) {
+		return []byte(trimmed), "raw", nil
+	}
+
+	compact := strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\n', '\r', '\t':
+			return -1
+		default:
+			return r
+		}
+	}, trimmed)
+
+	decoded, err := base64.StdEncoding.DecodeString(compact)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid base64 cookie payload: %w", err)
+	}
+
+	decodedText := strings.TrimSpace(string(decoded))
+	if !strings.HasPrefix(decodedText, "# Netscape HTTP Cookie File") && !looksLikeCookiesFile(decodedText) {
+		return nil, "", fmt.Errorf("decoded payload is not a Netscape cookies file")
+	}
+
+	return []byte(decodedText), "base64", nil
+}
+
+// writeCookiesFile materializes YOUTUBE_COOKIES (base64 or raw Netscape cookies.txt)
+// to a temp file once, and returns the path.
 func writeCookiesFile() string {
 	cookiesOnce.Do(func() {
-		encoded := os.Getenv("YOUTUBE_COOKIES")
-		if encoded == "" {
+		rawValue := os.Getenv("YOUTUBE_COOKIES")
+		if strings.TrimSpace(rawValue) == "" {
 			slog.Warn("YOUTUBE_COOKIES not set — yt-dlp will run without cookies and YouTube may block downloads")
 			return
 		}
-		data, err := base64.StdEncoding.DecodeString(encoded)
+		data, source, err := decodeCookiesEnv(rawValue)
 		if err != nil {
-			slog.Warn("failed to decode YOUTUBE_COOKIES", "error", err)
+			slog.Warn("failed to decode YOUTUBE_COOKIES", "error", err, "hint", "set base64 cookies.txt or raw Netscape cookies content")
 			return
 		}
 		f, err := os.CreateTemp("", "yt-cookies-*.txt")
@@ -39,7 +122,7 @@ func writeCookiesFile() string {
 		f.Write(data)
 		f.Close()
 		cookiesPath = f.Name()
-		slog.Info("loaded YouTube cookies file", "bytes", len(data))
+		slog.Info("loaded YouTube cookies file", "bytes", len(data), "source", source)
 	})
 	return cookiesPath
 }
@@ -82,13 +165,17 @@ func downloadVideo(ctx context.Context, videoURL string) (string, error) {
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		outputStr := string(output)
+		classified := classifyYtDlpFailure(outputStr, err)
 		log.Error("yt-dlp failed",
 			"video_url", videoURL,
 			"error", err,
-			"output", truncateForLog(string(output), 4000),
+			"failure_code", classified.Code,
+			"retryable", classified.Retryable,
+			"output", truncateForLog(outputStr, 4000),
 		)
 		os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("yt-dlp failed: %w", err)
+		return "", classified
 	}
 	if len(output) > 0 {
 		log.Info("yt-dlp output",

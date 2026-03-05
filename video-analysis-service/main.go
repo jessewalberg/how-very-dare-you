@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -40,13 +41,26 @@ type AnalysisResponse struct {
 
 type ErrorResponse struct {
 	Error     string `json:"error"`
+	Code      string `json:"code,omitempty"`
+	Retryable *bool  `json:"retryable,omitempty"`
 	RequestID string `json:"request_id,omitempty"`
 }
 
-func writeError(ctx context.Context, w http.ResponseWriter, msg string, code int) {
+func writeError(
+	ctx context.Context,
+	w http.ResponseWriter,
+	msg string,
+	statusCode int,
+	errorCode string,
+	retryable *bool,
+) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	payload := ErrorResponse{Error: msg}
+	w.WriteHeader(statusCode)
+	payload := ErrorResponse{
+		Error:     msg,
+		Code:      errorCode,
+		Retryable: retryable,
+	}
 	if reqID := requestIDFromContext(ctx); reqID != "" {
 		payload.RequestID = reqID
 	}
@@ -58,7 +72,7 @@ func handleAnalyze(secret string) http.HandlerFunc {
 		log := logFor(r.Context())
 
 		if r.Header.Get("Authorization") != "Bearer "+secret {
-			writeError(r.Context(), w, "unauthorized", http.StatusUnauthorized)
+			writeError(r.Context(), w, "unauthorized", http.StatusUnauthorized, "unauthorized", nil)
 			return
 		}
 
@@ -67,12 +81,19 @@ func handleAnalyze(secret string) http.HandlerFunc {
 
 		var req AnalysisRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(r.Context(), w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+			writeError(
+				r.Context(),
+				w,
+				"invalid request body: "+err.Error(),
+				http.StatusBadRequest,
+				"invalid_request",
+				nil,
+			)
 			return
 		}
 
 		if req.VideoURL == "" {
-			writeError(r.Context(), w, "video_url is required", http.StatusBadRequest)
+			writeError(r.Context(), w, "video_url is required", http.StatusBadRequest, "invalid_request", nil)
 			return
 		}
 
@@ -93,8 +114,36 @@ func handleAnalyze(secret string) http.HandlerFunc {
 		videoPath, err := downloadVideo(ctx, req.VideoURL)
 		dlMs := time.Since(dlStart).Milliseconds()
 		if err != nil {
+			var classified *downloadError
+			if errors.As(err, &classified) {
+				log.Error(
+					"download failed",
+					"video_url", req.VideoURL,
+					"error", classified.Message,
+					"code", classified.Code,
+					"retryable", classified.Retryable,
+					"duration_ms", dlMs,
+				)
+				retryable := classified.Retryable
+				writeError(
+					r.Context(),
+					w,
+					"download failed: "+classified.Message,
+					http.StatusBadGateway,
+					classified.Code,
+					&retryable,
+				)
+				return
+			}
 			log.Error("download failed", "video_url", req.VideoURL, "error", err, "duration_ms", dlMs)
-			writeError(r.Context(), w, "download failed: "+err.Error(), http.StatusInternalServerError)
+			writeError(
+				r.Context(),
+				w,
+				"download failed: "+err.Error(),
+				http.StatusInternalServerError,
+				"download_failed",
+				nil,
+			)
 			return
 		}
 		defer cleanup(videoPath)
@@ -106,7 +155,14 @@ func handleAnalyze(secret string) http.HandlerFunc {
 		sceneMs := time.Since(sceneStart).Milliseconds()
 		if err != nil {
 			log.Error("scene detection failed", "video_url", req.VideoURL, "error", err, "duration_ms", sceneMs)
-			writeError(r.Context(), w, "scene detection failed: "+err.Error(), http.StatusInternalServerError)
+			writeError(
+				r.Context(),
+				w,
+				"scene detection failed: "+err.Error(),
+				http.StatusInternalServerError,
+				"scene_detection_failed",
+				nil,
+			)
 			return
 		}
 		log.Info("scene detection complete", "video_url", req.VideoURL, "duration_ms", sceneMs, "total_cuts", cuts.Total)
@@ -117,7 +173,14 @@ func handleAnalyze(secret string) http.HandlerFunc {
 		colorMs := time.Since(colorStart).Milliseconds()
 		if err != nil {
 			log.Error("color analysis failed", "video_url", req.VideoURL, "error", err, "duration_ms", colorMs)
-			writeError(r.Context(), w, "color analysis failed: "+err.Error(), http.StatusInternalServerError)
+			writeError(
+				r.Context(),
+				w,
+				"color analysis failed: "+err.Error(),
+				http.StatusInternalServerError,
+				"color_analysis_failed",
+				nil,
+			)
 			return
 		}
 		log.Info("color analysis complete", "video_url", req.VideoURL, "duration_ms", colorMs)
