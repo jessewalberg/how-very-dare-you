@@ -1312,8 +1312,21 @@ export const rateTitleOnDemand = action({
         });
       }
 
-      // Update title metadata if it was created as a stub
-      if (existing && existing.year === 0) {
+      // Refresh metadata when the title was created as a stub, or when key
+      // SEO/display fields are still missing.
+      const needsMetadataRefresh =
+        !!existing &&
+        (
+          !existing.slug ||
+          existing.year <= 0 ||
+          !existing.posterPath ||
+          !existing.overview ||
+          !existing.ageRating ||
+          !existing.genre ||
+          (existing.type === "tv" &&
+            (!existing.seasonData || existing.seasonData.length === 0))
+        );
+      if (existing && needsMetadataRefresh) {
         await ctx.runMutation(internal.ratings.updateTitleMetadata, {
           titleId: existing._id,
           year: data.year,
@@ -1599,6 +1612,43 @@ async function rateFirstUnratedEpisodeForTvShow(
       queueItemId: args.queueItemId,
     });
     return;
+  }
+
+  const needsTitleMetadataRefresh =
+    !show.slug ||
+    show.year <= 0 ||
+    !show.posterPath ||
+    !show.overview ||
+    !show.ageRating ||
+    !show.genre ||
+    !show.seasonData ||
+    show.seasonData.length === 0;
+
+  if (needsTitleMetadataRefresh) {
+    try {
+      const data = await gatherTVData(args.tmdbId, { includeSubtitles: false });
+      await ctx.runMutation(internal.ratings.updateTitleMetadata, {
+        titleId: show._id,
+        year: data.year,
+        imdbId: data.imdbId ?? undefined,
+        ageRating: data.ageRating,
+        genre: data.genre,
+        overview: data.overview,
+        posterPath: data.posterPath,
+        runtime: data.runtime,
+        streamingProviders: data.streamingProviders?.map((provider) => ({
+          name: provider.name,
+          logoPath: provider.logoPath,
+        })),
+        numberOfSeasons: data.numberOfSeasons,
+        seasonData: data.seasonData,
+      });
+    } catch (e) {
+      console.warn(
+        "[processQueueItem] TV metadata refresh failed (continuing with episode rating):",
+        e
+      );
+    }
   }
 
   // Ensure season metadata exists before selecting the first unrated episode.
@@ -1937,6 +1987,7 @@ export const searchTMDB = action({
       posterPath: string | null;
       overview: string;
       existingTitleId?: string;
+      existingTitleSlug?: string;
       existingTitleStatus?: string;
       existingHasRatings?: boolean;
     }[]
@@ -2013,6 +2064,7 @@ export const searchTMDB = action({
         return {
           ...result,
           existingTitleId: String(existing._id),
+          existingTitleSlug: existing.slug,
           existingTitleStatus: existing.status,
           existingHasRatings,
         };
@@ -2131,8 +2183,30 @@ export const requestOnDemandRating = mutation({
 
     // Create pending title if missing
     if (!titleId) {
+      let slug = generateTitleSlug(args.title, 0);
+      const slugConflict = await ctx.db
+        .query("titles")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .first();
+      if (slugConflict) {
+        let suffix = 2;
+        while (true) {
+          const candidate = `${slug}-${suffix}`;
+          const check = await ctx.db
+            .query("titles")
+            .withIndex("by_slug", (q) => q.eq("slug", candidate))
+            .first();
+          if (!check) {
+            slug = candidate;
+            break;
+          }
+          suffix++;
+        }
+      }
+
       titleId = await ctx.db.insert("titles", {
         tmdbId: args.tmdbId,
+        slug,
         title: args.title,
         type: args.type,
         year: 0,
@@ -2277,9 +2351,11 @@ export const updateTitleMetadata = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { titleId, streamingProviders, ...fields } = args;
+    const { titleId, streamingProviders } = args;
     const existingTitle = await ctx.db.get(titleId);
     if (!existingTitle) throw new Error("Title not found");
+
+    const normalizedYear = args.year > 0 ? args.year : existingTitle.year;
 
     const mergedProviders =
       streamingProviders !== undefined
@@ -2292,10 +2368,11 @@ export const updateTitleMetadata = internalMutation({
           )
         : undefined;
 
-    // Generate slug if missing and year is now known
+    // Generate slug if missing. Year can be 0 when unknown; we still want
+    // stable, human-readable paths instead of raw document IDs.
     let slug: string | undefined;
-    if (!existingTitle.slug && args.year > 0) {
-      slug = generateTitleSlug(existingTitle.title, args.year);
+    if (!existingTitle.slug) {
+      slug = generateTitleSlug(existingTitle.title, normalizedYear > 0 ? normalizedYear : 0);
       const slugConflict = await ctx.db
         .query("titles")
         .withIndex("by_slug", (q) => q.eq("slug", slug!))
@@ -2318,10 +2395,19 @@ export const updateTitleMetadata = internalMutation({
     }
 
     await ctx.db.patch(titleId, {
-      ...fields,
-      ...(mergedProviders !== undefined
-        ? { streamingProviders: mergedProviders }
-        : {}),
+      year: normalizedYear,
+      imdbId: args.imdbId ?? existingTitle.imdbId,
+      ageRating: args.ageRating ?? existingTitle.ageRating,
+      genre: args.genre ?? existingTitle.genre,
+      overview: args.overview ?? existingTitle.overview,
+      posterPath: args.posterPath ?? existingTitle.posterPath,
+      runtime: args.runtime ?? existingTitle.runtime,
+      numberOfSeasons: args.numberOfSeasons ?? existingTitle.numberOfSeasons,
+      seasonData:
+        args.seasonData && args.seasonData.length > 0
+          ? args.seasonData
+          : existingTitle.seasonData,
+      streamingProviders: mergedProviders ?? existingTitle.streamingProviders,
       ...(slug ? { slug } : {}),
     });
   },

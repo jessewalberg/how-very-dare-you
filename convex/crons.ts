@@ -37,4 +37,12 @@ crons.daily(
   api.healthRatings.runOverstimulationBatch
 );
 
+// 5. Slug backfill — 5 AM UTC daily
+//    Ensures legacy or partially-created titles always have SEO-friendly slugs.
+crons.daily(
+  "backfill-title-slugs",
+  { hourUTC: 5, minuteUTC: 0 },
+  api.titles.backfillSlugs
+);
+
 export default crons;

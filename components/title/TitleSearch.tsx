@@ -65,7 +65,13 @@ export function TitleSearch({
   const showResults = open && debouncedQuery.length >= 2;
 
   const handleSelect = useCallback(
-    (title: { _id: string; title: string; type: string; year: number }) => {
+    (title: {
+      _id: string;
+      slug?: string;
+      title: string;
+      type: string;
+      year: number;
+    }) => {
       posthog.capture("search_result_clicked", {
         source: "header_search",
         title_id: title._id,
@@ -75,7 +81,7 @@ export function TitleSearch({
       });
       setOpen(false);
       setQuery("");
-      router.push(`/title/${title._id}`);
+      router.push(`/title/${title.slug ?? title._id}`);
     },
     [router]
   );

@@ -1,4 +1,10 @@
-import { query, internalMutation, internalQuery, action } from "./_generated/server";
+import {
+  query,
+  mutation,
+  internalMutation,
+  internalQuery,
+  action,
+} from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import {
@@ -66,7 +72,7 @@ export const getTitleBySlug = query({
   },
 });
 
-export const backfillSlugs = internalMutation({
+export const backfillSlugs = mutation({
   args: {},
   handler: async (ctx) => {
     const titles = await ctx.db
@@ -516,10 +522,11 @@ export const saveRating = internalMutation({
     const episodeFlags =
       title.type === "tv" ? sanitizeEpisodeFlags(args.episodeFlags) : undefined;
 
-    // Generate slug if missing and we have valid year
+    // Generate slug if missing. Year can be 0 for unknown dates; keep slug anyway
+    // so URLs stay stable and SEO-friendly.
     let slug = title.slug;
-    if (!slug && title.year > 0) {
-      slug = generateSlug(title.title, title.year);
+    if (!slug) {
+      slug = generateSlug(title.title, title.year > 0 ? title.year : 0);
       const existing = await ctx.db
         .query("titles")
         .withIndex("by_slug", (q) => q.eq("slug", slug!))
