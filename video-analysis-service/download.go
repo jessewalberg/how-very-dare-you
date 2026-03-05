@@ -31,6 +31,15 @@ func classifyYtDlpFailure(output string, fallbackErr error) *downloadError {
 	normalized := strings.ToLower(output)
 
 	switch {
+	case strings.Contains(normalized, "there are no subtitles for the requested languages") ||
+		strings.Contains(normalized, "video doesn't have subtitles") ||
+		strings.Contains(normalized, "video does not have subtitles") ||
+		strings.Contains(normalized, "has no subtitles"):
+		return &downloadError{
+			Code:      "youtube_captions_unavailable",
+			Message:   "youtube captions unavailable for this video",
+			Retryable: false,
+		}
 	case strings.Contains(normalized, "sign in to confirm you're not a bot") ||
 		strings.Contains(normalized, "sign in to confirm you’re not a bot") ||
 		strings.Contains(normalized, "use --cookies-from-browser or --cookies"):

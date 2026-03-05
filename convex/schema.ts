@@ -24,6 +24,7 @@ const transcriptStorageValidator = v.optional(v.object({
 const subtitleInfoValidator = v.optional(v.object({
   status: v.union(v.literal("success"), v.literal("failed"), v.literal("skipped"), v.literal("timeout")),
   source: v.optional(v.string()),
+  sourceVideoId: v.optional(v.string()),
   language: v.optional(v.string()),
   dialogueLines: v.optional(v.number()),
   transcriptStorage: transcriptStorageValidator,

@@ -32,6 +32,20 @@ func TestClassifyYtDlpFailureRateLimited(t *testing.T) {
 	}
 }
 
+func TestClassifyYtDlpFailureCaptionsUnavailable(t *testing.T) {
+	err := classifyYtDlpFailure(
+		"ERROR: There are no subtitles for the requested languages",
+		nil,
+	)
+
+	if err.Code != "youtube_captions_unavailable" {
+		t.Fatalf("expected youtube_captions_unavailable, got %s", err.Code)
+	}
+	if err.Retryable {
+		t.Fatal("expected captions-unavailable failure to be non-retryable")
+	}
+}
+
 func TestDecodeCookiesEnvRaw(t *testing.T) {
 	data, source, err := decodeCookiesEnv(testCookies)
 	if err != nil {
