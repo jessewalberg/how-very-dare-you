@@ -8,6 +8,8 @@ import {
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { isSeedTitle } from "./lib/seedData";
+import { getTVSeason } from "../lib/tmdb";
+import { getSeasonByImdbId, getByImdbId } from "../lib/omdb";
 import {
   assertCategoryRatings,
   assertConfidence,
@@ -441,8 +443,6 @@ export const fetchSeasonEpisodes = action({
     seasonNumber: v.number(),
   },
   handler: async (ctx, args): Promise<void> => {
-    const { getTVSeason } = await import("../lib/tmdb");
-    const { getSeasonByImdbId, getByImdbId } = await import("../lib/omdb");
     const tmdbKey = process.env.TMDB_API_KEY!;
     const omdbKey = process.env.OMDB_API_KEY;
 

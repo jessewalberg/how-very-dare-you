@@ -772,7 +772,6 @@ export const populateSeasonData = action({
     if (!title || title.type !== "tv") return;
     if (title.seasonData && title.seasonData.length > 0) return; // Already populated
 
-    const { getTVDetails } = await import("../lib/tmdb");
     const tmdbKey = process.env.TMDB_API_KEY!;
     const tmdb = await getTVDetails(title.tmdbId, tmdbKey);
 
