@@ -804,7 +804,11 @@ async function runRatingPipeline(
     RATING_SYSTEM_PROMPT,
     userMessage,
     openRouterKey,
-    { model: configuredModel, temperature: 0.3, maxTokens: 6144 }
+    {
+      model: configuredModel,
+      maxTokens: 6144,
+      requestLabel: `title:${type}:${tmdbId}`,
+    }
   );
 
   // 4. Parse and validate
@@ -1085,7 +1089,11 @@ async function runEpisodeRatingPipeline(
     EPISODE_RATING_SYSTEM_PROMPT,
     userMessage,
     openRouterKey,
-    { model: configuredModel, temperature: 0.3, maxTokens: 3072 }
+    {
+      model: configuredModel,
+      maxTokens: 3072,
+      requestLabel: `episode:${showContext.tmdbShowId}:s${episodeData.seasonNumber}e${episodeData.episodeNumber}`,
+    }
   );
 
   const result = parseEpisodeRatingResponse(completion.content);

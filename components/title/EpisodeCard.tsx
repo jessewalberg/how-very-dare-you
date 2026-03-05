@@ -43,7 +43,7 @@ export function EpisodeCard({
   onClick,
   rateDisabled,
   requireSignInForRate = false,
-  rateLabel = "Analyze Episode",
+  rateLabel = "Request AI Analysis",
 }: EpisodeCardProps) {
   const isRated = status === "rated" && ratings;
   const isRating = status === "rating";

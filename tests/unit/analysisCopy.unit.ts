@@ -30,13 +30,13 @@ runCase("daily sign-in prompt uses AI analysis wording", () => {
 });
 
 runCase("episode action label is gated by auth state", () => {
-  assert.equal(getEpisodeAnalysisActionLabel(true), "Analyze Episode");
-  assert.equal(getEpisodeAnalysisActionLabel(false), "Sign In to Analyze");
+  assert.equal(getEpisodeAnalysisActionLabel(true), "Request AI Analysis");
+  assert.equal(getEpisodeAnalysisActionLabel(false), "Sign In to Request");
 });
 
 runCase("title action label distinguishes initial vs re-analysis", () => {
-  assert.equal(getTitleAnalysisActionLabel(false), "Analyze This Title");
-  assert.equal(getTitleAnalysisActionLabel(true), "Re-Analyze Title");
+  assert.equal(getTitleAnalysisActionLabel(false), "Request AI Analysis");
+  assert.equal(getTitleAnalysisActionLabel(true), "Re-Run AI Analysis");
 });
 
 runCase("remaining analysis quota text is formatted", () => {

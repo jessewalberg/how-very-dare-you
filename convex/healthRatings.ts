@@ -3,9 +3,17 @@ import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import { searchTrailer, searchEpisodeClips, searchEpisodeVideo } from "../lib/youtube";
+import {
+  searchTrailerCandidates,
+  searchEpisodeClips,
+  searchEpisodeVideo,
+} from "../lib/youtube";
 import { chatCompletion, parseJSONResponse } from "../lib/openrouter";
 import { assertConfidence, assertSeverityScore } from "./lib/ratingValidation";
+import {
+  extractVideoAnalysisErrorCode,
+  getNonRetryableVideoAnalysisReason,
+} from "../lib/videoAnalysisErrors";
 
 // ── Overstimulation Prompt ───────────────────────────────
 
@@ -77,6 +85,10 @@ interface OverstimResult extends OverstimLLMResult {
 const OVERSTIM_METHOD_VERSION = "overstim-v1";
 const OVERSTIM_MAX_ATTEMPTS = 3;
 const OVERSTIM_RETRY_DELAYS_MS = [30_000, 120_000];
+const GLOBAL_VIDEO_ABORT_CODES = new Set([
+  "youtube_auth_required",
+  "youtube_rate_limited",
+]);
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -93,6 +105,8 @@ interface VideoAnalysisResponse extends VideoAnalysisMetrics {
 
 interface VideoAnalysisErrorResponse {
   error?: string;
+  code?: string;
+  retryable?: boolean;
   request_id?: string;
 }
 
@@ -120,16 +134,20 @@ async function analyzeVideo(
     const errBody = await res.text();
     let requestId: string | undefined;
     let message = errBody;
+    let code: string | undefined;
+    let retryable: boolean | undefined;
     try {
       const parsed = JSON.parse(errBody) as VideoAnalysisErrorResponse;
       message = parsed.error ?? errBody;
+      code = parsed.code;
+      retryable = parsed.retryable;
       requestId = parsed.request_id;
     } catch {
       // Keep raw body if not JSON.
     }
 
     throw new Error(
-      `Video analysis service error ${res.status}: ${message}${requestId ? ` (request_id=${requestId})` : ""}`
+      `Video analysis service error ${res.status}${code ? ` [code=${code}]` : ""}: ${message}${requestId ? ` (request_id=${requestId})` : ""}${retryable !== undefined ? ` [retryable=${String(retryable)}]` : ""}`
     );
   }
 
@@ -146,13 +164,14 @@ async function analyzeVideo(
 async function rateMetrics(
   title: { title: string; type: "movie" | "tv" | "youtube"; year: number; ageRating?: string },
   metrics: VideoAnalysisMetrics,
-  openRouterKey: string
+  openRouterKey: string,
+  requestLabel: string
 ): Promise<OverstimResult> {
   const completion = await chatCompletion(
     "You are a developmental health content analyst. Rate video overstimulation based on measured metrics. Respond with JSON only.",
     constructOverstimPrompt(title, metrics),
     openRouterKey,
-    { temperature: 0.3, maxTokens: 512 }
+    { maxTokens: 512, requestLabel }
   );
 
   const result = parseJSONResponse<OverstimLLMResult>(completion.content);
@@ -201,16 +220,74 @@ async function runOverstimulationForTitle(
   };
 
   // 1. Find and analyze trailer
-  const trailerId = await searchTrailer(title.title, title.year, title.type as "movie" | "tv");
-  if (!trailerId) {
+  const trailerCandidates = await searchTrailerCandidates(
+    title.title,
+    title.year,
+    title.type as "movie" | "tv",
+    4
+  );
+  if (trailerCandidates.length === 0) {
     console.log(`[Overstim] No trailer found for "${title.title}" — skipping`);
     return "skipped_no_trailer";
   }
 
-  console.log(`[Overstim] Found trailer ${trailerId} for "${title.title}"`);
-  const trailerMetrics = await analyzeVideo(trailerId, title.title, title.type, serviceUrl, apiSecret);
-  console.log(`[Overstim] Trailer metrics for "${title.title}":`, JSON.stringify(trailerMetrics));
-  const trailerResult = await rateMetrics(titleMeta, trailerMetrics, openRouterKey);
+  let trailerId: string | null = null;
+  let trailerMetrics: VideoAnalysisMetrics | null = null;
+  let trailerResult: OverstimResult | null = null;
+  let lastTrailerError: unknown = null;
+
+  for (const candidate of trailerCandidates) {
+    try {
+      console.log(
+        `[Overstim] Trying trailer ${candidate} for "${title.title}"`
+      );
+      const metrics = await analyzeVideo(
+        candidate,
+        title.title,
+        title.type,
+        serviceUrl,
+        apiSecret
+      );
+      const rated = await rateMetrics(
+        titleMeta,
+        metrics,
+        openRouterKey,
+        `overstim:trailer:${title._id}:${candidate}`
+      );
+      trailerId = candidate;
+      trailerMetrics = metrics;
+      trailerResult = rated;
+      break;
+    } catch (error) {
+      lastTrailerError = error;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorCode = extractVideoAnalysisErrorCode(errorMessage);
+      console.error(
+        `[Overstim] Trailer candidate ${candidate} failed for "${title.title}" (non-fatal):`,
+        errorMessage
+      );
+      if (errorCode && GLOBAL_VIDEO_ABORT_CODES.has(errorCode)) {
+        console.error(
+          `[Overstim] Aborting additional trailer candidates for "${title.title}" due to global video failure code=${errorCode}`
+        );
+        break;
+      }
+    }
+  }
+
+  if (!trailerId || !trailerMetrics || !trailerResult) {
+    throw (
+      lastTrailerError ??
+      new Error(
+        `Failed to analyze any trailer candidate for "${title.title}"`
+      )
+    );
+  }
+
+  console.log(
+    `[Overstim] Trailer metrics for "${title.title}":`,
+    JSON.stringify(trailerMetrics)
+  );
 
   let severity: number;
   let sourceType: "movie_trailer" | "tv_weighted" | "tv_trailer_fallback" =
@@ -240,10 +317,23 @@ async function runOverstimulationForTitle(
       for (const epId of episodeIds) {
         try {
           const epMetrics = await analyzeVideo(epId, title.title, title.type, serviceUrl, apiSecret);
-          const epResult = await rateMetrics(titleMeta, epMetrics, openRouterKey);
+          const epResult = await rateMetrics(
+            titleMeta,
+            epMetrics,
+            openRouterKey,
+            `overstim:episode-sample:${title._id}:${epId}`
+          );
           episodeResults.push({ videoId: epId, result: epResult });
         } catch (e) {
-          console.error(`[Overstim] Episode clip ${epId} analysis failed (non-fatal):`, e instanceof Error ? e.message : e);
+          const errorMessage = e instanceof Error ? e.message : String(e);
+          const errorCode = extractVideoAnalysisErrorCode(errorMessage);
+          console.error(`[Overstim] Episode clip ${epId} analysis failed (non-fatal):`, errorMessage);
+          if (errorCode && GLOBAL_VIDEO_ABORT_CODES.has(errorCode)) {
+            console.error(
+              `[Overstim] Aborting additional episode clip analysis for "${title.title}" due to global video failure code=${errorCode}`
+            );
+            break;
+          }
         }
       }
 
@@ -372,7 +462,8 @@ async function runOverstimulationForEpisode(
       ageRating: title.ageRating,
     },
     metrics,
-    openRouterKey
+    openRouterKey,
+    `overstim:episode:${episode._id}:${videoId}`
   );
 
   await ctx.runMutation(internal.episodes.saveEpisodeOverstimulation, {
@@ -469,6 +560,14 @@ export const processOverstimulationJob = action({
       }
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
+      const nonRetryableReason = getNonRetryableVideoAnalysisReason(errorMessage);
+      if (nonRetryableReason) {
+        await ctx.runMutation(internal.healthRatings.markOverstimulationJobSkipped, {
+          jobId: args.jobId,
+          reason: nonRetryableReason,
+        });
+        return;
+      }
       if (attempts + 1 >= OVERSTIM_MAX_ATTEMPTS) {
         await ctx.runMutation(internal.healthRatings.markOverstimulationJobFailed, {
           jobId: args.jobId,

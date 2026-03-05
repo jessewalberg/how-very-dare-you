@@ -152,7 +152,7 @@ export default function HomePage() {
               </h1>
 
               <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg lg:mx-0">
-                AI-powered movie content warnings and TV parental guide ratings,
+                AI-analyzed movie content warnings and TV parental guide ratings,
                 with an 8-category breakdown on a transparent 0-4 severity
                 scale.
               </p>
@@ -449,7 +449,7 @@ export default function HomePage() {
       </section>
 
       {/* CTA + Pricing combined */}
-      <section className="bg-foreground text-background">
+      <section id="newsletter" className="bg-foreground text-background">
         <div className="mx-auto max-w-7xl px-4 py-16 md:py-20 text-center">
           <Sparkles className="mx-auto size-8 opacity-60" />
           <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">

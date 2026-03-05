@@ -29,6 +29,20 @@ const subtitleInfoValidator = v.optional(v.object({
   transcriptStorage: transcriptStorageValidator,
 }));
 
+const advisoryFeedbackReasonTagValidator = v.optional(
+  v.union(
+    v.literal("unclear"),
+    v.literal("too_strict"),
+    v.literal("too_lenient"),
+    v.literal("missing_context")
+  )
+);
+
+const advisoryFeedbackSurfaceValidator = v.union(
+  v.literal("title_detail"),
+  v.literal("title_card")
+);
+
 export default defineSchema({
   titles: defineTable({
     // External IDs
@@ -254,6 +268,22 @@ export default defineSchema({
     .index("by_titleId", ["titleId"])
     .index("by_status", ["status"])
     .index("by_userId", ["userId"]),
+
+  titleFeedback: defineTable({
+    titleId: v.id("titles"),
+    userId: v.optional(v.id("users")),
+    sessionId: v.optional(v.string()),
+    helpful: v.boolean(),
+    reasonTag: advisoryFeedbackReasonTagValidator,
+    comment: v.optional(v.string()),
+    surface: advisoryFeedbackSurfaceValidator,
+    createdAt: v.number(),
+  })
+    .index("by_titleId", ["titleId"])
+    .index("by_createdAt", ["createdAt"])
+    .index("by_helpful_createdAt", ["helpful", "createdAt"])
+    .index("by_reasonTag_createdAt", ["reasonTag", "createdAt"])
+    .index("by_userId_createdAt", ["userId", "createdAt"]),
 
   ratingQueue: defineTable({
     tmdbId: v.number(),

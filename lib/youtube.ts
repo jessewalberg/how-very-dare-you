@@ -22,6 +22,20 @@ export async function searchTrailer(
   year: number | string,
   type: "movie" | "tv"
 ): Promise<string | null> {
+  const candidates = await searchTrailerCandidates(title, year, type, 1);
+  return candidates[0] ?? null;
+}
+
+/**
+ * Search YouTube for multiple trailer candidates.
+ * Useful when one candidate is blocked/unavailable by downstream downloaders.
+ */
+export async function searchTrailerCandidates(
+  title: string,
+  year: number | string,
+  type: "movie" | "tv",
+  maxResults = 4
+): Promise<string[]> {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) {
     throw new Error("YOUTUBE_API_KEY environment variable is not set");
@@ -29,16 +43,20 @@ export async function searchTrailer(
 
   // Primary search: "{title} {year} official trailer"
   const primaryQuery = `${title} ${year} official trailer`;
-  const videoId = await searchYouTube(primaryQuery, apiKey);
-  if (videoId) return videoId;
+  const primaryIds = await searchYouTubeIds(primaryQuery, apiKey, {
+    maxResults,
+  });
 
   // Fallback for TV shows: try without year
+  const fallbackIds: string[] = [];
   if (type === "tv") {
     const fallbackQuery = `${title} official trailer`;
-    return searchYouTube(fallbackQuery, apiKey);
+    fallbackIds.push(
+      ...(await searchYouTubeIds(fallbackQuery, apiKey, { maxResults }))
+    );
   }
 
-  return null;
+  return Array.from(new Set([...primaryIds, ...fallbackIds])).slice(0, maxResults);
 }
 
 /**
@@ -120,6 +138,15 @@ async function searchYouTube(
   apiKey: string,
   options?: { maxResults?: number; videoDuration?: "any" | "short" | "medium" | "long" }
 ): Promise<string | null> {
+  const ids = await searchYouTubeIds(query, apiKey, options);
+  return ids[0] ?? null;
+}
+
+async function searchYouTubeIds(
+  query: string,
+  apiKey: string,
+  options?: { maxResults?: number; videoDuration?: "any" | "short" | "medium" | "long" }
+): Promise<string[]> {
   const params = new URLSearchParams({
     part: "snippet",
     q: query,
@@ -136,17 +163,17 @@ async function searchYouTube(
   if (!response.ok) {
     if (response.status === 403) {
       console.error("YouTube API quota exceeded or key invalid");
-      return null;
+      return [];
     }
     console.error(`YouTube API error: ${response.status} ${response.statusText}`);
-    return null;
+    return [];
   }
 
   const data: YouTubeSearchResponse = await response.json();
 
   if (!data.items || data.items.length === 0) {
-    return null;
+    return [];
   }
 
-  return data.items[0].id.videoId;
+  return data.items.map((item) => item.id.videoId);
 }

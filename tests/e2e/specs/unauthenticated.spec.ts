@@ -28,7 +28,7 @@ test.describe("Unauthenticated access guards", () => {
     await page.goto("/search?q=inside%20out");
 
     const signInToRateButtons = page.getByRole("button", {
-      name: "Sign In to Analyze",
+      name: "Sign In to Request",
     });
     const count = await signInToRateButtons.count();
     if (count === 0) {
@@ -58,7 +58,7 @@ test.describe("Unauthenticated access guards", () => {
     await seasonTrigger.click();
 
     const signInToAnalyzeButtons = page.getByRole("button", {
-      name: "Sign In to Analyze",
+      name: "Sign In to Request",
     });
 
     await expect
@@ -66,7 +66,7 @@ test.describe("Unauthenticated access guards", () => {
       .toBeGreaterThan(0);
 
     await expect(
-      page.getByRole("button", { name: "Analyze Episode" })
+      page.getByRole("button", { name: "Request AI Analysis" })
     ).toHaveCount(0);
 
     const currentUrl = page.url();
