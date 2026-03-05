@@ -6,6 +6,10 @@ import { api, internal } from "./_generated/api";
 import {
   getMovieDetails,
   getTVDetails,
+  getPopularMovies,
+  getPopularTV,
+  searchMovies,
+  searchTV,
   extractMovieAgeRating,
   extractTVAgeRating,
   extractStreamingProviders,
@@ -18,6 +22,7 @@ import {
   pickSubtitleCandidates,
   isOpenSubtitlesQuotaError,
   gatherTVEpisodeDialogue,
+  gatherSingleEpisodeDialogue,
 } from "../lib/opensubtitles";
 import { chatCompletion, parseJSONResponse, estimateCostCents } from "../lib/openrouter";
 import {
@@ -352,6 +357,15 @@ function slugForKey(input: string): string {
     .replace(/^-+|-+$/g, "");
   const capped = slug.slice(0, 80);
   return capped || "untitled";
+}
+
+function generateTitleSlug(title: string, year: number): string {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return `${base || "untitled"}-${year}`;
 }
 
 function buildTitleTranscriptKey(args: {
@@ -981,7 +995,6 @@ async function runEpisodeRatingPipeline(
     };
   } else if (subtitlesKey && showContext.imdbId) {
     try {
-      const { gatherSingleEpisodeDialogue } = await import("../lib/opensubtitles");
       const dialogue = await Promise.race([
         gatherSingleEpisodeDialogue(
           showContext.imdbId,
@@ -1787,6 +1800,12 @@ export const processQueueItem = action({
           error: errorMsg,
           attempts,
         });
+
+        // Ensure retries actually run promptly instead of waiting for a future
+        // batch worker invocation.
+        await ctx.scheduler.runAfter(10_000, api.ratings.processQueueItem, {
+          queueItemId: args.queueItemId,
+        });
       }
     }
   },
@@ -1803,9 +1822,7 @@ export const runNightlyBatch = action({
     const [popularMovies, popularTV] = await Promise.all([
       (async () => {
         try {
-          const { results } = await import("../lib/tmdb").then((m) =>
-            m.getPopularMovies(tmdbKey, 1)
-          );
+          const { results } = await getPopularMovies(tmdbKey, 1);
           return results;
         } catch (e) {
           console.error("[NightlyBatch] Failed to fetch popular movies:", e);
@@ -1814,9 +1831,7 @@ export const runNightlyBatch = action({
       })(),
       (async () => {
         try {
-          const { results } = await import("../lib/tmdb").then((m) =>
-            m.getPopularTV(tmdbKey, 1)
-          );
+          const { results } = await getPopularTV(tmdbKey, 1);
           return results;
         } catch (e) {
           console.error("[NightlyBatch] Failed to fetch popular TV:", e);
@@ -1925,7 +1940,6 @@ export const searchTMDB = action({
     }
 
     const tmdbKey = process.env.TMDB_API_KEY!;
-    const { searchMovies, searchTV } = await import("../lib/tmdb");
 
     const [movies, tv] = await Promise.all([
       searchMovies(query, tmdbKey).catch(() => ({ results: [] })),
@@ -2183,8 +2197,7 @@ export const createTitleFromData = internalMutation({
   },
   handler: async (ctx, args) => {
     // Generate unique slug
-    const { generateSlug } = await import("./titles");
-    let slug = generateSlug(args.title, args.year);
+    let slug = generateTitleSlug(args.title, args.year);
     const existing = await ctx.db
       .query("titles")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
@@ -2274,8 +2287,7 @@ export const updateTitleMetadata = internalMutation({
     // Generate slug if missing and year is now known
     let slug: string | undefined;
     if (!existingTitle.slug && args.year > 0) {
-      const { generateSlug } = await import("./titles");
-      slug = generateSlug(existingTitle.title, args.year);
+      slug = generateTitleSlug(existingTitle.title, args.year);
       const slugConflict = await ctx.db
         .query("titles")
         .withIndex("by_slug", (q) => q.eq("slug", slug!))

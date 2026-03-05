@@ -14,6 +14,7 @@ import { requireAdmin } from "./lib/adminAuth";
 import { extractSupportedCatalogModels } from "../lib/openrouterModels";
 import { assessRatingQuality, type QualitySeverity } from "../lib/ratingQuality";
 import { downloadTextFromR2, isR2Configured, uploadTextToR2 } from "../lib/r2";
+import { getTVDetails } from "../lib/tmdb";
 
 const DEFAULT_OPENROUTER_RATING_MODEL = "anthropic/claude-sonnet-4";
 const RATING_MODEL_CONFIG_KEY = "openrouter_rating_model";
@@ -1205,7 +1206,6 @@ export const refreshAllSeasonsForTitle = action({
     if (!title) throw new Error("Title not found");
     if (title.type !== "tv") throw new Error("Season refresh is only available for TV titles");
 
-    const { getTVDetails } = await import("../lib/tmdb");
     const tmdbKey = process.env.TMDB_API_KEY!;
     const tmdb = await getTVDetails(title.tmdbId, tmdbKey);
 
