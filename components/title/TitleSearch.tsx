@@ -16,6 +16,7 @@ import {
   type CategoryRatings,
 } from "@/lib/scoring";
 import { getEffectiveCategoryWeights } from "@/lib/userWeights";
+import { resolveTitlePath } from "@/lib/titlePaths";
 
 interface TitleSearchProps {
   placeholder?: string;
@@ -81,7 +82,7 @@ export function TitleSearch({
       });
       setOpen(false);
       setQuery("");
-      router.push(`/title/${title.slug ?? title._id}`);
+      router.push(`/title/${resolveTitlePath(title._id, title.slug)}`);
     },
     [router]
   );

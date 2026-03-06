@@ -1,6 +1,7 @@
 import type { CategoryRatings } from "@/lib/scoring";
 import { calculateCompositeScore, isNoFlags, getSeverityLabel } from "@/lib/scoring";
 import { DEFAULT_WEIGHTS } from "@/lib/constants";
+import { resolveTitlePath } from "@/lib/titlePaths";
 
 interface StreamingProvider {
   name: string;
@@ -32,7 +33,7 @@ interface TitleJsonLdProps {
 export function TitleJsonLd({ title }: TitleJsonLdProps) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
   const schemaType = title.type === "tv" ? "TVSeries" : "Movie";
-  const titlePath = title.slug ?? title._id;
+  const titlePath = resolveTitlePath(title._id, title.slug);
 
   const jsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { resolveTitlePath } from "@/lib/titlePaths";
 
 export function LandingTrendingTitles() {
   const titles = useQuery(api.titles.getFeaturedRatedTitles, { limit: 6 });
@@ -30,7 +31,7 @@ export function LandingTrendingTitles() {
       {titles.map((title) => (
         <Link
           key={title._id}
-          href={`/title/${title.slug ?? title._id}`}
+          href={`/title/${resolveTitlePath(title._id, title.slug)}`}
           className="inline-flex items-center rounded-full border border-border/50 bg-card/80 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground"
         >
           {title.title}

@@ -53,6 +53,7 @@ import {
   getTitleAnalysisActionLabel,
 } from "@/lib/analysisCopy";
 import { canOpenUserEpisodeSidebar } from "@/lib/sidebarBehavior";
+import { resolveTitlePath } from "@/lib/titlePaths";
 import { getEffectiveCategoryWeights } from "@/lib/userWeights";
 import posthog from "posthog-js";
 
@@ -81,6 +82,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const isInWatchlist = (title && profile?.watchlist?.includes(title._id)) ?? false;
   const isPaid = profile?.tier === "paid";
   const effectiveWeights = getEffectiveCategoryWeights(profile);
+  const titlePath = title ? resolveTitlePath(title._id, title.slug) : undefined;
 
   useEffect(() => {
     if (!title) {
@@ -439,7 +441,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
               <Separator />
               <SeasonList
                 titleId={title._id}
-                titlePath={title.slug ?? title._id}
+                titlePath={titlePath ?? title._id}
                 tmdbShowId={title.tmdbId}
                 showTitle={title.title}
                 weights={effectiveWeights}

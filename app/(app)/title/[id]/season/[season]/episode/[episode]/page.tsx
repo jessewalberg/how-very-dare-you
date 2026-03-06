@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { RatingBreakdown } from "@/components/rating/RatingBreakdown";
 import { EpisodeJsonLd } from "@/components/seo/EpisodeJsonLd";
 import { CATEGORIES, DEFAULT_WEIGHTS } from "@/lib/constants";
+import { isUnknownYearSlug, resolveTitlePath } from "@/lib/titlePaths";
 import {
   calculateCompositeScore,
   getSeverityLabel,
@@ -95,7 +96,7 @@ export async function generateMetadata(props: {
   }
 
   const { title, episode, seasonNumber, episodeNumber } = resolved;
-  const titlePath = title.slug ?? title._id;
+  const titlePath = resolveTitlePath(title._id, title.slug);
   const episodeCode = `S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}`;
   const episodeLabel = episode.name
     ? `${episodeCode}: ${episode.name}`
@@ -181,10 +182,15 @@ export default async function EpisodePage(props: {
   if (!resolved) notFound();
 
   const { title, fromSlug, episode, seasonNumber, episodeNumber } = resolved;
-  const titlePath = title.slug ?? title._id;
+  const titlePath = resolveTitlePath(title._id, title.slug);
+  const canonicalPath = `/title/${titlePath}/season/${seasonNumber}/episode/${episodeNumber}`;
 
-  if (!fromSlug && title.slug) {
-    redirect(`/title/${title.slug}/season/${seasonNumber}/episode/${episodeNumber}`);
+  if (!fromSlug && title.slug && !isUnknownYearSlug(title.slug)) {
+    redirect(canonicalPath);
+  }
+
+  if (fromSlug && title.slug && params.id !== title.slug && !isUnknownYearSlug(title.slug)) {
+    redirect(canonicalPath);
   }
 
   const parentTitleHref = `/title/${titlePath}`;
