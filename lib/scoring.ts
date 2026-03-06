@@ -29,6 +29,11 @@ export interface CategoryWeights {
   overstimulation: number;
 }
 
+export function toSeverityLevel(score: number): SeverityLevel {
+  const safeScore = Number.isFinite(score) ? score : 0;
+  return Math.round(Math.min(4, Math.max(0, safeScore))) as SeverityLevel;
+}
+
 /**
  * Composite = peak_weighted_score * 0.6 + average_weighted_scores * 0.4
  * Categories with weight 0 are excluded. Score is clamped to 0–4.
@@ -77,12 +82,12 @@ export function isNoFlags(ratings: CategoryRatings): boolean {
 
 /** Maps a 0–4 score to a severity label (e.g. "Notable"). */
 export function getSeverityLabel(score: number): string {
-  const clamped = Math.round(Math.min(4, Math.max(0, score))) as SeverityLevel;
+  const clamped = toSeverityLevel(score);
   return SEVERITY_LEVELS[clamped].label;
 }
 
 /** Maps a 0–4 score to the Tailwind text color class. */
 export function getSeverityColor(score: number): string {
-  const clamped = Math.round(Math.min(4, Math.max(0, score))) as SeverityLevel;
+  const clamped = toSeverityLevel(score);
   return SEVERITY_LEVELS[clamped].color;
 }

@@ -110,7 +110,7 @@ export default function HomePage() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
           <Link href="/" aria-label="How Very Dare You home" className="flex items-center gap-2.5 group">
             <BrandMark
-              size={44}
+              size={52}
               priority
               className="transition-transform duration-200 group-hover:scale-105"
             />

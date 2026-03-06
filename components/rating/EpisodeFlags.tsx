@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { ChevronDown, Tv } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CATEGORIES, SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
+import { CATEGORIES } from "@/lib/constants";
+import { getSeverityLabel } from "@/lib/scoring";
 import { RatingBadge } from "./RatingBadge";
 import {
   Collapsible,
@@ -69,43 +70,50 @@ export function EpisodeFlags({ flags }: EpisodeFlagsProps) {
 
       <CollapsibleContent>
         <div className="mt-1.5 space-y-1">
-          {flags.map((flag, i) => (
-            <div
-              key={i}
-              className={cn(
-                "flex flex-col gap-1.5 rounded-lg px-4 py-3",
-                "border border-border/30 bg-muted/20",
-                "transition-colors duration-200",
-                "hover:bg-muted/40"
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-bold tabular-nums tracking-tight text-foreground">
-                    {formatEpisodeCode(flag.season, flag.episode)}
-                  </span>
-                  {flag.episodeTitle && (
-                    <span className="text-xs text-muted-foreground truncate">
-                      {flag.episodeTitle}
+          {flags.map((flag, i) => {
+            const safeSeverity = Number.isFinite(flag.severity) ? flag.severity : 0;
+            const normalizedSeverity = Math.min(4, Math.max(0, safeSeverity));
+            const severityLabel = getSeverityLabel(normalizedSeverity);
+            const categoryLabel = getCategoryLabel(flag.category);
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "flex flex-col gap-1.5 rounded-lg px-4 py-3",
+                  "border border-border/30 bg-muted/20",
+                  "transition-colors duration-200",
+                  "hover:bg-muted/40"
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs font-bold tabular-nums tracking-tight text-foreground">
+                      {formatEpisodeCode(flag.season, flag.episode)}
                     </span>
-                  )}
+                    {flag.episodeTitle && (
+                      <span className="text-xs text-muted-foreground truncate">
+                        {flag.episodeTitle}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-medium text-muted-foreground">
+                      {categoryLabel}
+                    </span>
+                    <RatingBadge
+                      severity={normalizedSeverity}
+                      compact
+                      showValue
+                      ariaLabel={`${categoryLabel}: rated ${severityLabel} (${normalizedSeverity.toFixed(1)}/4)`}
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[10px] font-medium text-muted-foreground">
-                    {getCategoryLabel(flag.category)}
-                  </span>
-                  <RatingBadge
-                    severity={flag.severity as SeverityLevel}
-                    compact
-                    ariaLabel={`${getCategoryLabel(flag.category)}: rated ${SEVERITY_LEVELS[flag.severity as SeverityLevel].label}`}
-                  />
-                </div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {flag.note}
+                </p>
               </div>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {flag.note}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CollapsibleContent>
     </Collapsible>

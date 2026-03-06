@@ -1,9 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { CATEGORIES, SEVERITY_LEVELS, type CategoryKey } from "@/lib/constants";
+import { CATEGORIES, type CategoryKey } from "@/lib/constants";
 import {
   calculateCompositeScore,
+  getSeverityLabel,
   isNoFlags,
   type CategoryRatings,
   type CategoryWeights,
@@ -31,18 +32,25 @@ function CategoryRow({
   index,
 }: {
   category: (typeof CATEGORIES)[number];
-  severity: 0 | 1 | 2 | 3 | 4;
+  severity: number;
   pending?: boolean;
   index: number;
 }) {
-  const isNone = severity === 0 && !pending;
+  const safeSeverity = Number.isFinite(severity) ? severity : 0;
+  const normalizedSeverity = Math.min(4, Math.max(0, safeSeverity));
+  const isNone = normalizedSeverity === 0 && !pending;
   const Icon = category.icon;
-  const severityLabel = pending ? "Pending" : SEVERITY_LEVELS[severity].label;
+  const severityLabel = pending ? "Pending" : getSeverityLabel(normalizedSeverity);
+  const displayValue = normalizedSeverity.toFixed(1);
 
   return (
     <div
       role="listitem"
-      aria-label={`${category.label}: rated ${severityLabel}`}
+      aria-label={
+        pending
+          ? `${category.label}: rating pending`
+          : `${category.label}: rated ${severityLabel} (${displayValue}/4)`
+      }
       className={cn(
         "group flex items-center justify-between gap-3",
         "rounded-lg px-3 py-2",
@@ -81,8 +89,9 @@ function CategoryRow({
         </span>
       ) : (
         <RatingBadge
-          severity={severity}
-          ariaLabel={`${category.label}: rated ${severityLabel}`}
+          severity={normalizedSeverity}
+          showValue
+          ariaLabel={`${category.label}: rated ${severityLabel} (${displayValue}/4)`}
         />
       )}
     </div>
@@ -111,8 +120,8 @@ export function RatingBreakdown({
             Content Advisory
           </h2>
           <p className="mt-1 text-[11px] text-muted-foreground/75">
-            Scale: 0 = No concerns, 1 = Brief, 2 = Notable, 3 = Significant, 4 = Highest
-            concern.
+            Scale: 0.0–4.0 (decimals allowed). 0 = No concerns, 1 = Brief,
+            2 = Notable, 3 = Significant, 4 = Highest concern.
           </p>
           {noFlags && (
             <div className="mt-2">
@@ -130,8 +139,7 @@ export function RatingBreakdown({
         </p>
         <div className="space-y-0.5" role="list" aria-label="Cultural theme categories">
           {culturalCategories.map((category, index) => {
-            const severity = ratings[category.key as CategoryKey] as
-              | 0 | 1 | 2 | 3 | 4;
+            const severity = ratings[category.key as CategoryKey] as number;
             return (
               <CategoryRow
                 key={category.key}
@@ -153,7 +161,7 @@ export function RatingBreakdown({
           {healthCategories.map((category, index) => {
             const rawValue = ratings[category.key as keyof CategoryRatings];
             const isPending = rawValue === undefined;
-            const severity = (isPending ? 0 : rawValue) as 0 | 1 | 2 | 3 | 4;
+            const severity = (isPending ? 0 : rawValue) as number;
             return (
               <CategoryRow
                 key={category.key}

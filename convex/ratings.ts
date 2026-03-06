@@ -52,6 +52,7 @@ import {
 const RATING_SYSTEM_PROMPT = `You are a content advisory analyst for a parental content rating service. Your job is to analyze movies and TV shows and rate them across 8 specific cultural/ideological theme categories on a 0-4 severity scale.
 
 You must be OBJECTIVE and CONSISTENT. You are not making value judgments about whether these themes are good or bad — you are simply detecting their presence and intensity so parents can make informed decisions.
+You may use decimal severities in 0.1 increments when content clearly falls between two rubric levels.
 
 ## Rating Categories
 
@@ -128,14 +129,14 @@ Respond with ONLY a JSON object. No preamble, no markdown fences, no explanation
 
 {
   "ratings": {
-    "lgbtq": <0-4>,
-    "climate": <0-4>,
-    "racialIdentity": <0-4>,
-    "genderRoles": <0-4>,
-    "antiAuthority": <0-4>,
-    "religious": <0-4>,
-    "political": <0-4>,
-    "sexuality": <0-4>
+    "lgbtq": <0.0-4.0>,
+    "climate": <0.0-4.0>,
+    "racialIdentity": <0.0-4.0>,
+    "genderRoles": <0.0-4.0>,
+    "antiAuthority": <0.0-4.0>,
+    "religious": <0.0-4.0>,
+    "political": <0.0-4.0>,
+    "sexuality": <0.0-4.0>
   },
   "confidence": <0.0-1.0>,
   "notes": "<2-3 sentence summary explaining the key ratings. Focus on the highest-rated categories and why they received that score. Be factual and specific — cite scenes or plot points.>",
@@ -153,7 +154,7 @@ Respond with ONLY a JSON object. No preamble, no markdown fences, no explanation
       "episode": <number>,
       "episodeTitle": "<title if known>",
       "category": "<category key>",
-      "severity": <0-4>,
+      "severity": <0.0-4.0>,
       "note": "<brief description of what happens in this episode>"
     }
   ]
@@ -372,6 +373,12 @@ function generateTitleSlug(title: string, year: number): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
   return `${base || "untitled"}-${year}`;
+}
+
+function isLegacyUnknownYearSlug(slug: string, title: string): boolean {
+  const base = slugForKey(title);
+  const unknownYearPrefix = `${base}-0`;
+  return slug === unknownYearPrefix || slug.startsWith(`${unknownYearPrefix}-`);
 }
 
 function buildTitleTranscriptKey(args: {
@@ -1012,6 +1019,65 @@ interface PipelineMetrics {
   estimatedCostCents: number;
 }
 
+function titleNeedsMetadataRefresh(title: {
+  slug?: string;
+  year: number;
+  posterPath?: string;
+  overview?: string;
+  ageRating?: string;
+  genre?: string;
+  type: "movie" | "tv" | "youtube";
+  seasonData?: Array<{
+    seasonNumber: number;
+    episodeCount: number;
+    name?: string;
+    overview?: string;
+    posterPath?: string;
+    airDate?: string;
+  }>;
+}): boolean {
+  return (
+    !title.slug ||
+    title.year <= 0 ||
+    !title.posterPath ||
+    !title.overview ||
+    !title.ageRating ||
+    !title.genre ||
+    (title.type === "tv" && (!title.seasonData || title.seasonData.length === 0))
+  );
+}
+
+async function hydrateTitleMetadataFromTmdb(
+  ctx: ActionCtx,
+  args: {
+    titleId: Id<"titles">;
+    tmdbId: number;
+    type: "movie" | "tv";
+  }
+): Promise<void> {
+  const data =
+    args.type === "movie"
+      ? await gatherMovieData(args.tmdbId, { includeSubtitles: false })
+      : await gatherTVData(args.tmdbId, { includeSubtitles: false });
+
+  await ctx.runMutation(internal.ratings.updateTitleMetadata, {
+    titleId: args.titleId,
+    year: data.year,
+    imdbId: data.imdbId ?? undefined,
+    ageRating: data.ageRating,
+    genre: data.genre,
+    overview: data.overview,
+    posterPath: data.posterPath,
+    runtime: data.runtime,
+    streamingProviders: data.streamingProviders?.map((provider) => ({
+      name: provider.name,
+      logoPath: provider.logoPath,
+    })),
+    numberOfSeasons: data.numberOfSeasons,
+    seasonData: data.seasonData,
+  });
+}
+
 function logQualityWarning(args: {
   scope: "title" | "episode";
   label: string;
@@ -1167,6 +1233,7 @@ async function runRatingPipeline(
 const EPISODE_RATING_SYSTEM_PROMPT = `You are a content advisory analyst for a parental content rating service. Your job is to analyze a SINGLE EPISODE of a TV show and rate it across 8 specific cultural/ideological theme categories on a 0-4 severity scale.
 
 You must be OBJECTIVE and CONSISTENT. You are not making value judgments about whether these themes are good or bad — you are simply detecting their presence and intensity so parents can make informed decisions.
+You may use decimal severities in 0.1 increments when content clearly falls between two rubric levels.
 
 Use the same 8-category rubric (lgbtq, climate, racialIdentity, genderRoles, antiAuthority, religious, political, sexuality) with 0-4 severity scale.
 
@@ -1178,14 +1245,14 @@ Respond with ONLY a JSON object. No preamble, no markdown fences, no explanation
 
 {
   "ratings": {
-    "lgbtq": <0-4>,
-    "climate": <0-4>,
-    "racialIdentity": <0-4>,
-    "genderRoles": <0-4>,
-    "antiAuthority": <0-4>,
-    "religious": <0-4>,
-    "political": <0-4>,
-    "sexuality": <0-4>
+    "lgbtq": <0.0-4.0>,
+    "climate": <0.0-4.0>,
+    "racialIdentity": <0.0-4.0>,
+    "genderRoles": <0.0-4.0>,
+    "antiAuthority": <0.0-4.0>,
+    "religious": <0.0-4.0>,
+    "political": <0.0-4.0>,
+    "sexuality": <0.0-4.0>
   },
   "confidence": <0.0-1.0>,
   "notes": "<2-3 sentence summary of this specific episode's content. Be factual and specific — cite scenes or plot points from this episode.>",
@@ -1644,6 +1711,23 @@ export const rateTitleOnDemand = action({
         titleId: existing._id,
         status: "rating",
       });
+
+      // Hydrate poster/year/metadata immediately so the pending detail page
+      // shows useful context while the full AI pipeline runs.
+      if (titleNeedsMetadataRefresh(existing)) {
+        try {
+          await hydrateTitleMetadataFromTmdb(ctx, {
+            titleId: existing._id,
+            tmdbId: args.tmdbId,
+            type: args.type,
+          });
+        } catch (e) {
+          console.warn(
+            "[rateTitleOnDemand] Early metadata refresh failed (continuing):",
+            e
+          );
+        }
+      }
     }
 
     try {
@@ -1668,23 +1752,14 @@ export const rateTitleOnDemand = action({
         });
       }
 
-      // Refresh metadata when the title was created as a stub, or when key
-      // SEO/display fields are still missing.
-      const needsMetadataRefresh =
-        !!existing &&
-        (
-          !existing.slug ||
-          existing.year <= 0 ||
-          !existing.posterPath ||
-          !existing.overview ||
-          !existing.ageRating ||
-          !existing.genre ||
-          (existing.type === "tv" &&
-            (!existing.seasonData || existing.seasonData.length === 0))
-        );
-      if (existing && needsMetadataRefresh) {
+      // Re-check metadata after pipeline in case early hydration failed or
+      // the title still has stub fields.
+      const latestTitle = await ctx.runQuery(api.titles.getTitleByTmdbId, {
+        tmdbId: args.tmdbId,
+      });
+      if (latestTitle && titleNeedsMetadataRefresh(latestTitle)) {
         await ctx.runMutation(internal.ratings.updateTitleMetadata, {
-          titleId: existing._id,
+          titleId: latestTitle._id,
           year: data.year,
           imdbId: data.imdbId ?? undefined,
           ageRating: data.ageRating,
@@ -1973,34 +2048,12 @@ async function rateFirstUnratedEpisodeForTvShow(
     return;
   }
 
-  const needsTitleMetadataRefresh =
-    !show.slug ||
-    show.year <= 0 ||
-    !show.posterPath ||
-    !show.overview ||
-    !show.ageRating ||
-    !show.genre ||
-    !show.seasonData ||
-    show.seasonData.length === 0;
-
-  if (needsTitleMetadataRefresh) {
+  if (titleNeedsMetadataRefresh(show)) {
     try {
-      const data = await gatherTVData(args.tmdbId, { includeSubtitles: false });
-      await ctx.runMutation(internal.ratings.updateTitleMetadata, {
+      await hydrateTitleMetadataFromTmdb(ctx, {
         titleId: show._id,
-        year: data.year,
-        imdbId: data.imdbId ?? undefined,
-        ageRating: data.ageRating,
-        genre: data.genre,
-        overview: data.overview,
-        posterPath: data.posterPath,
-        runtime: data.runtime,
-        streamingProviders: data.streamingProviders?.map((provider) => ({
-          name: provider.name,
-          logoPath: provider.logoPath,
-        })),
-        numberOfSeasons: data.numberOfSeasons,
-        seasonData: data.seasonData,
+        tmdbId: args.tmdbId,
+        type: "tv",
       });
     } catch (e) {
       console.warn(
@@ -2727,10 +2780,15 @@ export const updateTitleMetadata = internalMutation({
           )
         : undefined;
 
-    // Generate slug if missing. Year can be 0 when unknown; we still want
-    // stable, human-readable paths instead of raw document IDs.
+    // Generate slug if missing. Also upgrade legacy unknown-year slugs
+    // (for example "title-0") when we now have a real release year.
     let slug: string | undefined;
-    if (!existingTitle.slug) {
+    const shouldRefreshUnknownYearSlug =
+      normalizedYear > 0 &&
+      !!existingTitle.slug &&
+      isLegacyUnknownYearSlug(existingTitle.slug, existingTitle.title);
+
+    if (!existingTitle.slug || shouldRefreshUnknownYearSlug) {
       slug = generateTitleSlug(existingTitle.title, normalizedYear > 0 ? normalizedYear : 0);
       const slugConflict = await ctx.db
         .query("titles")

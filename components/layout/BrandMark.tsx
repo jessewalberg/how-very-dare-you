@@ -19,19 +19,11 @@ export function BrandMark({
       aria-hidden="true"
     >
       <Image
-        src="/brand/howverydareyou-mark-mono-1024.png"
+        src="/brand/percy-mark-1024.png"
         alt=""
         fill
         sizes={`${size}px`}
-        className="object-contain dark:hidden"
-        priority={priority}
-      />
-      <Image
-        src="/brand/howverydareyou-mark-mono-light-1024.png"
-        alt=""
-        fill
-        sizes={`${size}px`}
-        className="hidden object-contain dark:block"
+        className="object-contain"
         priority={priority}
       />
     </span>

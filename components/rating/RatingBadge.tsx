@@ -2,26 +2,34 @@
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { SEVERITY_LEVELS, type SeverityLevel } from "@/lib/constants";
+import { SEVERITY_LEVELS } from "@/lib/constants";
+import { toSeverityLevel } from "@/lib/scoring";
 
 interface RatingBadgeProps {
-  severity: SeverityLevel;
+  severity: number;
   compact?: boolean;
+  showValue?: boolean;
   ariaLabel?: string;
 }
 
 export function RatingBadge({
   severity,
   compact = false,
+  showValue = false,
   ariaLabel,
 }: RatingBadgeProps) {
-  const config = SEVERITY_LEVELS[severity];
+  const safeSeverity = Number.isFinite(severity) ? severity : 0;
+  const normalizedSeverity = Math.min(4, Math.max(0, safeSeverity));
+  const level = toSeverityLevel(normalizedSeverity);
+  const config = SEVERITY_LEVELS[level];
+  const severityValue = `${normalizedSeverity.toFixed(1)}/4`;
+  const label = showValue ? `${config.label} (${severityValue})` : config.label;
 
   return (
     <Badge
       variant="outline"
       role="status"
-      aria-label={ariaLabel ?? `Severity: ${config.label}`}
+      aria-label={ariaLabel ?? `Severity: ${label}`}
       className={cn(
         config.border,
         config.color,
@@ -33,7 +41,7 @@ export function RatingBadge({
           : "text-xs px-2.5 py-0.5"
       )}
     >
-      {config.label}
+      {label}
     </Badge>
   );
 }
