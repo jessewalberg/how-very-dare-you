@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateSlug } from "../../convex/titles";
+import { generateSlug, isLegacyUnknownYearSlug } from "../../convex/titles";
 
 function runCase(name: string, fn: () => void) {
   try {
@@ -69,4 +69,10 @@ runCase("slug generation normalizes punctuation and appends year", () => {
 runCase("slug generation falls back to untitled when title is punctuation-only", () => {
   const slug = generateSlug("!!!", 2026);
   assert.equal(slug, "untitled-2026");
+});
+
+runCase("legacy unknown-year slug detection matches base and suffixed slugs", () => {
+  assert.equal(isLegacyUnknownYearSlug("bluey-0", "Bluey"), true);
+  assert.equal(isLegacyUnknownYearSlug("bluey-0-2", "Bluey"), true);
+  assert.equal(isLegacyUnknownYearSlug("bluey-2018", "Bluey"), false);
 });

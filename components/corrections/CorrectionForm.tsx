@@ -141,7 +141,7 @@ export function CorrectionForm({
               Current Rating
             </Label>
             <div className="flex h-9 items-center">
-              <RatingBadge severity={currentSeverity as SeverityLevel} />
+              <RatingBadge severity={currentSeverity} showValue />
             </div>
           </div>
           <div className="space-y-1.5">

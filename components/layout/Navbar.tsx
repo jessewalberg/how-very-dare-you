@@ -47,7 +47,7 @@ export function Navbar() {
           className="flex items-center gap-2.5 shrink-0 group"
         >
           <BrandMark
-            size={44}
+            size={52}
             priority
             className={cn("transition-transform duration-200 group-hover:scale-105")}
           />
@@ -161,7 +161,7 @@ export function Navbar() {
         <SheetContent side="left" className="w-72">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
-              <BrandMark size={28} />
+              <BrandMark size={32} />
               How Very Dare You
             </SheetTitle>
             <SheetDescription className="sr-only">

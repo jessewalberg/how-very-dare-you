@@ -32,6 +32,16 @@ export function generateSlug(title: string, year: number): string {
   return `${base || "untitled"}-${year}`;
 }
 
+export function isLegacyUnknownYearSlug(slug: string, title: string): boolean {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "untitled";
+  const unknownYearPrefix = `${base}-0`;
+  return slug === unknownYearPrefix || slug.startsWith(`${unknownYearPrefix}-`);
+}
+
 export const getTitleBySlug = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
@@ -81,9 +91,13 @@ export const backfillSlugs = mutation({
 
     let updated = 0;
     for (const title of titles) {
-      if (title.slug) continue;
+      const shouldRefreshUnknownYearSlug =
+        title.year > 0 &&
+        !!title.slug &&
+        isLegacyUnknownYearSlug(title.slug, title.title);
+      if (title.slug && !shouldRefreshUnknownYearSlug) continue;
 
-      let slug = generateSlug(title.title, title.year);
+      let slug = generateSlug(title.title, title.year > 0 ? title.year : 0);
 
       // Check for collisions
       const existing = await ctx.db
@@ -91,7 +105,7 @@ export const backfillSlugs = mutation({
         .withIndex("by_slug", (q) => q.eq("slug", slug))
         .first();
 
-      if (existing) {
+      if (existing && existing._id !== title._id) {
         // Append suffix to make unique
         let suffix = 2;
         while (true) {
@@ -108,8 +122,10 @@ export const backfillSlugs = mutation({
         }
       }
 
-      await ctx.db.patch(title._id, { slug });
-      updated++;
+      if (slug !== title.slug) {
+        await ctx.db.patch(title._id, { slug });
+        updated++;
+      }
     }
 
     return { updated };
@@ -686,15 +702,18 @@ export const aggregateShowRatings = internalMutation({
 
     const count = ratedEpisodes.length;
     const aggregated = {
-      lgbtq: Math.round(totals.lgbtq / count),
-      climate: Math.round(totals.climate / count),
-      racialIdentity: Math.round(totals.racialIdentity / count),
-      genderRoles: Math.round(totals.genderRoles / count),
-      antiAuthority: Math.round(totals.antiAuthority / count),
-      religious: Math.round(totals.religious / count),
-      political: Math.round(totals.political / count),
-      sexuality: Math.round(totals.sexuality / count),
-      overstimulation: overstimulationCount > 0 ? Math.round(overstimulationTotal / overstimulationCount) : undefined,
+      lgbtq: Math.round((totals.lgbtq / count) * 10) / 10,
+      climate: Math.round((totals.climate / count) * 10) / 10,
+      racialIdentity: Math.round((totals.racialIdentity / count) * 10) / 10,
+      genderRoles: Math.round((totals.genderRoles / count) * 10) / 10,
+      antiAuthority: Math.round((totals.antiAuthority / count) * 10) / 10,
+      religious: Math.round((totals.religious / count) * 10) / 10,
+      political: Math.round((totals.political / count) * 10) / 10,
+      sexuality: Math.round((totals.sexuality / count) * 10) / 10,
+      overstimulation:
+        overstimulationCount > 0
+          ? Math.round((overstimulationTotal / overstimulationCount) * 10) / 10
+          : undefined,
     };
 
     const avgConfidence = totalConfidence / ratedEpisodes.length;
