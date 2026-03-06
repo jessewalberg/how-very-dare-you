@@ -14,6 +14,7 @@ import { NoFlagsBadge } from "@/components/rating/NoFlagsBadge";
 import { Badge } from "@/components/ui/badge";
 import { Zap } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
+import { resolveTitlePath } from "@/lib/titlePaths";
 
 interface StreamingProvider {
   name: string;
@@ -59,10 +60,11 @@ export function TitleCard({
   const hasRatings = ratings && status === "rated";
   const noFlags = hasRatings && isNoFlags(ratings);
   const composite = hasRatings ? calculateCompositeScore(ratings, weights) : null;
+  const titlePath = resolveTitlePath(id, slug);
 
   return (
     <Link
-      href={`/title/${slug ?? id}`}
+      href={`/title/${titlePath}`}
       className={cn(
         "group relative flex gap-3.5 rounded-2xl border border-border/60 bg-card/95 p-3.5",
         "transition-all duration-200 ease-out",

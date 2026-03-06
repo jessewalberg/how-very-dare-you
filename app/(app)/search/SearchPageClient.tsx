@@ -28,6 +28,7 @@ import {
   formatRemainingAnalyses,
   formatUsageResetCopy,
 } from "@/lib/analysisCopy";
+import { resolveTitlePath } from "@/lib/titlePaths";
 import posthog from "posthog-js";
 
 export default function SearchPageClient() {
@@ -470,7 +471,7 @@ export default function SearchPageClient() {
                           className="w-full shrink-0 gap-1.5 sm:ml-auto sm:w-auto"
                         >
                           <Link
-                            href={`/title/${result.existingTitleSlug ?? result.existingTitleId}`}
+                            href={`/title/${resolveTitlePath(result.existingTitleId!, result.existingTitleSlug)}`}
                             onClick={() => handleOpenExistingAdvisory(result)}
                           >
                             {result.existingHasRatings ? "View Advisory" : "View Title"}

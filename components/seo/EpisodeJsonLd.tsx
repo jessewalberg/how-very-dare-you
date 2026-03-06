@@ -1,6 +1,7 @@
 import type { CategoryRatings } from "@/lib/scoring";
 import { calculateCompositeScore, getSeverityLabel } from "@/lib/scoring";
 import { DEFAULT_WEIGHTS } from "@/lib/constants";
+import { resolveTitlePath } from "@/lib/titlePaths";
 
 interface EpisodeJsonLdProps {
   title: {
@@ -27,7 +28,7 @@ interface EpisodeJsonLdProps {
 
 export function EpisodeJsonLd({ title, episode }: EpisodeJsonLdProps) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
-  const titlePath = title.slug ?? title._id;
+  const titlePath = resolveTitlePath(title._id, title.slug);
   const episodeCode = `S${String(episode.seasonNumber).padStart(2, "0")}E${String(
     episode.episodeNumber
   ).padStart(2, "0")}`;

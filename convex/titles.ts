@@ -45,10 +45,16 @@ export function isLegacyUnknownYearSlug(slug: string, title: string): boolean {
 export const getTitleBySlug = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
-    const title = await ctx.db
+    let title = await ctx.db
       .query("titles")
       .withIndex("by_slug", (q) => q.eq("slug", args.slug))
       .first();
+    if (!title && /-0(?:-\d+)?$/.test(args.slug)) {
+      const titles = await ctx.db.query("titles").collect();
+      title =
+        titles.find((candidate) => isLegacyUnknownYearSlug(args.slug, candidate.title)) ??
+        null;
+    }
     if (!title) return null;
 
     // Same episode aggregation logic as getTitle
