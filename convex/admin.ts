@@ -1360,6 +1360,7 @@ export const retryOverstimulationJob = action({
 
     await ctx.runMutation(internal.admin.resetOverstimulationJobToQueued, {
       jobId: args.jobId,
+      force: job.episodeId ? undefined : true,
     });
 
     await ctx.scheduler.runAfter(0, api.healthRatings.processOverstimulationJob, {
@@ -1397,7 +1398,10 @@ export const resetQueueItemToQueued = internalMutation({
 });
 
 export const resetOverstimulationJobToQueued = internalMutation({
-  args: { jobId: v.id("overstimulationQueue") },
+  args: {
+    jobId: v.id("overstimulationQueue"),
+    force: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.jobId, {
       status: "queued",
@@ -1406,6 +1410,7 @@ export const resetOverstimulationJobToQueued = internalMutation({
       startedAt: undefined,
       completedAt: undefined,
       updatedAt: Date.now(),
+      ...(args.force === undefined ? {} : { force: args.force }),
     });
   },
 });

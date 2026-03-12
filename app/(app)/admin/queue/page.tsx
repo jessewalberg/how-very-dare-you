@@ -466,6 +466,10 @@ export default function AdminQueuePage() {
             {overstimJobs.map((job) => {
               const jobActionKey = `overstim:${job._id}`;
               const isJobActing = acting === jobActionKey;
+              const canRerunJob =
+                job.status === "failed" ||
+                job.status === "skipped" ||
+                job.status === "completed";
               const episodeCode =
                 job.seasonNumber != null && job.episodeNumber != null
                   ? `S${String(job.seasonNumber).padStart(2, "0")}E${String(
@@ -519,7 +523,7 @@ export default function AdminQueuePage() {
                         minute: "2-digit",
                       })}
                     </p>
-                    {job.status === "failed" && (
+                    {canRerunJob && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -538,7 +542,7 @@ export default function AdminQueuePage() {
                         <RefreshCw
                           className={cn("size-3", isJobActing && "animate-spin")}
                         />
-                        Retry
+                        {job.status === "failed" ? "Retry" : "Rerun"}
                       </Button>
                     )}
                   </div>
