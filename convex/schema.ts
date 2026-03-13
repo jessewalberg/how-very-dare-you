@@ -253,7 +253,8 @@ export default defineSchema({
 
   corrections: defineTable({
     titleId: v.id("titles"),
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")),
+    contactEmail: v.optional(v.string()),
     category: v.string(),
     currentSeverity: v.number(),
     suggestedSeverity: v.number(),

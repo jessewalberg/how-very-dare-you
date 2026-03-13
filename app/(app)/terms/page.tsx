@@ -61,7 +61,7 @@ export default function TermsPage() {
           <li>Browsing and searching analyzed titles (free, no account required)</li>
           <li>Requesting on-demand AI analyses (free account: 3/day, Premium: 10/day)</li>
           <li>Personalized category weighting and watchlist (Premium subscription)</li>
-          <li>Submitting rating corrections (free account required)</li>
+          <li>Submitting rating corrections (account optional)</li>
         </ul>
       </section>
 

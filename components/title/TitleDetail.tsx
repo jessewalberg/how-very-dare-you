@@ -56,6 +56,8 @@ import { canOpenUserEpisodeSidebar } from "@/lib/sidebarBehavior";
 import { resolveTitlePath } from "@/lib/titlePaths";
 import { getEffectiveCategoryWeights } from "@/lib/userWeights";
 import { getBrowseHubForTitleType } from "@/lib/browseHubs";
+import { getMovieAgeRatingPageForRating } from "@/lib/ageRatingBrowse";
+import { BLOG_POSTS } from "@/lib/blog";
 import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import posthog from "posthog-js";
 
@@ -174,6 +176,17 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const canRefreshSeasonData = isAdmin && title.type === "tv";
   const canOpenEpisodeSidebar = canOpenUserEpisodeSidebar(title.type);
   const browseHub = getBrowseHubForTitleType(title.type);
+  const ageRatingBrowsePage =
+    title.type === "movie" ? getMovieAgeRatingPageForRating(title.ageRating) : null;
+  const titleSpecificPosts = titlePath
+    ? BLOG_POSTS.filter((post) => post.linkedTitleSlug === titlePath)
+    : [];
+  const fallbackGuidePosts = BLOG_POSTS.filter(
+    (post) =>
+      post.category !== "advisory" &&
+      !titleSpecificPosts.some((specificPost) => specificPost.slug === post.slug)
+  );
+  const recommendedPosts = [...titleSpecificPosts, ...fallbackGuidePosts].slice(0, 2);
 
   async function handleRequestTitleRating() {
     if (!title) return;
@@ -524,14 +537,14 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                 )}
               </div>
             )}
-            {isSignedIn && (
+            {ratings && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setCorrectionOpen(true)}
               >
                 <MessageSquarePlus className="mr-1.5 size-3.5" />
-                Submit Correction
+                Suggest a Correction
               </Button>
             )}
             {isSignedIn && isPaid && (
@@ -584,11 +597,90 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
                     Sign in
                   </button>
                 </SignInButton>{" "}
-                to request up to 3 AI analyses per day, submit corrections, or save to
-                your watchlist.
+                to request up to 3 AI analyses per day or save to your watchlist.
               </p>
             )}
           </div>
+
+          {(browseHub || ageRatingBrowsePage || recommendedPosts.length > 0) && (
+            <>
+              <Separator />
+              <section className="space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold">Keep Exploring</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Jump to related browse pages, lower-concern picks, and parent guides.
+                  </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {browseHub && (
+                    <Link
+                      href={browseHub.href}
+                      className="rounded-xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/20"
+                    >
+                      <p className="text-sm font-semibold">
+                        More {browseHub.label.toLowerCase()} advisories
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        Browse more AI-analyzed {browseHub.label.toLowerCase()} with age
+                        ratings and category breakdowns.
+                      </p>
+                    </Link>
+                  )}
+                  {ageRatingBrowsePage && (
+                    <Link
+                      href={ageRatingBrowsePage.href}
+                      className="rounded-xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/20"
+                    >
+                      <p className="text-sm font-semibold">
+                        More {ageRatingBrowsePage.label} movies
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        Compare other {ageRatingBrowsePage.label}-rated movies with the
+                        same category-level advisory detail.
+                      </p>
+                    </Link>
+                  )}
+                  <Link
+                    href="/browse/low-scores"
+                    className="rounded-xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/20"
+                  >
+                    <p className="text-sm font-semibold">Low advisory picks</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Explore movies and shows that stay in lower concern ranges across
+                      tracked categories.
+                    </p>
+                  </Link>
+                  <Link
+                    href="/blog"
+                    className="rounded-xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/20"
+                  >
+                    <p className="text-sm font-semibold">Parent guides and explainers</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Read practical posts on ratings, methodology, and family viewing
+                      workflows.
+                    </p>
+                  </Link>
+                </div>
+                {recommendedPosts.length > 0 && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {recommendedPosts.map((post) => (
+                      <Link
+                        key={post.slug}
+                        href={`/blog/${post.slug}`}
+                        className="rounded-xl border border-border/60 bg-muted/20 p-4 transition-colors hover:border-border hover:bg-muted/30"
+                      >
+                        <p className="text-sm font-semibold">{post.title}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {post.description}
+                        </p>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </>
+          )}
 
           {/* Community corrections */}
           <CorrectionsList titleId={title._id} />
@@ -605,7 +697,8 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
             <SheetHeader>
               <SheetTitle>Submit Correction</SheetTitle>
               <SheetDescription>
-                Suggest a rating change for &ldquo;{title.title}&rdquo;
+                Suggest a rating change for &ldquo;{title.title}&rdquo;. No
+                account required.
               </SheetDescription>
             </SheetHeader>
             <div className="px-4 pb-8">

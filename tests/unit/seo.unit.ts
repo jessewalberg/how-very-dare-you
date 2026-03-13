@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { generateSlug, isLegacyUnknownYearSlug } from "../../convex/titles";
+import { getMovieAgeRatingPage } from "../../lib/ageRatingBrowse";
 import { getBrowseHubForTitleType } from "../../lib/browseHubs";
 import { generateTitleSlug, resolveTitlePath } from "../../lib/titlePaths";
 
@@ -16,9 +17,8 @@ function runCase(name: string, fn: () => void) {
 runCase("title format includes year and brand", () => {
   const title = "Strange World";
   const year = 2022;
-  const expected =
-    "Strange World (2022) Content Advisory — Is It Appropriate for Kids? | How Very Dare You";
-  const result = `${title} (${year}) Content Advisory — Is It Appropriate for Kids? | How Very Dare You`;
+  const expected = "Strange World (2022) — Parent Content Advisory | How Very Dare You";
+  const result = `${title} (${year}) — Parent Content Advisory | How Very Dare You`;
   assert.equal(result, expected);
 });
 
@@ -35,9 +35,10 @@ runCase("flagged title description includes severity and categories", () => {
     "LGBTQ+ Representation",
     "Climate & Environment",
   ];
-  const description = `Content advisory for Strange World (2022): ${severityLabel} overall. Notable themes: ${flaggedCategories.join(", ")}. AI-powered cultural and ideological theme ratings for parents.`;
-  assert.ok(description.includes("Significant overall"));
+  const description = `Strange World (2022) overall score: 3/4 (${severityLabel}). Flagged categories: ${flaggedCategories.join(", ")}. See the full 8-category breakdown.`;
+  assert.ok(description.includes("3/4"));
   assert.ok(description.includes("LGBTQ+ Representation"));
+  assert.ok(description.includes("full 8-category breakdown"));
 });
 
 runCase("JSON-LD uses correct schema type for movies vs TV", () => {
@@ -62,6 +63,12 @@ runCase("tv advisories map to the dedicated TV hub", () => {
   const hub = getBrowseHubForTitleType("tv");
   assert.equal(hub?.href, "/browse/tv");
   assert.equal(hub?.label, "TV Shows");
+});
+
+runCase("movie age rating browse pages resolve dedicated paths", () => {
+  const page = getMovieAgeRatingPage("pg-13");
+  assert.equal(page?.href, "/browse/rating/pg-13");
+  assert.equal(page?.rating, "PG-13");
 });
 
 runCase("sitemap title advisory paths fall back to IDs when slug is missing", () => {

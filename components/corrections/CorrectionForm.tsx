@@ -6,6 +6,7 @@ import { Send, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
@@ -37,6 +38,7 @@ export function CorrectionForm({
   const [category, setCategory] = useState<CategoryKey | "">("");
   const [suggestedSeverity, setSuggestedSeverity] = useState<string>("");
   const [reason, setReason] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -58,6 +60,7 @@ export function CorrectionForm({
         currentSeverity: currentSeverity ?? 0,
         suggestedSeverity: Number(suggestedSeverity),
         reason: reason.trim(),
+        contactEmail: contactEmail.trim() || undefined,
       });
       posthog.capture("correction_submitted", {
         title_id: titleId,
@@ -66,6 +69,7 @@ export function CorrectionForm({
         current_severity: currentSeverity ?? 0,
         suggested_severity: Number(suggestedSeverity),
         reason_length: reason.trim().length,
+        has_contact_email: contactEmail.trim().length > 0,
       });
       setSubmitted(true);
       onSuccess?.();
@@ -99,7 +103,8 @@ export function CorrectionForm({
       <div>
         <h3 className="text-base font-semibold">Submit a Correction</h3>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Suggest a rating change for &ldquo;{titleName}&rdquo;
+          Suggest a rating change for &ldquo;{titleName}&rdquo;. No account
+          required.
         </p>
       </div>
 
@@ -169,6 +174,21 @@ export function CorrectionForm({
           </div>
         </div>
       )}
+
+      <div className="space-y-1.5">
+        <Label className="text-xs font-semibold">Email (optional)</Label>
+        <Input
+          type="email"
+          value={contactEmail}
+          onChange={(e) => setContactEmail(e.target.value)}
+          placeholder="name@example.com"
+          autoComplete="email"
+          className="text-sm"
+        />
+        <p className="text-[10px] text-muted-foreground">
+          Add an email if you want us to follow up about your submission.
+        </p>
+      </div>
 
       {/* Reason */}
       <div className="space-y-1.5">

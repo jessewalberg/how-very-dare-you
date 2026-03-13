@@ -61,6 +61,14 @@ test.describe("SEO — meta tags and structured data", () => {
     await expect(canonical).toHaveAttribute("href", /\/browse\/tv$/);
   });
 
+  test("age rating browse page has correct metadata", async ({ page }) => {
+    await page.goto("/browse/rating/pg");
+    await expect(page).toHaveTitle(/PG Movie Content Advisories/i);
+
+    const canonical = page.locator('link[rel="canonical"]');
+    await expect(canonical).toHaveAttribute("href", /\/browse\/rating\/pg$/);
+  });
+
   test("browse page has exactly one h1", async ({ page }) => {
     await page.goto("/browse");
     const h1Count = await page.locator("h1").count();
@@ -111,6 +119,17 @@ test.describe("SEO — meta tags and structured data", () => {
     expect(text).toContain("Sitemap:");
   });
 
+  test("corrections page is indexable and has a canonical URL", async ({ page }) => {
+    await page.goto("/corrections");
+    await expect(page).toHaveTitle(/Corrections & Updates/i);
+
+    const canonical = page.locator('link[rel="canonical"]');
+    await expect(canonical).toHaveAttribute("href", /\/corrections$/);
+
+    const robots = page.locator('meta[name="robots"]');
+    await expect(robots).not.toHaveAttribute("content", /noindex/i);
+  });
+
   test("sitemap.xml is accessible and contains URLs", async ({ page }) => {
     const response = await page.goto("/sitemap.xml");
     expect(response?.status()).toBe(200);
@@ -139,6 +158,7 @@ test.describe("SEO — meta tags and structured data", () => {
 
     expect(locations).toContain("https://howverydareyou.com/browse/movies");
     expect(locations).toContain("https://howverydareyou.com/browse/tv");
+    expect(locations).toContain("https://howverydareyou.com/browse/rating/g");
   });
 
   test("title advisory pages render visible breadcrumbs", async ({ page }) => {

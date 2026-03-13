@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAdmin } from "./lib/adminAuth";
+import { resolveTitlePath } from "../lib/titlePaths";
 
 export const submit = mutation({
   args: {
@@ -9,24 +10,24 @@ export const submit = mutation({
     currentSeverity: v.number(),
     suggestedSeverity: v.number(),
     reason: v.string(),
+    contactEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user) throw new Error("User not found");
+    const user = identity
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_clerkId", (q) => q.eq("clerkId", identity.subject))
+          .first()
+      : null;
 
     const title = await ctx.db.get(args.titleId);
     if (!title) throw new Error("Title not found");
 
     return await ctx.db.insert("corrections", {
       titleId: args.titleId,
-      userId: user._id,
+      userId: user?._id,
+      contactEmail: args.contactEmail?.trim() || undefined,
       category: args.category,
       currentSeverity: args.currentSeverity,
       suggestedSeverity: args.suggestedSeverity,
@@ -34,6 +35,38 @@ export const submit = mutation({
       status: "pending",
       createdAt: Date.now(),
     });
+  },
+});
+
+export const listPublic = query({
+  args: {},
+  handler: async (ctx) => {
+    const corrections = await ctx.db.query("corrections").collect();
+    const reviewedCorrections = corrections
+      .filter((correction) => correction.status !== "pending")
+      .sort(
+        (a, b) => (b.reviewedAt ?? b.createdAt) - (a.reviewedAt ?? a.createdAt)
+      );
+
+    return await Promise.all(
+      reviewedCorrections.map(async (correction) => {
+        const title = await ctx.db.get(correction.titleId);
+
+        return {
+          ...correction,
+          titleName: title?.title ?? "Unknown title",
+          titleYear: title?.year ?? null,
+          titlePath: title
+            ? resolveTitlePath(
+                correction.titleId,
+                title.slug,
+                title.title,
+                title.year
+              )
+            : String(correction.titleId),
+        };
+      })
+    );
   },
 });
 

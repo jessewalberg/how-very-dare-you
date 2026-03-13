@@ -52,6 +52,12 @@ export default function PrivacyPage() {
           searches performed, titles viewed, and feature usage. Analytics
           data is used to improve the product and is not sold to third parties.
         </p>
+        <h3 className="text-base font-semibold">Correction Submissions</h3>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          If you submit a rating correction, we store the category, suggested
+          change, explanation, and any optional contact email you provide so we
+          can review and potentially follow up on the submission.
+        </p>
       </section>
 
       <section className="space-y-3">

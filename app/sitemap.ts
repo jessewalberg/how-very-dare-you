@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { BLOG_POSTS } from "@/lib/blog";
+import { MOVIE_AGE_RATING_PAGES } from "@/lib/ageRatingBrowse";
 import { resolveTitlePath } from "@/lib/titlePaths";
 
 export const revalidate = 3600;
@@ -41,6 +42,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.8,
     },
+    ...Object.values(MOVIE_AGE_RATING_PAGES).map((page) => ({
+      url: `${baseUrl}${page.href}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.75,
+    })),
     {
       url: `${baseUrl}/safe-movies-for-kids`,
       lastModified: new Date(),

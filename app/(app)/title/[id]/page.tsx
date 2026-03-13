@@ -74,11 +74,12 @@ export async function generateMetadata(props: {
       title.hasEpisodeRatings && typeof derivedEpisodeComposite === "number"
         ? derivedEpisodeComposite
         : calculateCompositeScore(ratings, DEFAULT_WEIGHTS);
-    const severityLabel = getSeverityLabel(Math.round(composite));
+    const roundedComposite = Math.round(composite);
+    const severityLabel = getSeverityLabel(roundedComposite);
     const noFlags = isNoFlags(ratings);
 
     if (noFlags) {
-      description = `${title.title} (${title.year}) has no cultural or ideological content flags. Safe for all audiences. AI-powered content advisory from How Very Dare You.`;
+      description = `${title.title} (${title.year}) overall score: ${roundedComposite}/4. No cultural or ideological content flags detected. See the full 8-category breakdown.`;
     } else {
       const flaggedCategories = CATEGORIES
         .filter((category) => (ratings[category.key] ?? 0) >= 2)
@@ -86,18 +87,18 @@ export async function generateMetadata(props: {
           (a, b) =>
             (ratings[b.key] ?? 0) - (ratings[a.key] ?? 0)
         )
-        .slice(0, 3)
+        .slice(0, 2)
         .map((category) => category.label);
 
       const flagSummary =
         flaggedCategories.length > 0
-          ? ` Notable themes: ${flaggedCategories.join(", ")}.`
+          ? ` Flagged categories: ${flaggedCategories.join(", ")}.`
           : "";
 
-      description = `Content advisory for ${title.title} (${title.year}): ${severityLabel} overall.${flagSummary} AI-powered cultural and ideological theme ratings for parents.`;
+      description = `${title.title} (${title.year}) overall score: ${roundedComposite}/4 (${severityLabel}).${flagSummary} See the full 8-category breakdown.`;
     }
   } else {
-    description = `Content advisory and parental guide for ${title.title} (${title.year}). AI-powered cultural and ideological theme ratings from How Very Dare You.`;
+    description = `${title.title} (${title.year}) parent content advisory with AI-powered cultural and ideological theme ratings. See the full 8-category breakdown.`;
   }
 
   const ogImage = title.posterPath
@@ -106,7 +107,7 @@ export async function generateMetadata(props: {
 
   return {
     title: {
-      absolute: `${title.title} (${title.year}) Content Advisory — Is It Appropriate for Kids? | How Very Dare You`,
+      absolute: `${title.title} (${title.year}) — Parent Content Advisory | How Very Dare You`,
     },
     description,
     keywords: [
@@ -123,7 +124,7 @@ export async function generateMetadata(props: {
       canonical: `/title/${canonicalParam}`,
     },
     openGraph: {
-      title: `${title.title} (${title.year}) — Content Advisory | How Very Dare You`,
+      title: `${title.title} (${title.year}) — Parent Content Advisory | How Very Dare You`,
       description,
       url: `${baseUrl}/title/${canonicalParam}`,
       siteName: "How Very Dare You",
@@ -139,7 +140,7 @@ export async function generateMetadata(props: {
     },
     twitter: {
       card: "summary_large_image",
-      title: `${title.title} (${title.year}) — Content Advisory`,
+      title: `${title.title} (${title.year}) — Parent Content Advisory`,
       description,
       images: [ogImage],
     },
