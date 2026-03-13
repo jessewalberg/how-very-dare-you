@@ -3,15 +3,17 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { fetchQuery } from "convex/nextjs";
-import { ArrowLeft, Clock, Tv } from "lucide-react";
+import { Clock, Tv } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RatingBreakdown } from "@/components/rating/RatingBreakdown";
 import { EpisodeJsonLd } from "@/components/seo/EpisodeJsonLd";
+import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import { CATEGORIES, DEFAULT_WEIGHTS } from "@/lib/constants";
-import { isUnknownYearSlug, resolveTitlePath } from "@/lib/titlePaths";
+import { resolveTitlePath } from "@/lib/titlePaths";
+import { getBrowseHubForTitleType } from "@/lib/browseHubs";
 import {
   calculateCompositeScore,
   getSeverityLabel,
@@ -96,7 +98,7 @@ export async function generateMetadata(props: {
   }
 
   const { title, episode, seasonNumber, episodeNumber } = resolved;
-  const titlePath = resolveTitlePath(title._id, title.slug);
+  const titlePath = resolveTitlePath(title._id, title.slug, title.title, title.year);
   const episodeCode = `S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}`;
   const episodeLabel = episode.name
     ? `${episodeCode}: ${episode.name}`
@@ -182,18 +184,19 @@ export default async function EpisodePage(props: {
   if (!resolved) notFound();
 
   const { title, fromSlug, episode, seasonNumber, episodeNumber } = resolved;
-  const titlePath = resolveTitlePath(title._id, title.slug);
+  const titlePath = resolveTitlePath(title._id, title.slug, title.title, title.year);
   const canonicalPath = `/title/${titlePath}/season/${seasonNumber}/episode/${episodeNumber}`;
 
-  if (!fromSlug && title.slug && !isUnknownYearSlug(title.slug)) {
+  if (!fromSlug && params.id !== titlePath) {
     redirect(canonicalPath);
   }
 
-  if (fromSlug && title.slug && params.id !== title.slug && !isUnknownYearSlug(title.slug)) {
+  if (fromSlug && params.id !== titlePath) {
     redirect(canonicalPath);
   }
 
   const parentTitleHref = `/title/${titlePath}`;
+  const browseHub = getBrowseHubForTitleType(title.type);
   const episodeCode = `S${String(seasonNumber).padStart(2, "0")}E${String(episodeNumber).padStart(2, "0")}`;
   const episodeHeading = episode.name ? `${episodeCode}: ${episode.name}` : episodeCode;
   const hasRatings = episode.status === "rated" && Boolean(episode.ratings);
@@ -210,13 +213,15 @@ export default async function EpisodePage(props: {
     <>
       <EpisodeJsonLd title={title} episode={episode} />
       <div className="mx-auto max-w-5xl space-y-6">
-        <Link
-          href={parentTitleHref}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to {title.title}
-        </Link>
+        <Breadcrumbs
+          items={[
+            { label: "Home", href: "/" },
+            { label: "Browse", href: "/browse" },
+            ...(browseHub ? [{ label: browseHub.label, href: browseHub.href }] : []),
+            { label: `${title.title} (${title.year})`, href: parentTitleHref },
+            { label: episodeHeading },
+          ]}
+        />
 
         <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
           <div className="space-y-3">

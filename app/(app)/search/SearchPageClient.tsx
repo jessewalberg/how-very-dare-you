@@ -471,7 +471,12 @@ export default function SearchPageClient() {
                           className="w-full shrink-0 gap-1.5 sm:ml-auto sm:w-auto"
                         >
                           <Link
-                            href={`/title/${resolveTitlePath(result.existingTitleId!, result.existingTitleSlug)}`}
+                            href={`/title/${resolveTitlePath(
+                              result.existingTitleId!,
+                              result.existingTitleSlug,
+                              result.title,
+                              result.year
+                            )}`}
                             onClick={() => handleOpenExistingAdvisory(result)}
                           >
                             {result.existingHasRatings ? "View Advisory" : "View Title"}

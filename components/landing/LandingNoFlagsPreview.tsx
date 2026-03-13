@@ -39,7 +39,7 @@ export function LandingLowAdvisoryPreview() {
       {titles.map((item) => (
         <Link
           key={item._id}
-          href={`/title/${resolveTitlePath(item._id, item.slug)}`}
+          href={`/title/${resolveTitlePath(item._id, item.slug, item.title, item.year)}`}
           className="group flex items-center gap-3 rounded-xl border border-emerald-200/60 bg-emerald-50/30 p-3 transition-all duration-200 hover:border-emerald-300/80 hover:shadow-sm"
         >
           <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">

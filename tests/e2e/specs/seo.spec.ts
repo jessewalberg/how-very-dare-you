@@ -45,6 +45,22 @@ test.describe("SEO — meta tags and structured data", () => {
     await expect(canonical).toHaveAttribute("href", /\/browse$/);
   });
 
+  test("movie hub page has correct metadata", async ({ page }) => {
+    await page.goto("/browse/movies");
+    await expect(page).toHaveTitle(/Movie Content Advisories/i);
+
+    const canonical = page.locator('link[rel="canonical"]');
+    await expect(canonical).toHaveAttribute("href", /\/browse\/movies$/);
+  });
+
+  test("tv hub page has correct metadata", async ({ page }) => {
+    await page.goto("/browse/tv");
+    await expect(page).toHaveTitle(/TV Show Content Advisories/i);
+
+    const canonical = page.locator('link[rel="canonical"]');
+    await expect(canonical).toHaveAttribute("href", /\/browse\/tv$/);
+  });
+
   test("browse page has exactly one h1", async ({ page }) => {
     await page.goto("/browse");
     const h1Count = await page.locator("h1").count();
@@ -113,6 +129,37 @@ test.describe("SEO — meta tags and structured data", () => {
     );
 
     expect(titleUrls.length).toBeGreaterThan(0);
+  });
+
+  test("sitemap includes browse hub URLs", async ({ page }) => {
+    const response = await page.goto("/sitemap.xml");
+    expect(response?.status()).toBe(200);
+    const text = await response!.text();
+    const locations = extractSitemapLocations(text);
+
+    expect(locations).toContain("https://howverydareyou.com/browse/movies");
+    expect(locations).toContain("https://howverydareyou.com/browse/tv");
+  });
+
+  test("title advisory pages render visible breadcrumbs", async ({ page }) => {
+    const response = await page.goto("/sitemap.xml");
+    expect(response?.status()).toBe(200);
+    const text = await response!.text();
+    const locations = extractSitemapLocations(text);
+    const titleUrl = locations.find((url) =>
+      /\/title\/[^/]+$/.test(new URL(url).pathname)
+    );
+
+    test.skip(!titleUrl, "No title advisory URLs in this dataset");
+
+    const path = new URL(titleUrl!).pathname;
+    const titleResponse = await page.goto(path);
+    expect(titleResponse?.status()).toBe(200);
+
+    const breadcrumbs = page.getByRole("navigation", { name: "Breadcrumb" });
+    await expect(breadcrumbs).toBeVisible();
+    await expect(breadcrumbs.getByRole("link", { name: "Home" })).toBeVisible();
+    await expect(breadcrumbs.getByRole("link", { name: "Browse" })).toBeVisible();
   });
 
   test("episode advisory URLs from sitemap resolve when present", async ({ page }) => {

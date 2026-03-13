@@ -82,7 +82,7 @@ export function TitleSearch({
       });
       setOpen(false);
       setQuery("");
-      router.push(`/title/${resolveTitlePath(title._id, title.slug)}`);
+      router.push(`/title/${resolveTitlePath(title._id, title.slug, title.title, title.year)}`);
     },
     [router]
   );

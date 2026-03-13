@@ -60,7 +60,7 @@ export function TitleCard({
   const hasRatings = ratings && status === "rated";
   const noFlags = hasRatings && isNoFlags(ratings);
   const composite = hasRatings ? calculateCompositeScore(ratings, weights) : null;
-  const titlePath = resolveTitlePath(id, slug);
+  const titlePath = resolveTitlePath(id, slug, title, year);
 
   return (
     <Link

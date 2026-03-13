@@ -2,6 +2,7 @@ import type { CategoryRatings } from "@/lib/scoring";
 import { calculateCompositeScore, getSeverityLabel } from "@/lib/scoring";
 import { DEFAULT_WEIGHTS } from "@/lib/constants";
 import { resolveTitlePath } from "@/lib/titlePaths";
+import { getBrowseHubForTitleType } from "@/lib/browseHubs";
 
 interface EpisodeJsonLdProps {
   title: {
@@ -28,7 +29,8 @@ interface EpisodeJsonLdProps {
 
 export function EpisodeJsonLd({ title, episode }: EpisodeJsonLdProps) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
-  const titlePath = resolveTitlePath(title._id, title.slug);
+  const titlePath = resolveTitlePath(title._id, title.slug, title.title, title.year);
+  const browseHub = getBrowseHubForTitleType("tv");
   const episodeCode = `S${String(episode.seasonNumber).padStart(2, "0")}E${String(
     episode.episodeNumber
   ).padStart(2, "0")}`;
@@ -105,15 +107,25 @@ export function EpisodeJsonLd({ title, episode }: EpisodeJsonLdProps) {
         name: "Browse",
         item: `${baseUrl}/browse`,
       },
+      ...(browseHub
+        ? [
+            {
+              "@type": "ListItem",
+              position: 3,
+              name: browseHub.label,
+              item: `${baseUrl}${browseHub.href}`,
+            },
+          ]
+        : []),
       {
         "@type": "ListItem",
-        position: 3,
+        position: browseHub ? 4 : 3,
         name: `${title.title} (${title.year})`,
         item: `${baseUrl}/title/${titlePath}`,
       },
       {
         "@type": "ListItem",
-        position: 4,
+        position: browseHub ? 5 : 4,
         name: episodeName,
         item: episodeUrl,
       },

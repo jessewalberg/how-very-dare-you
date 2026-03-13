@@ -24,6 +24,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.9,
     },
     {
+      url: `${baseUrl}/browse/movies`,
+      lastModified: new Date(),
+      changeFrequency: "daily",
+      priority: 0.85,
+    },
+    {
+      url: `${baseUrl}/browse/tv`,
+      lastModified: new Date(),
+      changeFrequency: "daily",
+      priority: 0.85,
+    },
+    {
       url: `${baseUrl}/browse/low-scores`,
       lastModified: new Date(),
       changeFrequency: "daily",
@@ -65,7 +77,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     titlePages = titles
       .map((title: (typeof titles)[number]) => ({
-        url: `${baseUrl}/title/${resolveTitlePath(String(title._id), title.slug)}`,
+        url: `${baseUrl}/title/${resolveTitlePath(
+          String(title._id),
+          title.slug,
+          title.title,
+          title.year
+        )}`,
         lastModified: title.ratedAt ? new Date(title.ratedAt) : new Date(),
         changeFrequency: "monthly" as const,
         priority: 0.7,
@@ -74,7 +91,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const episodes = await fetchQuery(api.episodes.listRatedForSeo, {});
     episodePages = episodes
       .map((episode: (typeof episodes)[number]) => ({
-        url: `${baseUrl}/title/${resolveTitlePath(episode.titleId, episode.titleSlug)}/season/${episode.seasonNumber}/episode/${episode.episodeNumber}`,
+        url: `${baseUrl}/title/${resolveTitlePath(
+          episode.titleId,
+          episode.titleSlug,
+          episode.titleName,
+          episode.titleYear
+        )}/season/${episode.seasonNumber}/episode/${episode.episodeNumber}`,
         lastModified: episode.ratedAt ? new Date(episode.ratedAt) : new Date(),
         changeFrequency: "monthly" as const,
         priority: 0.6,

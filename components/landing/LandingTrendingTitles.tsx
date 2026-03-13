@@ -31,7 +31,7 @@ export function LandingTrendingTitles() {
       {titles.map((title) => (
         <Link
           key={title._id}
-          href={`/title/${resolveTitlePath(title._id, title.slug)}`}
+          href={`/title/${resolveTitlePath(title._id, title.slug, title.title, title.year)}`}
           className="inline-flex items-center rounded-full border border-border/50 bg-card/80 px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground"
         >
           {title.title}

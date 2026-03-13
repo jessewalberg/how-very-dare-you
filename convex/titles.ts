@@ -20,16 +20,12 @@ import {
   sanitizeEpisodeFlags,
 } from "./lib/ratingValidation";
 import { isSeedTitle } from "./lib/seedData";
+import { generateTitleSlug } from "../lib/titlePaths";
 
 // ── Slug utilities ──────────────────────────────────────
 
 export function generateSlug(title: string, year: number): string {
-  const base = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-  return `${base || "untitled"}-${year}`;
+  return generateTitleSlug(title, year);
 }
 
 export function isLegacyUnknownYearSlug(slug: string, title: string): boolean {
@@ -49,12 +45,23 @@ export const getTitleBySlug = query({
       .query("titles")
       .withIndex("by_slug", (q) => q.eq("slug", args.slug))
       .first();
+
     if (!title && /-0(?:-\d+)?$/.test(args.slug)) {
       const titles = await ctx.db.query("titles").collect();
       title =
         titles.find((candidate) => isLegacyUnknownYearSlug(args.slug, candidate.title)) ??
         null;
     }
+
+    if (!title) {
+      const titles = await ctx.db.query("titles").collect();
+      const derivedMatches = titles.filter(
+        (candidate) =>
+          candidate.year > 0 && generateSlug(candidate.title, candidate.year) === args.slug
+      );
+      title = derivedMatches.length === 1 ? derivedMatches[0] : null;
+    }
+
     if (!title) return null;
 
     // Same episode aggregation logic as getTitle

@@ -55,6 +55,8 @@ import {
 import { canOpenUserEpisodeSidebar } from "@/lib/sidebarBehavior";
 import { resolveTitlePath } from "@/lib/titlePaths";
 import { getEffectiveCategoryWeights } from "@/lib/userWeights";
+import { getBrowseHubForTitleType } from "@/lib/browseHubs";
+import { Breadcrumbs } from "@/components/navigation/Breadcrumbs";
 import posthog from "posthog-js";
 
 interface TitleDetailProps {
@@ -82,7 +84,9 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const isInWatchlist = (title && profile?.watchlist?.includes(title._id)) ?? false;
   const isPaid = profile?.tier === "paid";
   const effectiveWeights = getEffectiveCategoryWeights(profile);
-  const titlePath = title ? resolveTitlePath(title._id, title.slug) : undefined;
+  const titlePath = title
+    ? resolveTitlePath(title._id, title.slug, title.title, title.year)
+    : undefined;
 
   useEffect(() => {
     if (!title) {
@@ -169,6 +173,7 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
   const titleRateButtonLabel = getTitleAnalysisActionLabel(canReRateTitle);
   const canRefreshSeasonData = isAdmin && title.type === "tv";
   const canOpenEpisodeSidebar = canOpenUserEpisodeSidebar(title.type);
+  const browseHub = getBrowseHubForTitleType(title.type);
 
   async function handleRequestTitleRating() {
     if (!title) return;
@@ -285,14 +290,15 @@ export function TitleDetail({ preloadedTitle }: TitleDetailProps) {
 
   return (
     <div>
-      {/* Back link */}
-      <Link
-        href="/browse"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="size-3.5" />
-        Back
-      </Link>
+      <Breadcrumbs
+        className="mb-6"
+        items={[
+          { label: "Home", href: "/" },
+          { label: "Browse", href: "/browse" },
+          ...(browseHub ? [{ label: browseHub.label, href: browseHub.href }] : []),
+          { label: `${title.title} (${title.year})` },
+        ]}
+      />
 
       <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
         {/* Left column — Poster */}

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { generateSlug, isLegacyUnknownYearSlug } from "../../convex/titles";
-import { resolveTitlePath } from "../../lib/titlePaths";
+import { getBrowseHubForTitleType } from "../../lib/browseHubs";
+import { generateTitleSlug, resolveTitlePath } from "../../lib/titlePaths";
 
 function runCase(name: string, fn: () => void) {
   try {
@@ -51,16 +52,33 @@ runCase("canonical URLs are relative (resolve via metadataBase)", () => {
   assert.equal(canonical.startsWith("/"), true);
 });
 
+runCase("movie advisories map to the dedicated movie hub", () => {
+  const hub = getBrowseHubForTitleType("movie");
+  assert.equal(hub?.href, "/browse/movies");
+  assert.equal(hub?.label, "Movies");
+});
+
+runCase("tv advisories map to the dedicated TV hub", () => {
+  const hub = getBrowseHubForTitleType("tv");
+  assert.equal(hub?.href, "/browse/tv");
+  assert.equal(hub?.label, "TV Shows");
+});
+
 runCase("sitemap title advisory paths fall back to IDs when slug is missing", () => {
   const path = `/title/${resolveTitlePath("title_123", undefined)}`;
   assert.equal(path, "/title/title_123");
 });
 
+runCase("title paths derive readable slugs when title and year are available", () => {
+  const path = resolveTitlePath("title_123", undefined, "Inside Out 2", 2024);
+  assert.equal(path, "inside-out-2-2024");
+});
+
 runCase("sitemap advisory paths avoid provisional unknown-year slugs", () => {
-  const titlePath = resolveTitlePath("title_123", "frozen-0");
+  const titlePath = resolveTitlePath("title_123", "frozen-0", "Frozen", 2013);
   const episodePath = `/title/${titlePath}/season/1/episode/2`;
-  assert.equal(titlePath, "title_123");
-  assert.equal(episodePath, "/title/title_123/season/1/episode/2");
+  assert.equal(titlePath, "frozen-2013");
+  assert.equal(episodePath, "/title/frozen-2013/season/1/episode/2");
 });
 
 runCase("episode advisory path uses title + season + episode params", () => {
@@ -77,6 +95,11 @@ runCase("slug generation normalizes punctuation and appends year", () => {
     slug,
     "dr-strangelove-or-how-i-learned-to-stop-worrying-and-love-the-bomb-1964"
   );
+});
+
+runCase("shared title slug generator matches the backend format", () => {
+  const slug = generateTitleSlug("Inside Out 2", 2024);
+  assert.equal(slug, "inside-out-2-2024");
 });
 
 runCase("slug generation falls back to untitled when title is punctuation-only", () => {

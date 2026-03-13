@@ -2,6 +2,7 @@ import type { CategoryRatings } from "@/lib/scoring";
 import { calculateCompositeScore, isNoFlags, getSeverityLabel } from "@/lib/scoring";
 import { DEFAULT_WEIGHTS } from "@/lib/constants";
 import { resolveTitlePath } from "@/lib/titlePaths";
+import { getBrowseHubForTitleType } from "@/lib/browseHubs";
 
 interface StreamingProvider {
   name: string;
@@ -33,7 +34,8 @@ interface TitleJsonLdProps {
 export function TitleJsonLd({ title }: TitleJsonLdProps) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
   const schemaType = title.type === "tv" ? "TVSeries" : "Movie";
-  const titlePath = resolveTitlePath(title._id, title.slug);
+  const titlePath = resolveTitlePath(title._id, title.slug, title.title, title.year);
+  const browseHub = getBrowseHubForTitleType(title.type);
 
   const jsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
@@ -130,9 +132,19 @@ export function TitleJsonLd({ title }: TitleJsonLdProps) {
         name: "Browse",
         item: `${baseUrl}/browse`,
       },
+      ...(browseHub
+        ? [
+            {
+              "@type": "ListItem",
+              position: 3,
+              name: browseHub.label,
+              item: `${baseUrl}${browseHub.href}`,
+            },
+          ]
+        : []),
       {
         "@type": "ListItem",
-        position: 3,
+        position: browseHub ? 4 : 3,
         name: `${title.title} (${title.year})`,
         item: `${baseUrl}/title/${titlePath}`,
       },

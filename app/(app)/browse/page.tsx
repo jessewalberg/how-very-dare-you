@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -81,6 +82,28 @@ function BrowseContent() {
                 ? `${titles.length} title${titles.length !== 1 ? "s" : ""}`
                 : "Loading..."}
             </p>
+            {!lowScoresOnly && (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <Link
+                  href="/browse/movies"
+                  className="rounded-full border border-border/60 px-3 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Movie hub
+                </Link>
+                <Link
+                  href="/browse/tv"
+                  className="rounded-full border border-border/60 px-3 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  TV hub
+                </Link>
+                <Link
+                  href="/browse/low-scores"
+                  className="rounded-full border border-border/60 px-3 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Low advisory picks
+                </Link>
+              </div>
+            )}
           </div>
           {/* Mobile filter button is inside FilterSidebar */}
         </div>

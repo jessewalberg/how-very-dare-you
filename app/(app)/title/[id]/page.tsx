@@ -9,7 +9,7 @@ import { CATEGORIES, DEFAULT_WEIGHTS } from "@/lib/constants";
 import { TitleDetail } from "@/components/title/TitleDetail";
 import { TitleDetailSkeleton } from "@/components/title/TitleDetailSkeleton";
 import { TitleJsonLd } from "@/components/seo/TitleJsonLd";
-import { isUnknownYearSlug, resolveTitlePath } from "@/lib/titlePaths";
+import { resolveTitlePath } from "@/lib/titlePaths";
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://howverydareyou.com";
 export const revalidate = 3600;
@@ -66,7 +66,7 @@ export async function generateMetadata(props: {
   const derivedEpisodeComposite =
     (title as { episodeCompositeScore?: number }).episodeCompositeScore;
   const typeLabel = title.type === "tv" ? "TV Show" : "Movie";
-  const canonicalParam = resolveTitlePath(title._id, title.slug);
+  const canonicalParam = resolveTitlePath(title._id, title.slug, title.title, title.year);
 
   let description: string;
   if (ratings) {
@@ -155,16 +155,18 @@ export default async function TitlePage(props: {
   if (!result) notFound();
 
   const { title: titleData, fromSlug } = result;
-  const canonicalPath = `/title/${resolveTitlePath(titleData._id, titleData.slug)}`;
+  const canonicalPath = `/title/${resolveTitlePath(
+    titleData._id,
+    titleData.slug,
+    titleData.title,
+    titleData.year
+  )}`;
 
-  // Keep users on the stable ID URL while a newly requested title still has a
-  // provisional unknown-year slug like "frozen-0".
-  if (!fromSlug && titleData.slug && !isUnknownYearSlug(titleData.slug)) {
+  if (!fromSlug && id !== canonicalPath.replace("/title/", "")) {
     redirect(canonicalPath);
   }
 
-  // Canonicalize legacy or stale slug URLs once the title has a stable slug.
-  if (fromSlug && titleData.slug && id !== titleData.slug && !isUnknownYearSlug(titleData.slug)) {
+  if (fromSlug && id !== canonicalPath.replace("/title/", "")) {
     redirect(canonicalPath);
   }
 

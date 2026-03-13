@@ -88,13 +88,21 @@ export const listRatedForSeo = query({
 
     const titleCache = new Map<
       string,
-      { _id: string; slug?: string; type: "movie" | "tv" | "youtube" } | null
+      {
+        _id: string;
+        slug?: string;
+        title: string;
+        year: number;
+        type: "movie" | "tv" | "youtube";
+      } | null
     >();
 
     const rows: Array<{
       episodeId: string;
       titleId: string;
       titleSlug?: string;
+      titleName: string;
+      titleYear: number;
       seasonNumber: number;
       episodeNumber: number;
       ratedAt?: number;
@@ -110,6 +118,8 @@ export const listRatedForSeo = query({
           titleCache.set(titleKey, {
             _id: String(title._id),
             slug: title.slug,
+            title: title.title,
+            year: title.year,
             type: title.type,
           });
         }
@@ -122,6 +132,8 @@ export const listRatedForSeo = query({
         episodeId: String(episode._id),
         titleId: title._id,
         titleSlug: title.slug,
+        titleName: title.title,
+        titleYear: title.year,
         seasonNumber: episode.seasonNumber,
         episodeNumber: episode.episodeNumber,
         ratedAt: episode.ratedAt,
