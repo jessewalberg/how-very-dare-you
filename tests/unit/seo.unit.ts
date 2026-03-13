@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { generateSlug, isLegacyUnknownYearSlug } from "../../convex/titles";
+import { resolveTitlePath } from "../../lib/titlePaths";
 
 function runCase(name: string, fn: () => void) {
   try {
@@ -48,6 +49,18 @@ runCase("JSON-LD uses correct schema type for movies vs TV", () => {
 runCase("canonical URLs are relative (resolve via metadataBase)", () => {
   const canonical = "/title/abc123";
   assert.equal(canonical.startsWith("/"), true);
+});
+
+runCase("sitemap title advisory paths fall back to IDs when slug is missing", () => {
+  const path = `/title/${resolveTitlePath("title_123", undefined)}`;
+  assert.equal(path, "/title/title_123");
+});
+
+runCase("sitemap advisory paths avoid provisional unknown-year slugs", () => {
+  const titlePath = resolveTitlePath("title_123", "frozen-0");
+  const episodePath = `/title/${titlePath}/season/1/episode/2`;
+  assert.equal(titlePath, "title_123");
+  assert.equal(episodePath, "/title/title_123/season/1/episode/2");
 });
 
 runCase("episode advisory path uses title + season + episode params", () => {
