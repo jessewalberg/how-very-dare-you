@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { BLOG_POSTS } from "@/lib/blog";
+import { resolveTitlePath } from "@/lib/titlePaths";
 
 export const revalidate = 3600;
 
@@ -63,9 +64,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
 
     titlePages = titles
-      .filter((title: (typeof titles)[number]) => Boolean(title.slug))
       .map((title: (typeof titles)[number]) => ({
-        url: `${baseUrl}/title/${title.slug}`,
+        url: `${baseUrl}/title/${resolveTitlePath(String(title._id), title.slug)}`,
         lastModified: title.ratedAt ? new Date(title.ratedAt) : new Date(),
         changeFrequency: "monthly" as const,
         priority: 0.7,
@@ -73,9 +73,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const episodes = await fetchQuery(api.episodes.listRatedForSeo, {});
     episodePages = episodes
-      .filter((episode: (typeof episodes)[number]) => Boolean(episode.titleSlug))
       .map((episode: (typeof episodes)[number]) => ({
-        url: `${baseUrl}/title/${episode.titleSlug}/season/${episode.seasonNumber}/episode/${episode.episodeNumber}`,
+        url: `${baseUrl}/title/${resolveTitlePath(episode.titleId, episode.titleSlug)}/season/${episode.seasonNumber}/episode/${episode.episodeNumber}`,
         lastModified: episode.ratedAt ? new Date(episode.ratedAt) : new Date(),
         changeFrequency: "monthly" as const,
         priority: 0.6,
