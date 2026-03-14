@@ -14,7 +14,7 @@ import { requireAdmin } from "./lib/adminAuth";
 import { extractSupportedCatalogModels } from "../lib/openrouterModels";
 import { assessRatingQuality, type QualitySeverity } from "../lib/ratingQuality";
 import { downloadTextFromR2, isR2Configured, uploadTextToR2 } from "../lib/r2";
-import { getTVDetails } from "../lib/tmdb";
+import { getTVDetails, discoverMoviesByGenre, discoverTVByGenre } from "../lib/tmdb";
 
 const DEFAULT_OPENROUTER_RATING_MODEL = "anthropic/claude-sonnet-4";
 const RATING_MODEL_CONFIG_KEY = "openrouter_rating_model";
@@ -1412,5 +1412,177 @@ export const resetOverstimulationJobToQueued = internalMutation({
       updatedAt: Date.now(),
       ...(args.force === undefined ? {} : { force: args.force }),
     });
+  },
+});
+
+// ── Catalog Seeding ──────────────────────────────────────
+
+/**
+ * Discover and queue top family/kids movies and TV shows for AI rating.
+ * Fetches from TMDB discover API using Animation (16) and Family (10751) genres
+ * for movies, and Animation (16) and Kids (10762) genres for TV.
+ */
+export const seedFamilyCatalog = action({
+  args: {
+    maxTitles: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    const user = await ctx.runQuery(api.users.getMyProfile);
+    if (!user?.isAdmin) throw new Error("Admin access required");
+
+    const tmdbKey = process.env.TMDB_API_KEY!;
+    const maxTitles = args.maxTitles ?? 200;
+    const dryRun = args.dryRun ?? false;
+
+    console.log(
+      `[SeedCatalog] Starting. Max titles: ${maxTitles}, dry run: ${dryRun}`
+    );
+
+    // Collect unique TMDB IDs across all discover queries
+    const movieCandidates = new Map<
+      number,
+      { title: string; type: "movie" | "tv" }
+    >();
+    const tvCandidates = new Map<
+      number,
+      { title: string; type: "movie" | "tv" }
+    >();
+
+    // Fetch family/animation movies (10 pages × 20 = up to 200)
+    const movieGenreSets = [
+      [10751],       // Family
+      [16],          // Animation
+      [10751, 16],   // Family + Animation
+    ];
+
+    for (const genres of movieGenreSets) {
+      for (let page = 1; page <= 5; page++) {
+        try {
+          const result = await discoverMoviesByGenre(tmdbKey, genres, page);
+          for (const movie of result.results) {
+            if (!movieCandidates.has(movie.id)) {
+              movieCandidates.set(movie.id, {
+                title: movie.title,
+                type: "movie",
+              });
+            }
+          }
+          if (page >= result.total_pages) break;
+        } catch (e) {
+          console.warn(
+            `[SeedCatalog] Movie discover failed for genres=${genres.join(",")} page=${page}:`,
+            e
+          );
+          break;
+        }
+      }
+    }
+
+    // Fetch kids/animation TV shows (10 pages × 20 = up to 200)
+    const tvGenreSets = [
+      [10762],       // Kids
+      [16],          // Animation
+      [10762, 16],   // Kids + Animation
+    ];
+
+    for (const genres of tvGenreSets) {
+      for (let page = 1; page <= 5; page++) {
+        try {
+          const result = await discoverTVByGenre(tmdbKey, genres, page);
+          for (const show of result.results) {
+            if (!tvCandidates.has(show.id)) {
+              tvCandidates.set(show.id, {
+                title: show.name,
+                type: "tv",
+              });
+            }
+          }
+          if (page >= result.total_pages) break;
+        } catch (e) {
+          console.warn(
+            `[SeedCatalog] TV discover failed for genres=${genres.join(",")} page=${page}:`,
+            e
+          );
+          break;
+        }
+      }
+    }
+
+    console.log(
+      `[SeedCatalog] Discovered ${movieCandidates.size} movies, ${tvCandidates.size} TV shows`
+    );
+
+    // Merge and limit to maxTitles
+    const allCandidates = [
+      ...Array.from(movieCandidates.entries()).map(([id, data]) => ({
+        tmdbId: id,
+        ...data,
+      })),
+      ...Array.from(tvCandidates.entries()).map(([id, data]) => ({
+        tmdbId: id,
+        ...data,
+      })),
+    ].slice(0, maxTitles);
+
+    let alreadyRated = 0;
+    let alreadyQueued = 0;
+    let newlyQueued = 0;
+
+    for (const candidate of allCandidates) {
+      // Check if already in DB
+      const existing = await ctx.runQuery(api.titles.getTitleByTmdbId, {
+        tmdbId: candidate.tmdbId,
+      });
+      if (existing) {
+        alreadyRated++;
+        continue;
+      }
+
+      // Check if already in queue
+      const inQueue = await ctx.runQuery(
+        internal.ratings.isInQueue,
+        { tmdbId: candidate.tmdbId }
+      );
+      if (inQueue) {
+        alreadyQueued++;
+        continue;
+      }
+
+      if (!dryRun) {
+        await ctx.runMutation(internal.ratings.addToQueue, {
+          tmdbId: candidate.tmdbId,
+          title: candidate.title,
+          type: candidate.type as "movie" | "tv",
+          priority: 2,
+          source: "batch",
+        });
+      }
+      newlyQueued++;
+    }
+
+    console.log(
+      `[SeedCatalog] Done. Already rated: ${alreadyRated}, already queued: ${alreadyQueued}, newly queued: ${newlyQueued}${dryRun ? " (DRY RUN)" : ""}`
+    );
+
+    // Schedule queue processing if not dry run — process 10 immediately, rest via nightly batch
+    if (!dryRun && newlyQueued > 0) {
+      const queueItems = await ctx.runQuery(internal.ratings.getQueuedItems, {
+        limit: 10,
+      });
+      for (const item of queueItems) {
+        // Space out by 5 seconds each to avoid rate limits
+        await ctx.scheduler.runAfter(
+          5_000 * queueItems.indexOf(item),
+          api.ratings.processQueueItem,
+          { queueItemId: item._id }
+        );
+      }
+      console.log(
+        `[SeedCatalog] Scheduled ${queueItems.length} items for immediate processing. Remaining will be handled by nightly batch.`
+      );
+    }
   },
 });
