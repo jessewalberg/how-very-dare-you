@@ -35,14 +35,16 @@ export function SubscriptionCard({
   const createCheckout = useAction(api.stripe.createCheckoutSession);
   const createPortal = useAction(api.stripe.createPortalSession);
   const [loading, setLoading] = useState(false);
+  const [billingInterval, setBillingInterval] = useState<"month" | "year">("month");
 
   async function handleUpgrade() {
     posthog.capture("upgrade_clicked", {
       current_tier: tier,
+      billing_interval: billingInterval,
     });
     setLoading(true);
     try {
-      const url = await createCheckout();
+      const url = await createCheckout({ billingInterval });
       if (url) window.location.href = url;
     } catch (err) {
       posthog.captureException(err instanceof Error ? err : new Error(String(err)));
@@ -148,6 +150,39 @@ export function SubscriptionCard({
           </div>
         )}
 
+        {/* Billing interval toggle */}
+        {tier === "free" && (
+          <div className="flex items-center justify-center gap-1 rounded-lg bg-muted p-1">
+            <button
+              type="button"
+              onClick={() => setBillingInterval("month")}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                billingInterval === "month"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingInterval("year")}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                billingInterval === "year"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Annual
+              <span className="ml-1 text-xs text-emerald-500 font-semibold">
+                save 33%
+              </span>
+            </button>
+          </div>
+        )}
+
         {/* Action button */}
         {tier === "free" ? (
           <Button
@@ -160,7 +195,9 @@ export function SubscriptionCard({
             ) : (
               <Crown className="size-4" />
             )}
-            Upgrade to Premium — $4.99/mo
+            {billingInterval === "year"
+              ? "Upgrade to Premium — $39.99/yr"
+              : "Upgrade to Premium — $4.99/mo"}
           </Button>
         ) : (
           <Button
