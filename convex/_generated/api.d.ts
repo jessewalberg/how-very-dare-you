@@ -10,6 +10,8 @@
 
 import type * as admin from "../admin.js";
 import type * as corrections from "../corrections.js";
+import type * as email from "../email.js";
+import type * as email_templates from "../email-templates.js";
 import type * as crons from "../crons.js";
 import type * as episodes from "../episodes.js";
 import type * as feedback from "../feedback.js";
@@ -33,6 +35,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   corrections: typeof corrections;
+  email: typeof email;
+  "email-templates": typeof email_templates;
   crons: typeof crons;
   episodes: typeof episodes;
   feedback: typeof feedback;

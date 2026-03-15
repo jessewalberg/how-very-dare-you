@@ -8,9 +8,11 @@ import {
   ArrowRight,
   Film,
   ListOrdered,
+  Mail,
   MessageSquare,
   RefreshCw,
   Save,
+  Send,
   Users,
   Zap,
 } from "lucide-react";
@@ -20,6 +22,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -93,11 +103,21 @@ function StatCard({
   );
 }
 
+// ── Email broadcast templates ─────────────────────────────
+import { foundingMemberLaunchEmail } from "@/convex/email-templates";
+
+const EMAIL_TEMPLATES = [
+  { id: "founding-member-launch", label: "Founding Member Launch", getEmail: foundingMemberLaunchEmail },
+] as const;
+
+type EmailTemplateId = (typeof EMAIL_TEMPLATES)[number]["id"];
+
 export default function AdminDashboardPage() {
   const stats = useQuery(api.admin.getDashboardStats);
   const ratingModelConfig = useQuery(api.admin.getRatingModelConfig);
   const setRatingModelConfig = useMutation(api.admin.setRatingModelConfig);
   const listOpenRouterModels = useAction(api.admin.listOpenRouterModels);
+  const broadcastEmail = useAction(api.email.broadcastEmail);
 
   const [modelInput, setModelInput] = useState("");
   const [modelSearch, setModelSearch] = useState("");
@@ -117,6 +137,46 @@ export default function AdminDashboardPage() {
   const [savingModel, setSavingModel] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [modelSavedAt, setModelSavedAt] = useState<number | null>(null);
+
+  // Email broadcast state
+  const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplateId | "">("");
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<{
+    total: number;
+    sent: number;
+    failed: number;
+  } | null>(null);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
+
+  const selectedEmailData = useMemo(() => {
+    if (!selectedTemplate) return null;
+    const tpl = EMAIL_TEMPLATES.find((t) => t.id === selectedTemplate);
+    return tpl ? tpl.getEmail() : null;
+  }, [selectedTemplate]);
+
+  async function handleBroadcastSend() {
+    if (!selectedEmailData) return;
+    setShowConfirmDialog(false);
+    setBroadcastSending(true);
+    setBroadcastError(null);
+    setBroadcastResult(null);
+    try {
+      const result = await broadcastEmail({
+        subject: selectedEmailData.subject,
+        htmlBody: selectedEmailData.htmlBody,
+        textBody: selectedEmailData.textBody,
+      });
+      setBroadcastResult(result);
+    } catch (e) {
+      setBroadcastError(
+        e instanceof Error ? e.message : "Broadcast failed"
+      );
+    } finally {
+      setBroadcastSending(false);
+    }
+  }
 
   useEffect(() => {
     if (ratingModelConfig?.model) {
@@ -522,6 +582,122 @@ export default function AdminDashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* ── Email Broadcast ─────────────────────────────── */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm">Email Broadcast</CardTitle>
+              <Mail className="size-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Select
+                  value={selectedTemplate}
+                  onValueChange={(value) => {
+                    setSelectedTemplate(value as EmailTemplateId);
+                    setBroadcastResult(null);
+                    setBroadcastError(null);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select email template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EMAIL_TEMPLATES.map((tpl) => (
+                      <SelectItem key={tpl.id} value={tpl.id}>
+                        {tpl.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!selectedTemplate}
+                    onClick={() => setShowEmailPreview((v) => !v)}
+                  >
+                    {showEmailPreview ? "Hide Preview" : "Preview Email"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={!selectedTemplate || broadcastSending}
+                    onClick={() => setShowConfirmDialog(true)}
+                  >
+                    <Send className="size-3.5" />
+                    {broadcastSending ? "Sending..." : "Send to All Users"}
+                  </Button>
+                </div>
+              </div>
+
+              {selectedEmailData && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    <strong>Subject:</strong> {selectedEmailData.subject}
+                  </p>
+                </div>
+              )}
+
+              {showEmailPreview && selectedEmailData && (
+                <div className="rounded-md border bg-white overflow-auto max-h-96">
+                  <div
+                    className="p-0"
+                    dangerouslySetInnerHTML={{ __html: selectedEmailData.htmlBody }}
+                  />
+                </div>
+              )}
+
+              {broadcastResult && (
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-sm font-medium text-green-700">
+                    Broadcast complete
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Total: {broadcastResult.total} · Sent: {broadcastResult.sent} · Failed: {broadcastResult.failed}
+                  </p>
+                </div>
+              )}
+
+              {broadcastError && (
+                <p className="text-xs text-red-600">{broadcastError}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Broadcast confirmation dialog */}
+          <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Confirm Email Broadcast</DialogTitle>
+                <DialogDescription>
+                  This will send &ldquo;{selectedEmailData?.subject}&rdquo; to{" "}
+                  <strong>all registered users and newsletter subscribers</strong>.
+                  This action cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowConfirmDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleBroadcastSend}
+                  className="gap-1.5"
+                >
+                  <Send className="size-3.5" />
+                  Yes, Send to Everyone
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
     </div>
