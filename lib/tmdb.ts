@@ -243,6 +243,40 @@ export async function getPopularTV(
   return tmdbFetch("/tv/popular", apiKey, { page: String(page) });
 }
 
+/**
+ * Discover movies by genre. Sorted by popularity descending.
+ * Genre IDs: 16 = Animation, 10751 = Family
+ */
+export async function discoverMoviesByGenre(
+  apiKey: string,
+  genreIds: number[],
+  page = 1
+): Promise<TMDBSearchResult<TMDBMovie>> {
+  return tmdbFetch("/discover/movie", apiKey, {
+    with_genres: genreIds.join(","),
+    sort_by: "popularity.desc",
+    page: String(page),
+    "vote_count.gte": "50",
+  });
+}
+
+/**
+ * Discover TV shows by genre. Sorted by popularity descending.
+ * Genre IDs: 16 = Animation, 10762 = Kids
+ */
+export async function discoverTVByGenre(
+  apiKey: string,
+  genreIds: number[],
+  page = 1
+): Promise<TMDBSearchResult<TMDBTVShow>> {
+  return tmdbFetch("/discover/tv", apiKey, {
+    with_genres: genreIds.join(","),
+    sort_by: "popularity.desc",
+    page: String(page),
+    "vote_count.gte": "20",
+  });
+}
+
 export async function getTVSeason(
   tvId: number,
   seasonNumber: number,

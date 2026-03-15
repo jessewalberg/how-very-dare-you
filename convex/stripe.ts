@@ -15,9 +15,12 @@ type SyncSubscriptionResult = {
 };
 
 export const createCheckoutSession = action({
-  args: {},
+  args: {
+    billingInterval: v.optional(v.union(v.literal("month"), v.literal("year"))),
+  },
   returns: v.string(),
-  handler: async (ctx): Promise<string> => {
+  handler: async (ctx, args): Promise<string> => {
+    const interval = args.billingInterval ?? "month";
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
@@ -39,6 +42,7 @@ export const createCheckoutSession = action({
       });
     }
 
+    const isAnnual = interval === "year";
     const session: Stripe.Checkout.Session =
       await stripe.checkout.sessions.create({
         customer: customerId,
@@ -48,12 +52,14 @@ export const createCheckoutSession = action({
             price_data: {
               currency: "usd",
               product_data: {
-                name: "How Very Dare You Premium",
+                name: isAnnual
+                  ? "How Very Dare You Premium (Annual)"
+                  : "How Very Dare You Premium",
                 description:
                   "Personalized weights, advanced filters, watchlist, 10 on-demand ratings/day",
               },
-              unit_amount: 499,
-              recurring: { interval: "month" },
+              unit_amount: isAnnual ? 3999 : 499,
+              recurring: { interval },
             },
             quantity: 1,
           },
