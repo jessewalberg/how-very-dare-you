@@ -104,7 +104,7 @@ function StatCard({
 }
 
 // ── Email broadcast templates ─────────────────────────────
-import { foundingMemberLaunchEmail } from "@/convex/email-templates";
+import { foundingMemberLaunchEmail } from "@/convex/emailTemplates";
 
 const EMAIL_TEMPLATES = [
   { id: "founding-member-launch", label: "Founding Member Launch", getEmail: foundingMemberLaunchEmail },
